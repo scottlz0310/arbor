@@ -162,4 +162,4 @@
 - [ ] macOS: Xcode Command Line Tools
 - [x] `cargo install tauri-cli@^2`
 - [ ] dsx CLI v0.2.2+ が PATH に存在
-- [x] (Phase 3) Ollama インストール済み + `qwen3.5:latest` 確認済み
+- [ ] (Phase 3) Ollama インストール済み + `qwen3.5:latest` モデル取得済み（未導入の場合: `ollama pull qwen3.5:latest` を実行）

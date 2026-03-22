@@ -56,8 +56,9 @@ Rust backend (Tauri commands)
 ```
 
 **重要な設計原則:**
-- git の書き込み操作（fetch/pull/cleanup）は **すべて dsx に委譲**し、Arbor 側で再実装しない
-- git2 は **読み取り専用**（ステータス・ブランチ一覧・コミットグラフ）のみ使用
+- git の**一括操作**（fetch-all / pull / cleanup）は **dsx に委譲**し、Arbor 側で再実装しない
+- git2 は主に**読み取り**（ステータス・ブランチ一覧・コミットグラフ）に使用する。
+  ただし単一リポジトリの `fetch_all` と `delete_branches` は git2 で直接実装（dsx への往復コストを避けるため）
 - AI（Ollama）は **Explain / Prioritize / Risk の説明生成のみ**。コマンド実行は一切しない
 - 破壊的操作は**必ず ConfirmDialog を経由**させる
 
@@ -68,7 +69,7 @@ Rust backend (Tauri commands)
 | `lib.rs` | Tauri Builder + 全コマンドの `invoke_handler` 登録 |
 | `models.rs` | `RepoInfo` / `BranchInfo` / `CommitNode` / `DsxOutput` 等の共有データ型 |
 | `config.rs` | `AppConfig` の読み書き。`dirs::config_dir()` で OS ごとのパスを解決 |
-| `commands/repo.rs` | git2 による読み取りコマンド群 (`list_repositories`, `get_branches`, `delete_branches`, `fetch_all`) |
+| `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories`, `get_branches`, `get_repo_status`）と、一部書き込み操作（`delete_branches`, `fetch_all`） |
 | `commands/config_cmd.rs` | config.toml CRUD + `scan_directory`（再帰的 git リポジトリ検索） |
 | `commands/dsx.rs` | dsx CLI ラッパー。長時間処理は `app_handle.emit("dsx_progress", line)` でフロントにストリーム送信 |
 
