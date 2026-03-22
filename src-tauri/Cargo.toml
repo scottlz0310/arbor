@@ -8,16 +8,16 @@ name = "arbor_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.0.6", features = [] }
 
 [dependencies]
-tauri          = { version = "2", features = [] }
-tauri-plugin-dialog = "2"
-serde          = { version = "1", features = ["derive"] }
-serde_json     = "1"
-toml           = "0.8"
+tauri          = { version = "2.0.6", features = [] }
+tauri-plugin-dialog = "2.0.5"
+serde          = { version = "1.0.228", features = ["derive"] }
+serde_json     = "1.0.149"
+toml           = "0.8.23"
 git2           = "0.19"
-tokio          = { version = "1", features = ["full"] }
-reqwest        = { version = "0.12", features = ["json"] }
-keyring        = "3"
-dirs           = "5"
+tokio          = { version = "1.0.3", features = ["full"] }
+reqwest        = { version = "0.12.28", features = ["json"] }
+keyring        = "3.0.5"
+dirs           = "5.0.1"
