@@ -1,0 +1,22 @@
+pre-commit:
+  parallel: true
+  commands:
+    typecheck:
+      glob: "src/**/*.{ts,tsx}"
+      run: npm run typecheck
+    cargo-check:
+      glob: "src-tauri/**/*.rs"
+      run: cargo check --manifest-path src-tauri/Cargo.toml
+
+pre-push:
+  parallel: false
+  commands:
+    cargo-clippy:
+      glob: "src-tauri/**/*.rs"
+      run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+    cargo-test:
+      glob: "src-tauri/**/*.rs"
+      run: cargo test --manifest-path src-tauri/Cargo.toml
+    frontend-test:
+      glob: "src/**/*.{ts,tsx}"
+      run: npm test
