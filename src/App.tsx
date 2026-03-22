@@ -18,13 +18,18 @@ export default function App() {
   useEffect(() => {
     loadRepos();
 
-    // dsx の存在確認。未検出なら Settings へ誘導してバナーを表示する。
+    // StrictMode では mount→unmount→mount と2回走るため、
+    // unmount 後の Promise 完了は無視するようにクリーンアップフラグで制御する。
+    let cancelled = false;
+
     dsxCheck().then((status) => {
+      if (cancelled) return;
       if (!status.available) {
         navigate('settings');
         addToast('dsx CLI が見つかりません。Settings からインストール手順を確認してください。', 'error');
       }
     }).catch(() => {
+      if (cancelled) return;
       navigate('settings');
       addToast('dsx CLI の確認に失敗しました。Settings を確認してください。', 'error');
     });
@@ -35,6 +40,7 @@ export default function App() {
     });
 
     return () => {
+      cancelled = true;
       unlisten.then((fn) => fn());
     };
   }, []);
@@ -51,20 +57,20 @@ export default function App() {
     <div className="app-shell">
       <Sidebar />
       <main className="main-content">
-        <ErrorBoundary viewName="Overview">
-          {activeView === 'overview' && <Overview />}
-        </ErrorBoundary>
-        <ErrorBoundary viewName="Branches">
-          {activeView === 'branches' && <Branches />}
-        </ErrorBoundary>
-        {activeView === 'graph' && <PlaceholderView label="Commit Graph" note="Implemented in Phase 2" />}
-        {activeView === 'prs'   && <PlaceholderView label="PR / Issues"  note="Implemented in Phase 2" />}
-        <ErrorBoundary viewName="Cleanup">
-          {activeView === 'cleanup' && <Cleanup />}
-        </ErrorBoundary>
-        <ErrorBoundary viewName="Settings">
-          {activeView === 'settings' && <Settings />}
-        </ErrorBoundary>
+        {activeView === 'overview' && (
+          <ErrorBoundary key="overview" viewName="Overview"><Overview /></ErrorBoundary>
+        )}
+        {activeView === 'branches' && (
+          <ErrorBoundary key="branches" viewName="Branches"><Branches /></ErrorBoundary>
+        )}
+        {activeView === 'graph'   && <PlaceholderView label="Commit Graph" note="Implemented in Phase 2" />}
+        {activeView === 'prs'     && <PlaceholderView label="PR / Issues"  note="Implemented in Phase 2" />}
+        {activeView === 'cleanup' && (
+          <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
+        )}
+        {activeView === 'settings' && (
+          <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>
+        )}
       </main>
       <ToastContainer />
     </div>

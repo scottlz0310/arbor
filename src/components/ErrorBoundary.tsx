@@ -43,6 +43,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             {this.state.error.message}
           </pre>
           <button
+            type="button"
             onClick={this.reset}
             style={{
               padding: '6px 18px', borderRadius: 6, border: 'none',
