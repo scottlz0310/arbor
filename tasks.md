@@ -36,9 +36,8 @@
     ビュー単位の `<ErrorBoundary>` も用意するとデバッグ効率が上がる。
 13. **Stash Manager** — Phase 4 に記載されているが `stash_count` は Phase 1 から RepoInfo に含まれる。
     Branches ビューにスタッシュ枚数バッジだけ Phase 1 で表示し、Stash Manager UI は Phase 4 に残す。
-14. **Ollama モデル名** — 仕様は `qwen3.5:latest` と記載だが Ollama レジストリの実モデル名は
-    `qwen2.5:latest` または `qwen2.5:7b` の可能性が高い。設定画面でユーザーが変更できるので問題は小さいが、
-    デフォルト値をインストール前に `ollama list` で確認することを推奨。
+14. **Ollama モデル名** — `ollama list` で確認済み。実モデル名は `qwen3.5:latest`。
+    `config.rs` のデフォルト値を修正済み。
 
 ---
 
@@ -163,4 +162,4 @@
 - [ ] macOS: Xcode Command Line Tools
 - [x] `cargo install tauri-cli@^2`
 - [ ] dsx CLI v0.2.2+ が PATH に存在
-- [ ] (Phase 3) Ollama インストール済み + `ollama pull qwen2.5:latest`
+- [x] (Phase 3) Ollama インストール済み + `qwen3.5:latest` 確認済み

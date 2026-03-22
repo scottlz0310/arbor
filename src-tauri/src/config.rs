@@ -43,7 +43,7 @@ impl Default for AiConfig {
         Self {
             provider: "ollama".to_string(),
             ollama_url: "http://localhost:11434".to_string(),
-            model: "qwen2.5:latest".to_string(),
+            model: "qwen3.5:latest".to_string(),
             enabled: true,
             timeout_secs: 30,
         }
