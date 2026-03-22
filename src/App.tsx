@@ -32,7 +32,7 @@ export default function App() {
     if (repos.length === 0 && activeView === 'overview') {
       navigate('settings');
     }
-  }, [repos.length]);
+  }, [repos.length, activeView, navigate]);
 
   return (
     <div className="app-shell">

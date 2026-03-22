@@ -29,7 +29,7 @@ export default function ConfirmDialog({
         width: '100%',
       }}>
         <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{title}</h2>
-        <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.65, marginBottom: 20 }}>
+        <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.65, marginBottom: 20, whiteSpace: 'pre-wrap' }}>
           {message}
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>

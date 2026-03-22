@@ -14,7 +14,7 @@ export default function Settings() {
 
   useEffect(() => {
     getConfig().then(setConfig).catch((e) => addToast(String(e), 'error'));
-    dsxCheck().then(setDsxStatus);
+    dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null }));
   }, []);
 
   const handleAddRepo = async () => {

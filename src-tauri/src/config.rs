@@ -62,15 +62,14 @@ pub struct RepoConfig {
 /// - Windows: %APPDATA%\arbor\config.toml
 /// - macOS:   ~/Library/Application Support/arbor/config.toml
 /// - Linux:   ~/.config/arbor/config.toml
-pub fn config_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("arbor")
-        .join("config.toml")
+fn config_path() -> Result<PathBuf, String> {
+    let base = dirs::config_dir()
+        .ok_or_else(|| "Could not determine config directory for this OS".to_string())?;
+    Ok(base.join("arbor").join("config.toml"))
 }
 
 pub fn load_config() -> Result<AppConfig, String> {
-    let path = config_path();
+    let path = config_path()?;
     if !path.exists() {
         return Ok(AppConfig::default());
     }
@@ -79,7 +78,7 @@ pub fn load_config() -> Result<AppConfig, String> {
 }
 
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
-    let path = config_path();
+    let path = config_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

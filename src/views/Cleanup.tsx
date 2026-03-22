@@ -3,17 +3,22 @@ import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { getBranches, repoCleanupPreview, repoCleanup } from '../lib/invoke';
+import { getBranches, repoCleanupPreview, repoCleanup, deleteBranches } from '../lib/invoke';
 import type { BranchInfo } from '../types';
+
+// Composite key: "${repoPath}:${branchName}"
+const makeKey = (repoPath: string, name: string) => `${repoPath}:${name}`;
+
+type ConfirmType = 'dsx' | 'delete' | null;
 
 export default function Cleanup() {
   const { repos, selectedRepo } = useRepoStore();
   const { addToast, setDsxRunning } = useUiStore();
 
-  const [mergedBranches, setMergedBranches]     = useState<BranchInfo[]>([]);
-  const [staleBranches, setStaleBranches]       = useState<BranchInfo[]>([]);
+  const [mergedBranches, setMergedBranches]     = useState<(BranchInfo & { _repoName: string; _repoPath: string })[]>([]);
+  const [staleBranches, setStaleBranches]       = useState<(BranchInfo & { _repoName: string; _repoPath: string })[]>([]);
   const [selected, setSelected]                 = useState<Set<string>>(new Set());
-  const [confirmOpen, setConfirmOpen]           = useState(false);
+  const [confirmType, setConfirmType]           = useState<ConfirmType>(null);
   const [previewOut, setPreviewOut]             = useState('');
   const [loading, setLoading]                   = useState(false);
 
@@ -31,7 +36,7 @@ export default function Cleanup() {
       )
     )
       .then((allBranches) => {
-        const flat = allBranches.flat() as (BranchInfo & { _repoName: string; _repoPath: string })[];
+        const flat = allBranches.flat();
         setMergedBranches(flat.filter((b) => (b.is_merged || b.is_squash_merged) && !b.is_current));
         setStaleBranches(flat.filter(
           (b) => !b.is_merged && !b.is_squash_merged && !b.is_current
@@ -42,14 +47,15 @@ export default function Cleanup() {
       .finally(() => setLoading(false));
   }, [repos]);
 
-  const toggleSelect = (name: string) =>
+  const toggleSelect = (repoPath: string, name: string) =>
     setSelected((s) => {
+      const key = makeKey(repoPath, name);
       const n = new Set(s);
-      if (n.has(name)) n.delete(name); else n.add(name);
+      if (n.has(key)) n.delete(key); else n.add(key);
       return n;
     });
 
-  const handlePreviewAndConfirm = async () => {
+  const handleDsxPreviewAndConfirm = async () => {
     if (!selectedRepo) {
       addToast('Select a repository first', 'error');
       return;
@@ -57,23 +63,74 @@ export default function Cleanup() {
     try {
       const out = await repoCleanupPreview(selectedRepo.path);
       setPreviewOut(out.stdout || '(no output)');
-      setConfirmOpen(true);
+      setConfirmType('dsx');
     } catch (e) {
       addToast(String(e), 'error');
     }
   };
 
+  const handleDeleteSelectedWithConfirm = () => {
+    const branchNames = [...selected].map((k) => k.slice(k.indexOf(':') + 1));
+    setPreviewOut(branchNames.join('\n'));
+    setConfirmType('delete');
+  };
+
   const handleExecute = async () => {
-    if (!selectedRepo) return;
-    setConfirmOpen(false);
-    setDsxRunning(true);
-    try {
-      await repoCleanup(selectedRepo.path);
-      addToast('Cleanup complete', 'success');
-    } catch (e) {
-      addToast(String(e), 'error');
-    } finally {
-      setDsxRunning(false);
+    if (confirmType === 'dsx') {
+      if (!selectedRepo) return;
+      setConfirmType(null);
+      setDsxRunning(true);
+      try {
+        await repoCleanup(selectedRepo.path);
+        addToast('Cleanup complete', 'success');
+      } catch (e) {
+        addToast(String(e), 'error');
+      } finally {
+        setDsxRunning(false);
+      }
+    } else if (confirmType === 'delete') {
+      setConfirmType(null);
+      setDsxRunning(true);
+      try {
+        // Group selected branches by repo path.
+        const byRepo = new Map<string, string[]>();
+        for (const key of selected) {
+          const sep = key.indexOf(':');
+          const repoPath = key.slice(0, sep);
+          const branchName = key.slice(sep + 1);
+          if (!byRepo.has(repoPath)) byRepo.set(repoPath, []);
+          byRepo.get(repoPath)!.push(branchName);
+        }
+        let totalFailed = 0;
+        for (const [repoPath, branchNames] of byRepo) {
+          const results = await deleteBranches(repoPath, branchNames);
+          totalFailed += results.filter((r) => !r.success).length;
+        }
+        if (totalFailed > 0) {
+          addToast(`${totalFailed} branch(es) failed to delete`, 'error');
+        } else {
+          addToast(`${selected.size} branch(es) deleted`, 'success');
+        }
+        setSelected(new Set());
+        // Reload branch lists.
+        const updated = await Promise.all(
+          repos.map((r) =>
+            getBranches(r.path).then((branches) =>
+              branches.map((b) => ({ ...b, _repoName: r.name, _repoPath: r.path }))
+            )
+          )
+        );
+        const flat = updated.flat();
+        setMergedBranches(flat.filter((b) => (b.is_merged || b.is_squash_merged) && !b.is_current));
+        setStaleBranches(flat.filter(
+          (b) => !b.is_merged && !b.is_squash_merged && !b.is_current
+            && nowSec - b.last_commit_ts > staleThreshold
+        ));
+      } catch (e) {
+        addToast(String(e), 'error');
+      } finally {
+        setDsxRunning(false);
+      }
     }
   };
 
@@ -91,12 +148,12 @@ export default function Cleanup() {
         actions={
           <>
             {selected.size > 0 && (
-              <AppBtn variant="danger" onClick={handlePreviewAndConfirm}>
-                Execute selected ({selected.size})
+              <AppBtn variant="danger" onClick={handleDeleteSelectedWithConfirm}>
+                Delete selected ({selected.size})
               </AppBtn>
             )}
-            <AppBtn variant="danger" onClick={handlePreviewAndConfirm}>
-              dsx cleanup (preview)
+            <AppBtn variant="danger" onClick={handleDsxPreviewAndConfirm}>
+              dsx cleanup{selectedRepo ? ` (${selectedRepo.name})` : ''}
             </AppBtn>
           </>
         }
@@ -113,20 +170,17 @@ export default function Cleanup() {
           count={mergedBranches.length}
           countColor="var(--green)"
         >
-          {mergedBranches.map((b) => {
-            const bb = b as BranchInfo & { _repoName?: string };
-            return (
-              <CleanupItem
-                key={`${bb._repoName}/${b.name}`}
-                name={b.name}
-                info={`${bb._repoName ?? ''} · merged ${formatAge(b.last_commit_ts)} ago`}
-                nameColor="var(--green)"
-                checked={selected.has(b.name)}
-                onToggle={toggleSelect}
-                checkAccent="var(--red)"
-              />
-            );
-          })}
+          {mergedBranches.map((b) => (
+            <CleanupItem
+              key={makeKey(b._repoPath, b.name)}
+              name={b.name}
+              info={`${b._repoName} · merged ${formatAge(b.last_commit_ts)} ago`}
+              nameColor="var(--green)"
+              checked={selected.has(makeKey(b._repoPath, b.name))}
+              onToggle={() => toggleSelect(b._repoPath, b.name)}
+              checkAccent="var(--red)"
+            />
+          ))}
         </CleanupSection>
 
         {/* Stale branches */}
@@ -136,16 +190,15 @@ export default function Cleanup() {
           countColor="var(--amber)"
         >
           {staleBranches.map((b) => {
-            const bb = b as BranchInfo & { _repoName?: string };
             const ageDays = Math.floor((nowSec - b.last_commit_ts) / 86400);
             return (
               <CleanupItem
-                key={`${bb._repoName}/${b.name}`}
+                key={makeKey(b._repoPath, b.name)}
                 name={b.name}
-                info={`${bb._repoName ?? ''} · ${ageDays}d stale · -${b.behind} behind main`}
+                info={`${b._repoName} · ${ageDays}d stale · -${b.behind} behind main`}
                 nameColor="var(--amber)"
-                checked={selected.has(b.name)}
-                onToggle={toggleSelect}
+                checked={selected.has(makeKey(b._repoPath, b.name))}
+                onToggle={() => toggleSelect(b._repoPath, b.name)}
                 checkAccent="var(--indigo)"
               />
             );
@@ -185,13 +238,17 @@ export default function Cleanup() {
         </div>
       </div>
 
-      {confirmOpen && (
+      {confirmType !== null && (
         <ConfirmDialog
-          title="dsx repo cleanup — confirm"
-          message={`Preview output:\n\n${previewOut}\n\nProceed?`}
-          confirmLabel="Execute cleanup"
+          title={confirmType === 'dsx' ? 'dsx repo cleanup — confirm' : `Delete ${selected.size} branch(es)?`}
+          message={
+            confirmType === 'dsx'
+              ? `Preview output:\n\n${previewOut}\n\nProceed?`
+              : `Following branches will be deleted:\n\n${previewOut}\n\nProceed?`
+          }
+          confirmLabel={confirmType === 'dsx' ? 'Execute cleanup' : 'Delete branches'}
           onConfirm={handleExecute}
-          onCancel={() => setConfirmOpen(false)}
+          onCancel={() => setConfirmType(null)}
         />
       )}
     </div>
@@ -241,7 +298,7 @@ function CleanupItem({
   info: string;
   nameColor: string;
   checked: boolean;
-  onToggle: (name: string) => void;
+  onToggle: () => void;
   checkAccent: string;
 }) {
   return (
@@ -254,7 +311,7 @@ function CleanupItem({
       <input
         type="checkbox"
         checked={checked}
-        onChange={() => onToggle(name)}
+        onChange={onToggle}
         style={{ accentColor: checkAccent, cursor: 'pointer', width: 13, height: 13 }}
       />
       <span style={{

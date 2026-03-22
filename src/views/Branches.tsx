@@ -168,8 +168,19 @@ function BranchRow({
   let badgeLabel = '';
   let badgeStyle: React.CSSProperties = {};
   if (b.is_current) {
-    badgeLabel = `↑ ahead ${b.ahead}`;
-    badgeStyle = { background: 'var(--green-bg)', color: 'var(--green)' };
+    if (b.ahead > 0 && b.behind > 0) {
+      badgeLabel = '⇕ diverged';
+      badgeStyle = { background: 'var(--red-bg)', color: 'var(--red)' };
+    } else if (b.ahead > 0) {
+      badgeLabel = `↑ ahead ${b.ahead}`;
+      badgeStyle = { background: 'var(--green-bg)', color: 'var(--green)' };
+    } else if (b.behind > 0) {
+      badgeLabel = `↓ behind ${b.behind}`;
+      badgeStyle = { background: 'var(--purple-bg)', color: 'var(--purple)' };
+    } else {
+      badgeLabel = 'HEAD';
+      badgeStyle = { background: '#1e2336', color: 'var(--green)' };
+    }
   } else if (merged) {
     badgeLabel = '✓ merged';
     badgeStyle = { background: 'var(--green-bg)', color: 'var(--green)' };

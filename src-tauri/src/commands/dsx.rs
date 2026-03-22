@@ -71,7 +71,14 @@ pub async fn repo_update(app: AppHandle, repo_path: String) -> Result<DsxOutput,
 /// Check `dsx repo cleanup --help` to confirm JSON flag availability.
 #[tauri::command]
 pub async fn repo_cleanup_preview(repo_path: String) -> Result<DsxOutput, String> {
-    run_dsx_sync(&repo_path, &["repo", "cleanup", "-n"])
+    let output = run_dsx_sync(&repo_path, &["repo", "cleanup", "-n"])?;
+    if output.exit_code != 0 {
+        return Err(format!(
+            "dsx repo cleanup preview failed with exit code {}: {}",
+            output.exit_code, output.stderr
+        ));
+    }
+    Ok(output)
 }
 
 // ─── repo_cleanup ─────────────────────────────────────────────────────────────
@@ -104,6 +111,18 @@ async fn run_dsx_with_events(
         .map_err(|e| format!("Failed to spawn dsx: {e}"))?;
 
     let stdout = child.stdout.take().expect("stdout piped");
+    let stderr = child.stderr.take().expect("stderr piped");
+
+    // Drain stderr concurrently on a separate thread to prevent pipe-buffer
+    // deadlock if dsx writes enough stderr to fill the OS buffer.
+    let stderr_thread = std::thread::spawn(move || {
+        BufReader::new(stderr)
+            .lines()
+            .filter_map(|l| l.ok())
+            .collect::<Vec<String>>()
+            .join("\n")
+    });
+
     let mut stdout_lines = Vec::new();
     let reader = BufReader::new(stdout);
     for line in reader.lines() {
@@ -112,9 +131,9 @@ async fn run_dsx_with_events(
         stdout_lines.push(line);
     }
 
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
-    let exit_code = output.status.code().unwrap_or(-1);
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let exit_code = status.code().unwrap_or(-1);
+    let stderr = stderr_thread.join().unwrap_or_default();
 
     if exit_code != 0 {
         return Err(format!("dsx exited with code {exit_code}: {stderr}"));
