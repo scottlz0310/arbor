@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ARBOR — Tauri Git Dashboard · 仕様書 v0.3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#0c0e14;
+  --bg1:#0f1117;
+  --bg2:#141720;
+  --bg3:#1a1e2e;
+  --bg4:#1e2235;
+  --border:#1e2336;
+  --border2:#252c42;
+  --border3:#2d3554;
+  --text1:#e2e8f0;
+  --text2:#94a3b8;
+  --text3:#4a5568;
+  --text4:#2d3748;
+  --indigo:#818cf8;
+  --indigo-d:#6366f1;
+  --indigo-l:#a5b4fc;
+  --indigo-bg:#818cf80e;
+  --indigo-bg2:#818cf818;
+  --green:#4ade80;
+  --green-bg:#4ade8012;
+  --amber:#fbbf24;
+  --amber-bg:#fbbf2412;
+  --red:#f87171;
+  --red-bg:#f8717112;
+  --purple:#c084fc;
+  --purple-bg:#c084fc10;
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Plus Jakarta Sans',-apple-system,sans-serif;
+  --display:'Syne',sans-serif;
+  --r:6px;--r2:10px;--r3:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg0);color:var(--text1);font-family:var(--sans);font-size:14px;line-height:1.65;}
+
+/* ─── TOPBAR ─── */
+.topbar{position:sticky;top:0;z-index:100;background:rgba(12,14,20,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 32px;height:52px;display:flex;align-items:center;gap:0;}
+.topbar-logo{font-family:var(--display);font-size:16px;font-weight:800;color:var(--indigo);letter-spacing:-.01em;margin-right:32px;}
+.topbar-nav{display:flex;gap:0;flex:1;}
+.tnav{font-size:12px;color:var(--text3);padding:0 14px;height:52px;display:flex;align-items:center;border-bottom:2px solid transparent;text-decoration:none;transition:.15s;cursor:pointer;}
+.tnav:hover{color:var(--text2);}
+.tnav.a{color:var(--indigo-l);border-bottom-color:var(--indigo);}
+.topbar-meta{font-size:11px;color:var(--text4);font-family:var(--mono);}
+
+/* ─── LAYOUT ─── */
+.doc{max-width:1080px;margin:0 auto;padding:40px 32px 96px;}
+
+/* ─── HERO ─── */
+.hero{padding:56px 0 48px;display:flex;flex-direction:column;gap:16px;}
+.hero-eyebrow{font-size:11px;color:var(--text3);letter-spacing:.14em;font-weight:500;}
+.hero-title{font-family:var(--display);font-size:46px;font-weight:800;letter-spacing:-.03em;line-height:1.05;color:var(--text1);}
+.hero-title em{font-style:normal;color:var(--indigo);}
+.hero-sub{font-size:15px;color:var(--text2);max-width:560px;line-height:1.7;}
+.hero-badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;}
+.hbadge{font-size:11px;font-weight:500;padding:4px 11px;border-radius:20px;border:1px solid;}
+.hbadge.i{background:var(--indigo-bg);color:var(--indigo-l);border-color:#818cf830;}
+.hbadge.g{background:var(--green-bg);color:var(--green);border-color:#4ade8030;}
+.hbadge.a{background:var(--amber-bg);color:var(--amber);border-color:#fbbf2430;}
+.hbadge.p{background:var(--purple-bg);color:var(--purple);border-color:#c084fc30;}
+.hero-divider{height:1px;background:var(--border);margin-top:8px;}
+
+/* ─── SECTION ─── */
+.sec{margin-top:52px;}
+.sec-header{display:flex;align-items:center;gap:14px;margin-bottom:24px;}
+.sec-index{font-family:var(--mono);font-size:11px;color:var(--text4);min-width:28px;}
+.sec-label{font-family:var(--display);font-size:18px;font-weight:700;color:var(--text1);letter-spacing:-.02em;}
+.sec-accent{display:inline-block;width:4px;height:18px;border-radius:2px;margin-right:2px;}
+.sec-accent.i{background:var(--indigo);}
+.sec-accent.g{background:var(--green);}
+.sec-accent.a{background:var(--amber);}
+.sec-accent.p{background:var(--purple);}
+.sec-line{flex:1;height:1px;background:var(--border);}
+
+/* ─── CARDS ─── */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:20px 24px;}
+.card-label{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.12em;margin-bottom:12px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+
+/* ─── SPEC TABLE ─── */
+.tbl{width:100%;border-collapse:collapse;font-size:13px;}
+.tbl thead tr th{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.1em;text-align:left;padding:8px 14px;border-bottom:1px solid var(--border2);}
+.tbl tbody tr td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text2);}
+.tbl tbody tr:last-child td{border-bottom:none;}
+.tbl tbody tr:hover td{background:var(--bg3);}
+.layer-tag{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;font-family:var(--mono);}
+.layer-tag.rs{background:var(--purple-bg);color:var(--purple);border:1px solid #c084fc28;}
+.layer-tag.ts{background:var(--indigo-bg);color:var(--indigo-l);border:1px solid #818cf828;}
+.mono{font-family:var(--mono);font-size:12px;color:var(--indigo-l);}
+
+/* ─── ARCH DIAGRAM ─── */
+.arch{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:28px 24px;position:relative;}
+.arch-label{position:absolute;top:14px;right:18px;font-size:10px;color:var(--text4);letter-spacing:.12em;font-family:var(--mono);}
+.arch-row{display:flex;align-items:center;justify-content:center;gap:0;}
+.arch-gap{height:20px;display:flex;align-items:center;justify-content:center;}
+.arch-vline{width:1px;height:20px;background:var(--border2);}
+.arch-node{padding:11px 18px;border-radius:var(--r);text-align:center;font-size:12px;font-weight:500;}
+.arch-node small{display:block;font-size:10px;font-weight:400;margin-top:3px;opacity:.65;}
+.arch-node.fe{background:var(--indigo-bg2);border:1px solid #818cf840;color:var(--indigo-l);}
+.arch-node.rs{background:var(--purple-bg);border:1px solid #c084fc30;color:var(--purple);}
+.arch-node.gh{background:var(--green-bg);border:1px solid #4ade8030;color:var(--green);}
+.arch-node.st{background:var(--amber-bg);border:1px solid #fbbf2430;color:var(--amber);}
+.arch-arr{color:var(--text4);font-size:14px;padding:0 10px;flex-shrink:0;}
+.ipc-row{display:flex;align-items:center;justify-content:center;gap:10px;}
+.ipc-line{flex:1;max-width:180px;height:1px;background:var(--border2);}
+.ipc-chip{font-size:10px;font-family:var(--mono);background:var(--bg3);border:1px solid var(--border2);color:var(--text3);padding:3px 12px;border-radius:20px;white-space:nowrap;}
+
+/* ─── MOCKUP ─── */
+.mockup-shell{border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;background:var(--bg1);}
+.mock-tabbar{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);}
+.mock-tab{font-size:11px;font-weight:500;color:var(--text3);padding:0 16px;height:38px;display:flex;align-items:center;border-bottom:2px solid transparent;border-right:1px solid var(--border);cursor:pointer;background:none;font-family:var(--sans);transition:.12s;white-space:nowrap;}
+.mock-tab:hover{color:var(--text2);}
+.mock-tab.a{color:var(--indigo-l);border-bottom-color:var(--indigo);background:var(--bg1);}
+.mock-screen{display:none;}
+.mock-screen.a{display:flex;}
+
+/* app shell inside mockup */
+.app{display:flex;min-height:440px;font-size:12px;}
+.app-sidebar{width:196px;background:#0a0c12;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;}
+.app-sidebar-top{padding:14px 16px 10px;border-bottom:1px solid var(--border);}
+.app-sidebar-logo{font-family:var(--display);font-size:13px;font-weight:700;color:var(--text1);letter-spacing:-.01em;}
+.app-sidebar-sub{font-size:10px;color:var(--text3);margin-top:2px;}
+.app-sidebar-repos{padding:8px 8px;border-bottom:1px solid var(--border);}
+.repo-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--r);cursor:pointer;transition:.1s;}
+.repo-item:hover,.repo-item.a{background:var(--bg3);}
+.repo-item.a .ri-name{color:var(--indigo-l);}
+.ri-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.ri-name{font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ri-badge{font-size:9px;margin-left:auto;padding:1px 5px;border-radius:3px;flex-shrink:0;}
+.app-sidebar-nav{padding:8px 8px;flex:1;}
+.nav-item{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:var(--r);font-size:11px;color:var(--text3);cursor:pointer;transition:.1s;}
+.nav-item:hover,.nav-item.a{color:var(--text1);background:var(--bg3);}
+.nav-item.a{color:var(--indigo-l);}
+.nav-icon{width:14px;text-align:center;font-size:13px;flex-shrink:0;}
+.nav-badge{font-size:9px;margin-left:auto;background:var(--red-bg);color:var(--red);padding:1px 6px;border-radius:10px;}
+.app-main{flex:1;display:flex;flex-direction:column;min-width:0;}
+.app-bar{display:flex;align-items:center;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--bg2);gap:8px;min-height:40px;}
+.app-bar-path{font-size:11px;color:var(--text3);flex:1;font-family:var(--mono);}
+.app-bar-path span{color:var(--indigo-l);}
+.app-btn{font-size:10px;font-weight:500;padding:4px 10px;border:1px solid var(--border2);border-radius:var(--r);background:none;color:var(--text2);cursor:pointer;font-family:var(--sans);transition:.1s;white-space:nowrap;}
+.app-btn:hover{border-color:var(--border3);color:var(--text1);}
+.app-btn.primary{border-color:#818cf850;color:var(--indigo-l);}
+.app-btn.danger{border-color:transparent;color:var(--text3);}
+.app-btn.danger:hover{border-color:#f8717140;color:var(--red);}
+.app-content{flex:1;padding:16px;}
+
+/* stat cards */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;}
+.stat-card{background:var(--bg3);border-radius:var(--r);padding:12px 14px;}
+.stat-val{font-size:24px;font-weight:600;font-family:var(--display);line-height:1;margin-bottom:4px;}
+.stat-lbl{font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.1em;}
+.stat-card.i .stat-val{color:var(--indigo-l);}
+.stat-card.g .stat-val{color:var(--green);}
+.stat-card.a .stat-val{color:var(--amber);}
+.stat-card.r .stat-val{color:var(--red);}
+
+/* repo grid */
+.repo-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+.repo-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px;cursor:pointer;transition:.12s;}
+.repo-card:hover{border-color:var(--border2);}
+.repo-card.sel{border-color:#818cf850;background:var(--indigo-bg);}
+.rc-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;}
+.rc-name{font-size:12px;font-weight:600;color:var(--indigo-l);}
+.rc-desc{font-size:10px;color:var(--text3);margin-top:2px;}
+.rc-stats{display:flex;gap:10px;font-size:10px;margin-top:8px;}
+.rc-stat-g{color:var(--green);}
+.rc-stat-a{color:var(--amber);}
+.rc-stat-r{color:var(--red);}
+.rc-stat-m{color:var(--text3);}
+
+/* status badge */
+.sbadge{font-size:10px;font-weight:500;padding:2px 8px;border-radius:4px;display:inline-block;}
+.sbadge.ahead{background:var(--green-bg);color:var(--green);}
+.sbadge.behind{background:var(--purple-bg);color:var(--purple);}
+.sbadge.clean{background:#1e2336;color:var(--text3);}
+.sbadge.merged{background:var(--green-bg);color:var(--green);}
+.sbadge.stale{background:var(--amber-bg);color:var(--amber);}
+.sbadge.diverged{background:var(--red-bg);color:var(--red);}
+.sbadge.draft{background:#1e2336;color:var(--text3);}
+.sbadge.failing{background:var(--red-bg);color:var(--red);}
+.sbadge.review{background:var(--indigo-bg2);color:var(--indigo-l);}
+
+/* branch table */
+.btbl{width:100%;border-collapse:collapse;}
+.btbl thead th{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-align:left;padding:6px 8px;border-bottom:1px solid var(--border2);}
+.btbl tbody td{padding:8px 8px;border-bottom:1px solid var(--border);font-size:11px;vertical-align:middle;}
+.btbl tbody tr:hover td{background:var(--bg3);}
+.btbl tbody tr:last-child td{border-bottom:none;}
+.br-name{font-family:var(--mono);font-size:11px;color:var(--text1);}
+.br-name.cur{color:var(--green);}
+.br-chk{width:13px;height:13px;accent-color:var(--red);cursor:pointer;}
+.head-chip{font-size:9px;background:var(--bg4);color:var(--text3);padding:1px 6px;border-radius:3px;margin-left:6px;font-family:var(--mono);}
+
+/* commit list */
+.commit-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);}
+.commit-row:last-child{border-bottom:none;}
+.c-hash{font-family:var(--mono);font-size:10px;background:var(--indigo-bg);color:var(--indigo-l);padding:2px 6px;border-radius:4px;flex-shrink:0;width:58px;}
+.c-msg{flex:1;font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.c-msg.mrg{color:var(--text3);font-style:italic;}
+.c-age{font-size:10px;color:var(--text3);flex-shrink:0;}
+
+/* PR list */
+.pr-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+.pr-row:last-child{border-bottom:none;}
+.pr-ic{font-size:14px;flex-shrink:0;margin-top:1px;}
+.pr-body{flex:1;min-width:0;}
+.pr-title{font-size:12px;color:var(--text1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pr-meta{font-size:10px;color:var(--text3);margin-top:3px;display:flex;align-items:center;gap:6px;}
+.pr-num{color:var(--indigo-l);}
+.ci-dot{width:6px;height:6px;border-radius:50%;display:inline-block;}
+.ci-dot.ok{background:var(--green);}
+.ci-dot.fail{background:var(--red);}
+.ci-dot.run{background:var(--amber);}
+
+/* cleanup */
+.cl-section{margin-bottom:20px;}
+.cl-sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.cl-sec-title{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;}
+.cl-sec-count{font-size:10px;padding:2px 8px;border-radius:10px;}
+.cl-sec-count.g{background:var(--green-bg);color:var(--green);}
+.cl-sec-count.a{background:var(--amber-bg);color:var(--amber);}
+.cl-sec-count.i{background:var(--indigo-bg);color:var(--indigo-l);}
+.cl-item{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:4px;}
+.cl-chk{width:13px;height:13px;accent-color:var(--indigo);cursor:pointer;}
+.cl-chk.d{accent-color:var(--red);}
+.cl-name{font-family:var(--mono);font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cl-name.merged{color:var(--green);opacity:.8;}
+.cl-name.stale{color:var(--amber);}
+.cl-name.cmd{color:var(--indigo-l);}
+.cl-info{font-size:10px;color:var(--text3);}
+.cl-warn{padding:9px 12px;background:var(--red-bg);border:1px solid #f8717128;border-radius:var(--r);font-size:11px;color:var(--red);}
+
+/* commit graph */
+.graph-wrap{display:flex;gap:0;}
+.graph-svg{flex-shrink:0;}
+.graph-rows{flex:1;min-width:0;}
+.g-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);height:28px;}
+.g-row:last-child{border-bottom:none;}
+
+/* ─── COMMAND API ─── */
+.cmd-block{background:var(--bg2);border:1px solid var(--border);border-left:2px solid var(--indigo);border-radius:var(--r);padding:14px 18px;margin-bottom:10px;}
+.cmd-name{font-family:var(--mono);font-size:13px;color:var(--indigo-l);margin-bottom:6px;}
+.cmd-sig{font-family:var(--mono);font-size:11px;color:var(--text2);margin-bottom:6px;line-height:1.7;}
+.cmd-sig .ty{color:var(--green);}
+.cmd-sig .kw{color:var(--purple);}
+.cmd-desc{font-size:12px;color:var(--text3);line-height:1.6;}
+
+/* ─── DATA MODELS ─── */
+.model-table{width:100%;border-collapse:collapse;font-size:12px;}
+.model-table td{padding:6px 10px;border-bottom:1px solid var(--border);}
+.model-table tr:last-child td{border-bottom:none;}
+.field-name{font-family:var(--mono);color:var(--purple);}
+.field-type{font-family:var(--mono);color:var(--green);text-align:right;}
+.config-block{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;}
+.config-block pre{font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--text2);}
+.config-block pre .k{color:var(--purple);}
+.config-block pre .v{color:var(--green);}
+.config-block pre .c{color:var(--text4);}
+.config-block pre .s{color:var(--indigo-l);}
+.config-block pre .n{color:var(--amber);}
+
+/* ─── ROADMAP ─── */
+.phase{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:20px 24px;margin-bottom:10px;position:relative;padding-left:28px;}
+.phase::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:3px 0 0 3px;}
+.phase.p1::before{background:var(--green);}
+.phase.p2::before{background:var(--indigo);}
+.phase.p3::before{background:var(--purple);}
+.phase-hdr{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;}
+.phase-tag{font-size:10px;font-weight:700;letter-spacing:.1em;font-family:var(--mono);}
+.phase.p1 .phase-tag{color:var(--green);}
+.phase.p2 .phase-tag{color:var(--indigo-l);}
+.phase.p3 .phase-tag{color:var(--purple);}
+.phase-title{font-size:14px;font-weight:600;color:var(--text1);}
+.phase-dur{margin-left:auto;font-size:11px;color:var(--text3);}
+.phase-items{display:flex;flex-direction:column;gap:5px;}
+.phase-item{font-size:12px;color:var(--text2);display:flex;align-items:flex-start;gap:8px;}
+.phase-item::before{content:'→';color:var(--text4);flex-shrink:0;margin-top:1px;}
+
+/* ─── MISC ─── */
+.note{background:var(--amber-bg);border:1px solid #fbbf2425;border-radius:var(--r);padding:11px 14px;font-size:12px;color:var(--amber);line-height:1.65;}
+.note::before{content:'⚡  ';}
+.tag{display:inline-block;font-size:10px;font-weight:500;padding:2px 7px;border-radius:4px;margin:2px;}
+.tag.i{background:var(--indigo-bg);color:var(--indigo-l);}
+.tag.g{background:var(--green-bg);color:var(--green);}
+.tag.p{background:var(--purple-bg);color:var(--purple);}
+.tag.a{background:var(--amber-bg);color:var(--amber);}
+.tag.r{background:var(--red-bg);color:var(--red);}
+.footer{margin-top:72px;padding-top:20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.footer-l{font-size:11px;color:var(--text4);font-family:var(--mono);}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.mock-screen.a{animation:fadeUp .15s ease;}
+.dsx-node{padding:8px 12px;border-radius:var(--r);font-size:11px;margin-bottom:5px;}
+.dsx-node.gui{background:var(--indigo-bg2);border:1px solid #818cf840;color:var(--indigo-l);}
+.dsx-node.rust{background:var(--purple-bg);border:1px solid #c084fc30;color:var(--purple);}
+.dsx-node.dsx{background:var(--green-bg);border:1px solid #4ade8030;color:var(--green);}
+.dsx-node.ext{background:var(--bg3);border:1px solid var(--border2);color:var(--text2);}
+.dsx-node small{display:block;font-size:10px;opacity:.6;margin-top:2px;}
+.dsx-cmd{display:flex;align-items:baseline;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:var(--r);margin-bottom:4px;}
+.dsx-cmd-name{font-family:var(--mono);font-size:11px;color:var(--green);min-width:210px;flex-shrink:0;}
+.dsx-cmd-desc{font-size:11px;color:var(--text3);flex:1;}
+.dsx-badge{font-size:9px;padding:1px 7px;border-radius:10px;margin-left:auto;flex-shrink:0;white-space:nowrap;}
+.dsx-badge.new{background:var(--green-bg);color:var(--green);}
+.dsx-badge.wrap{background:var(--indigo-bg);color:var(--indigo-l);}
+.dsx-badge.read{background:var(--purple-bg);color:var(--purple);}
+.col-hdr{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.1em;margin-bottom:8px;}
+.ai-flow{display:flex;flex-direction:column;gap:0;align-items:center;}
+.ai-flow-row{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;}
+.ai-flow-node{padding:10px 18px;border-radius:var(--r);text-align:center;font-size:12px;font-weight:500;min-width:120px;}
+.ai-flow-node.src{background:var(--bg3);border:1px solid var(--border2);color:var(--text2);}
+.ai-flow-node.agg{background:var(--indigo-bg2);border:1px solid #818cf840;color:var(--indigo-l);}
+.ai-flow-node.rule{background:var(--green-bg);border:1px solid #4ade8030;color:var(--green);}
+.ai-flow-node.ai-n{background:var(--purple-bg);border:1px solid #c084fc30;color:var(--purple);}
+.ai-flow-node.ui-n{background:var(--amber-bg);border:1px solid #fbbf2430;color:var(--amber);}
+.ai-flow-node small{display:block;font-size:10px;font-weight:400;margin-top:3px;opacity:.65;}
+.ai-flow-arr{color:var(--text4);font-size:18px;line-height:1;}
+.ai-flow-vline{width:1px;height:18px;background:var(--border2);margin:0 auto;}
+.insight-cards{display:flex;gap:10px;}
+.insight-type{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:16px 18px;flex:1;}
+.insight-type-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.insight-type-name{font-size:12px;font-weight:600;}
+.insight-type-name.ex{color:var(--indigo-l);}
+.insight-type-name.pr{color:var(--green);}
+.insight-type-name.ri{color:var(--red);}
+.insight-type-desc{font-size:11px;color:var(--text3);line-height:1.65;margin-bottom:10px;}
+.insight-json{background:var(--bg3);border-radius:var(--r);padding:10px 12px;font-family:var(--mono);font-size:10px;line-height:1.85;color:var(--text2);}
+.insight-json .jk{color:var(--purple);}
+.insight-json .jv{color:var(--green);}
+.insight-json .js{color:var(--indigo-l);}
+.prompt-block{background:var(--bg2);border:1px solid var(--border);border-left:2px solid var(--purple);border-radius:var(--r);padding:14px 18px;margin-bottom:10px;}
+.prompt-block-hdr{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.1em;margin-bottom:10px;}
+.prompt-pre{font-family:var(--mono);font-size:11px;line-height:1.9;color:var(--text2);}
+.prompt-pre .cm{color:var(--text4);}
+.prompt-pre .kw{color:var(--purple);}
+.prompt-pre .str{color:var(--indigo-l);}
+.prompt-pre .hl{color:var(--amber);}
+.cache-flow{display:flex;flex-direction:column;gap:6px;}
+.cache-step{display:flex;align-items:flex-start;gap:10px;padding:9px 12px;background:var(--bg3);border-radius:var(--r);}
+.cache-step-num{font-family:var(--mono);font-size:10px;color:var(--text4);min-width:18px;margin-top:2px;}
+.cache-step-txt{font-size:12px;color:var(--text2);line-height:1.65;}
+.cache-step-txt .hl{color:var(--indigo-l);font-family:var(--mono);font-size:11px;}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<nav class="topbar">
+  <span class="topbar-logo">arbor</span>
+  <div class="topbar-nav">
+    <a class="tnav a" href="#overview">概要</a>
+    <a class="tnav" href="#stack">スタック</a>
+    <a class="tnav" href="#dsx">dsx 統合</a>
+    <a class="tnav" href="#mockup">モックアップ</a>
+    <a class="tnav" href="#api">API仕様</a>
+    <a class="tnav" href="#models">データモデル</a>
+    <a class="tnav" href="#ai">AI Engine</a>
+    <a class="tnav" href="#roadmap">ロードマップ</a>
+  </div>
+  <span class="topbar-meta">spec v0.3.0 · 2026</span>
+</nav>
+
+<div class="doc">
+
+<!-- HERO -->
+<div class="hero" id="overview">
+  <div class="hero-eyebrow">SPECIFICATION & INTERACTIVE MOCKUP</div>
+  <h1 class="hero-title"><em>Arbor</em><br>Git Management Dashboard</h1>
+  <p class="hero-sub">複数のローカルgitリポジトリをネイティブデスクトップから一元管理する Tauri v2 アプリケーション。<strong style="color:var(--green);font-weight:600;">dsx CLI</strong>（Go製・既存ツール）をアクション実行層として内包し、git2 で可視化・GitHub API で PR/Issue 連携・Ollama <strong style="color:var(--indigo-l);font-weight:600;">qwen3.5:latest</strong> で AI Insight を提供する。</p>
+  <div class="hero-badges">
+    <span class="hbadge i">Tauri v2</span>
+    <span class="hbadge i">React 19 + TypeScript</span>
+    <span class="hbadge p">Rust / git2</span>
+    <span class="hbadge g">dsx CLI (Go)</span>
+    <span class="hbadge g">GitHub REST API v3</span>
+    <span class="hbadge p">Ollama / qwen3.5:latest</span>
+    <span class="hbadge a">Windows 11 / macOS 14+</span>
+  </div>
+  <div class="hero-divider"></div>
+</div>
+
+<!-- SEC 1: OVERVIEW -->
+<div class="sec">
+  <div class="sec-header">
+    <span class="sec-index">01</span>
+    <span class="sec-accent i"></span>
+    <span class="sec-label">プロジェクト概要</span>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="grid3" style="margin-bottom:12px;">
+    <div class="card">
+      <div class="card-label">CONCEPT</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.75;">既存CLIツール <span style="font-family:var(--mono);color:var(--green);font-size:12px;">dsx</span>（環境変数注入・システム更新・リポジトリ更新）をアクション実行層として内包し、GUIによる可視化・意思決定・AI Insight を上位レイヤーとして重ねる。git操作の実装ゼロで、受け入れ側はコマンド実行のラッピングだけに集中できる。</p>
+    </div>
+    <div class="card">
+      <div class="card-label">CORE FEATURES</div>
+      <div><span class="tag g">Multi-repo dashboard</span><span class="tag g">Branch cleanup</span><span class="tag i">Commit graph</span><span class="tag i">GitHub PR/Issue</span><span class="tag i">Fetch / Push / Pull</span><span class="tag p">Stash manager</span><span class="tag a">git gc wizard</span><span class="tag p">AI Insight Engine</span><span class="tag g">dsx 統合</span></div>
+    </div>
+    <div class="card">
+      <div class="card-label">NON-GOALS (v0.1)</div>
+      <div style="font-size:12px;color:var(--text3);line-height:2;">
+        <div>— diff ビューアー</div>
+        <div>— マージコンフリクト解消UI</div>
+        <div>— GitLab / Bitbucket 対応</div>
+        <div>— SSH 鍵管理</div>
+        <div>— CI/CD トリガー</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-label">DESIGN PRINCIPLES</div>
+      <div style="font-size:12px;color:var(--text3);line-height:2;">
+        <div>— 破壊的操作は必ず確認ダイアログを挟む</div>
+        <div>— オフライン対応（ローカルgit操作は常に動く）</div>
+        <div>— 設定は <span style="font-family:var(--mono);font-size:11px;color:var(--indigo-l);">~/.config/arbor/config.toml</span> で管理</div>
+        <div>— GitHub PAT は OS キーチェーンに保存（DPAPI / Keychain）</div>
+        <div>— Rust側は <span style="font-family:var(--mono);font-size:11px;color:var(--indigo-l);">Result&lt;T, String&gt;</span> でエラーを返却</div>
+        <div>— AI（Ollama）は補助レイヤー。未起動時はルールベースのみで完全動作</div>
+        <div>— AIにコマンド実行は一切させない（Explain / Prioritize / Risk のみ）</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">TARGET ENVIRONMENT</div>
+      <div style="font-size:12px;color:var(--text3);line-height:2;">
+        <div>Primary &nbsp;— Windows 11 (x64) / macOS 14+ (arm64)</div>
+        <div>Rust &nbsp;&nbsp;&nbsp;&nbsp;— 1.78+ (MSRV)</div>
+        <div>Node &nbsp;&nbsp;&nbsp;&nbsp;— 20 LTS (ビルドのみ)</div>
+        <div>Git &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— 2.39+ (libgit2経由、不要)</div>
+        <div>Screen &nbsp;&nbsp;— 1280px+ を推奨</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SEC 2: TECH STACK -->
+<div class="sec" id="stack">
+  <div class="sec-header">
+    <span class="sec-index">02</span>
+    <span class="sec-accent i"></span>
+    <span class="sec-label">テックスタック & アーキテクチャ</span>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="arch" style="margin-bottom:16px;">
+    <div class="arch-label">ARCHITECTURE</div>
+    <div class="arch-row" style="gap:8px;">
+      <div class="arch-node fe">React 19 + Vite 6<small>TypeScript / CSS Modules</small></div>
+      <div class="arch-arr">→</div>
+      <div class="arch-node fe">Zustand 5<small>global state</small></div>
+      <div class="arch-arr">→</div>
+      <div class="arch-node fe">TanStack Query v5<small>GitHub API cache</small></div>
+      <div class="arch-arr">→</div>
+      <div class="arch-node fe">@tauri-apps/api<small>invoke / events</small></div>
+    </div>
+    <div class="arch-gap">
+      <div class="arch-vline"></div>
+    </div>
+    <div class="ipc-row">
+      <div class="ipc-line"></div>
+      <div class="ipc-chip">IPC bridge — Tauri Commands</div>
+      <div class="ipc-line"></div>
+    </div>
+    <div class="arch-gap">
+      <div class="arch-vline"></div>
+    </div>
+    <div class="arch-row" style="gap:8px;">
+      <div class="arch-node rs">git2 crate<small>libgit2 Rust bindings</small></div>
+      <div class="arch-arr">→</div>
+      <div class="arch-node rs">reqwest + serde<small>GitHub REST API</small></div>
+      <div class="arch-arr">→</div>
+      <div class="arch-node rs">keyring crate<small>PAT secure storage</small></div>
+      <div class="arch-arr">→</div>
+      <div class="arch-node st">serde / toml<small>config file R/W</small></div>
+    </div>
+    <div class="arch-gap" style="height:14px;">
+      <div style="display:flex;gap:80px;">
+        <div class="arch-vline"></div>
+        <div class="arch-vline"></div>
+      </div>
+    </div>
+    <div class="arch-row" style="gap:20px;">
+      <div class="arch-node gh" style="min-width:180px;">GitHub REST API v3<small>PR · Issue · Check runs</small></div>
+      <div class="arch-node st" style="min-width:180px;">OS Keychain<small>Win: DPAPI &nbsp;·&nbsp; mac: Keychain</small></div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table class="tbl">
+      <colgroup><col style="width:80px"><col style="width:190px"><col></colgroup>
+      <thead><tr>
+        <th>LAYER</th><th>CRATE / PACKAGE</th><th>用途・備考</th>
+      </tr></thead>
+      <tbody>
+        <tr><td><span class="layer-tag rs">Rust</span></td><td class="mono">git2 ^0.19</td><td>ローカルgit操作全般（ブランチ / コミット / stash / fetch / remote）</td></tr>
+        <tr><td><span class="layer-tag rs">Rust</span></td><td class="mono">reqwest ^0.12</td><td>GitHub REST API 非同期 HTTP クライアント。tokio ランタイムで async/await</td></tr>
+        <tr><td><span class="layer-tag rs">Rust</span></td><td class="mono">keyring ^2</td><td>GitHub PAT を OS キーチェーンに安全保存。Win: DPAPI / mac: Security.framework</td></tr>
+        <tr><td><span class="layer-tag rs">Rust</span></td><td class="mono">serde / toml ^0.8</td><td>設定ファイル読み書き。Serialize / Deserialize 自動実装</td></tr>
+        <tr><td><span class="layer-tag rs">Rust</span></td><td class="mono">tauri ^2</td><td>ウィンドウ管理・IPC コマンド定義・ファイルダイアログプラグイン</td></tr>
+        <tr><td><span class="layer-tag ts">TS</span></td><td class="mono">react ^19</td><td>UI フレームワーク。Concurrent Features / Server Actions は使用しない</td></tr>
+        <tr><td><span class="layer-tag ts">TS</span></td><td class="mono">zustand ^5</td><td>クライアントグローバルステート管理。Redux 不要の軽量設計</td></tr>
+        <tr><td><span class="layer-tag ts">TS</span></td><td class="mono">@tanstack/query v5</td><td>GitHub API レスポンスのキャッシュ / stale-while-revalidate</td></tr>
+        <tr><td><span class="layer-tag ts">TS</span></td><td class="mono">d3 ^7</td><td>コミットグラフ SVG 描画。lane 計算のみ使用し描画は素の SVG</td></tr>
+        <tr><td><span class="layer-tag ts">TS</span></td><td class="mono">@tauri-apps/plugin-dialog</td><td>フォルダ選択ダイアログ（リポジトリ追加時）</td></tr>
+        <tr><td><span class="layer-tag rs">Rust</span></td><td class="mono">reqwest (Ollama)</td><td>ローカル Ollama API 呼び出し（<span class="mono" style="font-size:11px;">POST http://localhost:11434/api/generate</span>）。タイムアウト 30s、未起動時はフォールバック</td></tr>
+        <tr><td><span class="layer-tag" style="background:#4ade8018;color:#4ade80;border:1px solid #4ade8030;">Go</span></td><td class="mono">dsx CLI ^0.2.2</td><td>アクション実行層として内包。fetch / pull / cleanup / env injection / sys update をラップ。Tauri側は <span class="mono" style="font-size:11px;">std::process::Command</span> で呼び出し</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- SEC 03: DSX INTEGRATION -->
+<div class="sec" id="dsx">
+  <div class="sec-header">
+    <span class="sec-index">03</span>
+    <span class="sec-accent g"></span>
+    <span class="sec-label">dsx 統合設計</span>
+    <div class="sec-line"></div>
+  </div>
+
+  <!-- Architecture -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-label">LAYERED ARCHITECTURE</div>
+    <div style="display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr;gap:0;margin-top:8px;">
+      <div>
+        <div class="col-hdr" style="color:var(--indigo-l);">FRONTEND</div>
+        <div class="dsx-node gui">React 19 + Zustand<small>可視化・操作UI</small></div>
+        <div class="dsx-node gui">Commit graph (d3)<small>読み取り表示</small></div>
+        <div class="dsx-node gui">AI Insight panel<small>Recommended Actions</small></div>
+        <div class="dsx-node gui">PR / Issue 一覧<small>GitHub API表示</small></div>
+      </div>
+      <div style="background:var(--border);margin:0 16px;"></div>
+      <div>
+        <div class="col-hdr" style="color:var(--purple);">RUST / TAURI</div>
+        <div class="dsx-node rust">git2<small>ステータス・グラフ取得（読取専用）</small></div>
+        <div class="dsx-node rust">reqwest → GitHub API<small>PR / Issue / CI status</small></div>
+        <div class="dsx-node rust">reqwest → Ollama<small>qwen3.5 Insight生成</small></div>
+        <div class="dsx-node rust" style="border-color:#4ade8040;color:var(--green);">std::process::Command → dsx<small>アクション実行はdsx委譲</small></div>
+      </div>
+      <div style="background:var(--border);margin:0 16px;"></div>
+      <div>
+        <div class="col-hdr" style="color:var(--green);">DSX CLI (Go)</div>
+        <div class="dsx-node dsx">dsx repo update<small>fetch + pull --rebase、並列対応</small></div>
+        <div class="dsx-node dsx">dsx repo cleanup<small>merged / squashed 両対応</small></div>
+        <div class="dsx-node dsx">dsx repo list<small>状態スキャン（JSON出力）</small></div>
+        <div class="dsx-node dsx">dsx env run<small>GPAT等Bitwarden注入</small></div>
+        <div class="dsx-node dsx">dsx sys update<small>winget / scoop / pipx 等</small></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Role split -->
+  <div class="grid2" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="card-label">ARBOR が実装するもの</div>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-top:4px;">
+        <div class="cache-step"><span class="cache-step-num">▸</span><span class="cache-step-txt"><span class="hl">std::process::Command</span> でdsx呼び出し + stdout/stderr パース</span></div>
+        <div class="cache-step"><span class="cache-step-num">▸</span><span class="cache-step-txt">git2 によるステータス・コミットグラフの <span class="hl">読み取り専用クエリ</span></span></div>
+        <div class="cache-step"><span class="cache-step-num">▸</span><span class="cache-step-txt">GitHub REST API 呼び出し（PR / Issue / CI status）</span></div>
+        <div class="cache-step"><span class="cache-step-num">▸</span><span class="cache-step-txt">Ollama Insight Engine + キャッシュ管理</span></div>
+        <div class="cache-step"><span class="cache-step-num">▸</span><span class="cache-step-txt">GUI 全体（可視化・確認ダイアログ・進捗表示）</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">dsx に委譲するもの（実装不要）</div>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-top:4px;">
+        <div class="cache-step"><span class="cache-step-num">✓</span><span class="cache-step-txt">fetch / pull / rebase のエッジケース処理（detached HEAD・dirty・upstream未設定）</span></div>
+        <div class="cache-step"><span class="cache-step-num">✓</span><span class="cache-step-txt">ブランチ削除（merged / squashed の判定ロジック）</span></div>
+        <div class="cache-step"><span class="cache-step-num">✓</span><span class="cache-step-txt">GPAT等の環境変数注入（Bitwarden連携）</span></div>
+        <div class="cache-step"><span class="cache-step-num">✓</span><span class="cache-step-txt">システム更新（winget / scoop / pipx / cargo / uv …）</span></div>
+        <div class="cache-step"><span class="cache-step-num">✓</span><span class="cache-step-txt">並列実行制御 + TUI 進捗表示（Bubble Tea）</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tauri command mapping -->
+  <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px;">
+    <div class="card-label" style="padding:14px 18px 10px;">Tauri コマンド → dsx コマンド マッピング</div>
+    <div style="padding:0 14px 14px;">
+      <div class="dsx-cmd"><span class="dsx-cmd-name">invoke('repo_update', {path})</span><span class="dsx-cmd-desc">→ <code style="font-family:var(--mono);font-size:10px;">dsx repo update --tui -j 4</code></span><span class="dsx-badge wrap">dsx委譲</span></div>
+      <div class="dsx-cmd"><span class="dsx-cmd-name">invoke('repo_cleanup', {path})</span><span class="dsx-cmd-desc">→ <code style="font-family:var(--mono);font-size:10px;">dsx repo cleanup -n</code> → 確認 → <code style="font-family:var(--mono);font-size:10px;">dsx repo cleanup</code></span><span class="dsx-badge wrap">dsx委譲</span></div>
+      <div class="dsx-cmd"><span class="dsx-cmd-name">invoke('repo_list', {})</span><span class="dsx-cmd-desc">→ <code style="font-family:var(--mono);font-size:10px;">dsx repo list</code>（stdout JSON パース）</span><span class="dsx-badge wrap">dsx委譲</span></div>
+      <div class="dsx-cmd"><span class="dsx-cmd-name">invoke('env_inject', {cmd})</span><span class="dsx-cmd-desc">→ <code style="font-family:var(--mono);font-size:10px;">dsx env run -- {cmd}</code>（GPAT注入後実行）</span><span class="dsx-badge wrap">dsx委譲</span></div>
+      <div class="dsx-cmd"><span class="dsx-cmd-name">invoke('sys_update', {})</span><span class="dsx-cmd-desc">→ <code style="font-family:var(--mono);font-size:10px;">dsx sys update --tui</code></span><span class="dsx-badge wrap">dsx委譲</span></div>
+      <div class="dsx-cmd"><span class="dsx-cmd-name">invoke('get_commit_graph', {path})</span><span class="dsx-cmd-desc">→ git2 クレートで直接取得（読み取り専用）</span><span class="dsx-badge read">git2</span></div>
+      <div class="dsx-cmd"><span class="dsx-cmd-name">invoke('get_repo_status', {path})</span><span class="dsx-cmd-desc">→ git2 クレートで ahead/behind/modified を取得</span><span class="dsx-badge read">git2</span></div>
+      <div class="dsx-cmd"><span class="dsx-cmd-name">invoke('get_pull_requests', {o,r})</span><span class="dsx-cmd-desc">→ reqwest で GitHub REST API 呼び出し</span><span class="dsx-badge new">Arbor実装</span></div>
+      <div class="dsx-cmd"><span class="dsx-cmd-name">invoke('get_ai_insights', {state})</span><span class="dsx-cmd-desc">→ reqwest で Ollama qwen3.5:latest 呼び出し</span><span class="dsx-badge new">Arbor実装</span></div>
+    </div>
+  </div>
+
+  <!-- Rust call example -->
+  <div class="card">
+    <div class="card-label">RUST — dsx 呼び出しパターン</div>
+    <div style="background:var(--bg3);border-radius:var(--r);padding:14px 16px;font-family:var(--mono);font-size:11px;line-height:1.9;color:var(--text2);">
+      <span style="color:var(--purple);">#[tauri::command]</span><br>
+      <span style="color:var(--purple);">async fn</span> <span style="color:var(--amber);">repo_update</span>() -> <span style="color:var(--green);">Result</span>&lt;DsxOutput, <span style="color:var(--green);">String</span>&gt; {<br>
+      &nbsp;&nbsp;<span style="color:var(--purple);">let</span> out = Command::new(<span style="color:var(--indigo-l);">"dsx"</span>)<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;.args([<span style="color:var(--indigo-l);">"repo"</span>, <span style="color:var(--indigo-l);">"update"</span>, <span style="color:var(--indigo-l);">"--no-tui"</span>, <span style="color:var(--indigo-l);">"--jobs"</span>, <span style="color:var(--indigo-l);">"4"</span>])<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;.output().<span style="color:var(--purple);">await</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;.map_err(|e| e.to_string())?;<br>
+      &nbsp;&nbsp;<span style="color:var(--purple);">if</span> out.status.success() {<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;Ok(<span style="color:var(--amber);">parse_dsx_output</span>(&amp;out.stdout))<br>
+      &nbsp;&nbsp;} <span style="color:var(--purple);">else</span> {<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;Err(String::from_utf8_lossy(&amp;out.stderr).to_string())<br>
+      &nbsp;&nbsp;}<br>
+      }
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--text3);line-height:1.7;">
+      TUI出力は Arbor 側でハンドリングするため <span style="font-family:var(--mono);font-size:11px;color:var(--indigo-l);">--no-tui</span> を付与する。進捗はArbor独自のUIで表示する。<br>
+      dsx が PATH 上に存在するかを起動時に <span style="font-family:var(--mono);font-size:11px;color:var(--indigo-l);">which dsx</span> / <span style="font-family:var(--mono);font-size:11px;color:var(--indigo-l);">dsx --version</span> で確認し、未インストール時は設定画面にインストール手順を表示する。
+    </div>
+  </div>
+</div>
+
+<!-- SEC 04: MOCKUP (renumbered) -->
+<div class="sec" id="mockup">
+  <div class="sec-header">
+    <span class="sec-index">04</span>
+    <span class="sec-accent p"></span>
+    <span class="sec-label">インタラクティブ モックアップ</span>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="mockup-shell">
+    <div class="mock-tabbar">
+      <button class="mock-tab a" onclick="switchTab('overview',this)">◈ Overview</button>
+      <button class="mock-tab" onclick="switchTab('branches',this)">⌥ Branches</button>
+      <button class="mock-tab" onclick="switchTab('graph',this)">⧖ Graph</button>
+      <button class="mock-tab" onclick="switchTab('prs',this)">⇄ PR / Issues</button>
+      <button class="mock-tab" onclick="switchTab('cleanup',this)">✦ Cleanup</button>
+    </div>
+
+    <!-- SCREEN: OVERVIEW -->
+    <div class="mock-screen a" id="ms-overview">
+      <div class="app">
+        <div class="app-sidebar">
+          <div class="app-sidebar-top">
+            <div class="app-sidebar-logo">arbor</div>
+            <div class="app-sidebar-sub">5 repositories</div>
+          </div>
+          <div class="app-sidebar-repos">
+            <div class="repo-item a"><span class="ri-dot" style="background:var(--green)"></span><span class="ri-name">NeuralVenture</span><span class="ri-badge" style="background:var(--green-bg);color:var(--green);">↑3</span></div>
+            <div class="repo-item"><span class="ri-dot" style="background:var(--green)"></span><span class="ri-name">act-lens</span></div>
+            <div class="repo-item"><span class="ri-dot" style="background:var(--green)"></span><span class="ri-name">qt-theme-manager</span><span class="ri-badge" style="background:var(--purple-bg);color:var(--purple);">↓2</span></div>
+            <div class="repo-item"><span class="ri-dot" style="background:var(--amber)"></span><span class="ri-name">BulkMigrator</span><span class="ri-badge" style="background:var(--red-bg);color:var(--red);">~4</span></div>
+            <div class="repo-item"><span class="ri-dot" style="background:var(--red)"></span><span class="ri-name">Spotify-AdTrap</span></div>
+          </div>
+          <div class="app-sidebar-nav">
+            <div class="nav-item a"><span class="nav-icon">◈</span>Overview</div>
+            <div class="nav-item"><span class="nav-icon">⌥</span>Branches</div>
+            <div class="nav-item"><span class="nav-icon">⧖</span>Graph</div>
+            <div class="nav-item"><span class="nav-icon">⇄</span>PR / Issues</div>
+            <div class="nav-item"><span class="nav-icon">✦</span>Cleanup<span class="nav-badge">5</span></div>
+          </div>
+        </div>
+        <div class="app-main">
+          <div class="app-bar">
+            <span class="app-bar-path">scottlz0310 / <span>NeuralVenture</span> · main</span>
+            <button class="app-btn">↓ Fetch</button>
+            <button class="app-btn">↓ Pull</button>
+            <button class="app-btn primary">↑ Push</button>
+          </div>
+          <div class="app-content">
+            <div class="stat-grid">
+              <div class="stat-card g"><div class="stat-val">3</div><div class="stat-lbl">AHEAD</div></div>
+              <div class="stat-card"><div class="stat-val" style="color:var(--text3);">0</div><div class="stat-lbl">BEHIND</div></div>
+              <div class="stat-card a"><div class="stat-val">7</div><div class="stat-lbl">MODIFIED</div></div>
+              <div class="stat-card r"><div class="stat-val">4</div><div class="stat-lbl">MERGED BR.</div></div>
+            </div>
+            <div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.1em;margin-bottom:8px;">ALL REPOSITORIES</div>
+            <div class="repo-grid">
+              <div class="repo-card sel">
+                <div class="rc-top"><div><div class="rc-name">NeuralVenture</div><div class="rc-desc">HTML game · PromptPlay</div></div><span class="sbadge ahead">↑ ahead</span></div>
+                <div class="rc-stats"><span class="rc-stat-g">↑ 3</span><span class="rc-stat-m">↓ 0</span><span class="rc-stat-r">~ 7</span></div>
+              </div>
+              <div class="repo-card">
+                <div class="rc-top"><div><div class="rc-name" style="color:var(--text1);">act-lens</div><div class="rc-desc">CI log formatter</div></div><span class="sbadge clean">✓ clean</span></div>
+                <div class="rc-stats"><span class="rc-stat-g">↑ 0</span><span class="rc-stat-m">↓ 0</span></div>
+              </div>
+              <div class="repo-card">
+                <div class="rc-top"><div><div class="rc-name" style="color:var(--text1);">qt-theme-manager</div><div class="rc-desc">PyPI · 3.2K downloads</div></div><span class="sbadge behind">↓ behind</span></div>
+                <div class="rc-stats"><span class="rc-stat-m">↑ 0</span><span class="rc-stat-a">↓ 2</span></div>
+              </div>
+              <div class="repo-card">
+                <div class="rc-top"><div><div class="rc-name" style="color:var(--text1);">BulkMigrator</div><div class="rc-desc">OneDrive ↔ SharePoint</div></div><span class="sbadge diverged">⇕ diverged</span></div>
+                <div class="rc-stats"><span class="rc-stat-g">↑ 1</span><span class="rc-stat-a">↓ 1</span><span class="rc-stat-r">~ 4</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCREEN: BRANCHES -->
+    <div class="mock-screen" id="ms-branches">
+      <div class="app">
+        <div class="app-sidebar">
+          <div class="app-sidebar-top"><div class="app-sidebar-logo">arbor</div></div>
+          <div class="app-sidebar-repos">
+            <div class="repo-item a"><span class="ri-dot" style="background:var(--green)"></span><span class="ri-name">NeuralVenture</span></div>
+          </div>
+          <div class="app-sidebar-nav">
+            <div class="nav-item"><span class="nav-icon">◈</span>Overview</div>
+            <div class="nav-item a"><span class="nav-icon">⌥</span>Branches</div>
+            <div class="nav-item"><span class="nav-icon">⧖</span>Graph</div>
+            <div class="nav-item"><span class="nav-icon">⇄</span>PR / Issues</div>
+            <div class="nav-item"><span class="nav-icon">✦</span>Cleanup</div>
+          </div>
+        </div>
+        <div class="app-main">
+          <div class="app-bar">
+            <span class="app-bar-path">NeuralVenture · <span>6 branches</span></span>
+            <button class="app-btn">All</button>
+            <button class="app-btn">Merged</button>
+            <button class="app-btn">Stale</button>
+            <button class="app-btn danger">Delete selected (3)</button>
+          </div>
+          <div class="app-content">
+            <table class="btbl" style="width:100%;">
+              <thead><tr><th style="width:20px;"></th><th>BRANCH</th><th>STATUS</th><th style="width:60px;">↑↓</th><th>LAST COMMIT</th><th style="width:60px;">AGE</th></tr></thead>
+              <tbody>
+                <tr><td></td><td><span class="br-name cur">main</span><span class="head-chip">HEAD</span></td><td><span class="sbadge ahead">↑ ahead 3</span></td><td style="color:var(--green);font-size:11px;font-family:var(--mono);">+3</td><td style="font-size:11px;color:var(--text2);">feat: narrator personality profiles</td><td style="font-size:10px;color:var(--text3);">2h</td></tr>
+                <tr><td><input type="checkbox" class="br-chk" checked></td><td><span class="br-name" style="opacity:.55;">feature/narrator-system</span></td><td><span class="sbadge merged">✓ merged</span></td><td style="color:var(--text3);font-size:11px;">—</td><td style="font-size:11px;color:var(--text3);">Merge: add narrator</td><td style="font-size:10px;color:var(--text3);">1d</td></tr>
+                <tr><td><input type="checkbox" class="br-chk"></td><td><span class="br-name">feature/valuation-engine</span></td><td><span class="sbadge ahead">↑ ahead 2</span></td><td style="color:var(--green);font-size:11px;font-family:var(--mono);">+2</td><td style="font-size:11px;color:var(--text2);">refactor: scoring logic</td><td style="font-size:10px;color:var(--text3);">3d</td></tr>
+                <tr><td><input type="checkbox" class="br-chk" checked></td><td><span class="br-name" style="opacity:.55;">fix/ui-scaling</span></td><td><span class="sbadge merged">✓ merged</span></td><td style="color:var(--text3);font-size:11px;">—</td><td style="font-size:11px;color:var(--text3);">fix: canvas scale ratio</td><td style="font-size:10px;color:var(--text3);">4d</td></tr>
+                <tr><td><input type="checkbox" class="br-chk"></td><td><span class="br-name" style="opacity:.5;">experiment/multi-ai</span></td><td><span class="sbadge stale">stale</span></td><td style="color:var(--amber);font-size:11px;font-family:var(--mono);">-8</td><td style="font-size:11px;color:var(--text3);">wip: multi provider</td><td style="font-size:10px;color:var(--text3);">2w</td></tr>
+                <tr><td><input type="checkbox" class="br-chk" checked></td><td><span class="br-name" style="opacity:.55;">hotfix/score-reset</span></td><td><span class="sbadge merged">✓ merged</span></td><td style="color:var(--text3);font-size:11px;">—</td><td style="font-size:11px;color:var(--text3);">hotfix: score init bug</td><td style="font-size:10px;color:var(--text3);">3w</td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:10px;font-size:10px;color:var(--text3);">3 selected &nbsp;·&nbsp; <span style="color:var(--red);">削除前に確認ダイアログが表示されます</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCREEN: GRAPH -->
+    <div class="mock-screen" id="ms-graph">
+      <div class="app">
+        <div class="app-sidebar">
+          <div class="app-sidebar-top"><div class="app-sidebar-logo">arbor</div></div>
+          <div class="app-sidebar-nav" style="padding-top:12px;">
+            <div class="nav-item"><span class="nav-icon">◈</span>Overview</div>
+            <div class="nav-item"><span class="nav-icon">⌥</span>Branches</div>
+            <div class="nav-item a"><span class="nav-icon">⧖</span>Graph</div>
+            <div class="nav-item"><span class="nav-icon">⇄</span>PR / Issues</div>
+            <div class="nav-item"><span class="nav-icon">✦</span>Cleanup</div>
+          </div>
+        </div>
+        <div class="app-main">
+          <div class="app-bar">
+            <span class="app-bar-path">NeuralVenture · <span>commit graph</span></span>
+            <span style="font-size:10px;color:var(--green);">● main</span>&nbsp;&nbsp;
+            <span style="font-size:10px;color:var(--indigo-l);">● feature</span>&nbsp;&nbsp;
+            <span style="font-size:10px;color:var(--purple);">◆ merge</span>
+          </div>
+          <div class="app-content">
+            <div class="graph-wrap">
+              <svg class="graph-svg" width="56" height="252">
+                <line x1="14" y1="0" x2="14" y2="252" stroke="#4ade80" stroke-width="1.5" opacity=".35"/>
+                <line x1="34" y1="70" x2="34" y2="154" stroke="#818cf8" stroke-width="1.5" opacity=".35"/>
+                <line x1="14" y1="70" x2="34" y2="84" stroke="#818cf8" stroke-width="1.5" opacity=".35" stroke-dasharray="3,2"/>
+                <line x1="34" y1="154" x2="14" y2="168" stroke="#818cf8" stroke-width="1.5" opacity=".35" stroke-dasharray="3,2"/>
+                <circle cx="14" cy="14" r="4" fill="#4ade80"/>
+                <circle cx="14" cy="42" r="4" fill="#4ade80"/>
+                <polygon points="14,63 19,70 14,77 9,70" fill="#c084fc"/>
+                <circle cx="34" cy="84" r="4" fill="#818cf8"/>
+                <circle cx="34" cy="112" r="4" fill="#818cf8"/>
+                <circle cx="14" cy="126" r="4" fill="#4ade80"/>
+                <polygon points="14,147 19,154 14,161 9,154" fill="#c084fc"/>
+                <circle cx="14" cy="168" r="4" fill="#4ade80"/>
+                <circle cx="14" cy="196" r="4" fill="#4ade80"/>
+                <circle cx="14" cy="224" r="4" fill="#4ade80"/>
+              </svg>
+              <div class="graph-rows">
+                <div class="g-row"><span class="c-hash">a3f2c1d</span><span class="c-msg">feat: add narrator personality profiles</span><span class="c-age">2h</span></div>
+                <div class="g-row"><span class="c-hash">b7e9f4a</span><span class="c-msg">feat: valuation-based win condition impl</span><span class="c-age">5h</span></div>
+                <div class="g-row"><span class="c-hash">c1d8b2e</span><span class="c-msg mrg">Merge branch 'feature/narrator-system'</span><span class="c-age">1d</span></div>
+                <div class="g-row"><span class="c-hash">d4a7c3b</span><span class="c-msg">fix: AI provider fallback on rate limit</span><span class="c-age">1d</span></div>
+                <div class="g-row"><span class="c-hash">e2f5a8c</span><span class="c-msg">feat: multi-provider narrator system</span><span class="c-age">2d</span></div>
+                <div class="g-row"><span class="c-hash">f9b1d4e</span><span class="c-msg">chore: bump @anthropic-ai/sdk 0.39.0</span><span class="c-age">3d</span></div>
+                <div class="g-row"><span class="c-hash">g3c6f7a</span><span class="c-msg mrg">Merge branch 'fix/ui-scaling'</span><span class="c-age">4d</span></div>
+                <div class="g-row"><span class="c-hash">h8e2b9d</span><span class="c-msg">feat: resource management system overhaul</span><span class="c-age">5d</span></div>
+                <div class="g-row"><span class="c-hash">i1c4d7f</span><span class="c-msg">refactor: extract game-state module</span><span class="c-age">6d</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCREEN: PR / ISSUES -->
+    <div class="mock-screen" id="ms-prs">
+      <div class="app">
+        <div class="app-sidebar">
+          <div class="app-sidebar-top"><div class="app-sidebar-logo">arbor</div></div>
+          <div class="app-sidebar-nav" style="padding-top:12px;">
+            <div class="nav-item"><span class="nav-icon">◈</span>Overview</div>
+            <div class="nav-item"><span class="nav-icon">⌥</span>Branches</div>
+            <div class="nav-item"><span class="nav-icon">⧖</span>Graph</div>
+            <div class="nav-item a"><span class="nav-icon">⇄</span>PR / Issues</div>
+            <div class="nav-item"><span class="nav-icon">✦</span>Cleanup</div>
+          </div>
+        </div>
+        <div class="app-main">
+          <div class="app-bar">
+            <span class="app-bar-path"><span>Pull Requests</span> — NeuralVenture</span>
+            <button class="app-btn primary">⟳ Sync</button>
+            <button class="app-btn">Issues</button>
+          </div>
+          <div class="app-content">
+            <div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.1em;margin-bottom:8px;">OPEN — 3</div>
+            <div class="pr-row">
+              <div class="pr-ic" style="color:var(--green);">⊕</div>
+              <div class="pr-body">
+                <div class="pr-title">feat: multi-provider narrator system with fallback</div>
+                <div class="pr-meta"><span class="pr-num">#12</span><span>scottlz0310</span><span>2h ago</span><span class="ci-dot ok"></span><span style="color:var(--green);">checks passed</span><span>2 comments</span></div>
+              </div>
+              <span class="sbadge review">review</span>
+            </div>
+            <div class="pr-row">
+              <div class="pr-ic" style="color:var(--green);">⊕</div>
+              <div class="pr-body">
+                <div class="pr-title">feat: valuation-based win condition</div>
+                <div class="pr-meta"><span class="pr-num">#11</span><span>scottlz0310</span><span>1d ago</span><span class="ci-dot run"></span><span style="color:var(--amber);">checks running</span></div>
+              </div>
+              <span class="sbadge draft">draft</span>
+            </div>
+            <div class="pr-row">
+              <div class="pr-ic" style="color:var(--amber);">⊕</div>
+              <div class="pr-body">
+                <div class="pr-title">refactor: extract game-state to separate module</div>
+                <div class="pr-meta"><span class="pr-num">#10</span><span>scottlz0310</span><span>5d ago</span><span class="ci-dot fail"></span><span style="color:var(--red);">1 check failed</span></div>
+              </div>
+              <span class="sbadge failing">failing</span>
+            </div>
+            <div style="height:1px;background:var(--border);margin:12px 0;"></div>
+            <div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.1em;margin-bottom:8px;">OPEN ISSUES — 2</div>
+            <div class="pr-row">
+              <div class="pr-ic" style="color:var(--indigo-l);">◉</div>
+              <div class="pr-body">
+                <div class="pr-title">Narrator fallback should respect per-provider rate limits</div>
+                <div class="pr-meta"><span class="pr-num">#9</span><span>bug</span><span>scottlz0310</span><span>3d ago</span></div>
+              </div>
+              <span class="sbadge failing">bug</span>
+            </div>
+            <div class="pr-row">
+              <div class="pr-ic" style="color:var(--indigo-l);">◉</div>
+              <div class="pr-body">
+                <div class="pr-title">Add keyboard shortcuts for narrator toggle</div>
+                <div class="pr-meta"><span class="pr-num">#8</span><span>enhancement</span><span>1w ago</span></div>
+              </div>
+              <span class="sbadge review">enhance</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCREEN: CLEANUP -->
+    <div class="mock-screen" id="ms-cleanup">
+      <div class="app">
+        <div class="app-sidebar">
+          <div class="app-sidebar-top"><div class="app-sidebar-logo">arbor</div></div>
+          <div class="app-sidebar-nav" style="padding-top:12px;">
+            <div class="nav-item"><span class="nav-icon">◈</span>Overview</div>
+            <div class="nav-item"><span class="nav-icon">⌥</span>Branches</div>
+            <div class="nav-item"><span class="nav-icon">⧖</span>Graph</div>
+            <div class="nav-item"><span class="nav-icon">⇄</span>PR / Issues</div>
+            <div class="nav-item a"><span class="nav-icon">✦</span>Cleanup<span class="nav-badge">5</span></div>
+          </div>
+        </div>
+        <div class="app-main">
+          <div class="app-bar">
+            <span class="app-bar-path"><span>Cleanup Wizard</span> — all repositories</span>
+            <button class="app-btn danger">Execute selected (7)</button>
+          </div>
+          <div class="app-content">
+            <div class="cl-section">
+              <div class="cl-sec-hdr"><span class="cl-sec-title">MERGED BRANCHES</span><span class="cl-sec-count g">5 branches</span></div>
+              <div class="cl-item"><input type="checkbox" class="cl-chk d" checked><span class="cl-name merged">feature/narrator-system</span><span class="cl-info">NeuralVenture · merged 1d ago</span></div>
+              <div class="cl-item"><input type="checkbox" class="cl-chk d" checked><span class="cl-name merged">fix/ui-scaling</span><span class="cl-info">NeuralVenture · merged 4d ago</span></div>
+              <div class="cl-item"><input type="checkbox" class="cl-chk d" checked><span class="cl-name merged">feat/dark-mode</span><span class="cl-info">qt-theme-manager · merged 3d ago</span></div>
+              <div class="cl-item"><input type="checkbox" class="cl-chk d" checked><span class="cl-name merged">fix/graph-api-auth</span><span class="cl-info">BulkMigrator · merged 5d ago</span></div>
+              <div class="cl-item"><input type="checkbox" class="cl-chk d" checked><span class="cl-name merged">hotfix/score-reset</span><span class="cl-info">NeuralVenture · merged 3w ago</span></div>
+            </div>
+            <div class="cl-section">
+              <div class="cl-sec-hdr"><span class="cl-sec-title">STALE BRANCHES ( &gt;14 days )</span><span class="cl-sec-count a">2 branches</span></div>
+              <div class="cl-item"><input type="checkbox" class="cl-chk"><span class="cl-name stale">experiment/multi-ai</span><span class="cl-info">NeuralVenture · 2w stale · -8 behind main</span></div>
+              <div class="cl-item"><input type="checkbox" class="cl-chk"><span class="cl-name stale">feat/new-themes</span><span class="cl-info">qt-theme-manager · 1w stale</span></div>
+            </div>
+            <div class="cl-section">
+              <div class="cl-sec-hdr"><span class="cl-sec-title">GIT MAINTENANCE</span><span class="cl-sec-count i">suggested</span></div>
+              <div class="cl-item"><input type="checkbox" class="cl-chk" checked><span class="cl-name cmd">git gc --auto</span><span class="cl-info">all repos · pack objects &amp; prune loose refs</span></div>
+              <div class="cl-item"><input type="checkbox" class="cl-chk" checked><span class="cl-name cmd">git remote prune origin</span><span class="cl-info">all repos · remove stale remote-tracking refs</span></div>
+            </div>
+            <div class="cl-warn">⚠  削除操作は確認ダイアログ後に実行。マージ済みブランチは reflog 経由で 30 日間復元可能。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /mockup-shell -->
+</div>
+
+<!-- SEC 4: API -->
+<div class="sec" id="api">
+  <div class="sec-header">
+    <span class="sec-index">05</span>
+    <span class="sec-accent a"></span>
+    <span class="sec-label">Tauri Command API 仕様</span>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="note" style="margin-bottom:16px;">全コマンドは <code style="font-family:var(--mono);font-size:11px;">#[tauri::command]</code> で定義。フロントからは <code style="font-family:var(--mono);font-size:11px;">invoke('command_name', args)</code> で非同期呼び出し。エラーは <code style="font-family:var(--mono);font-size:11px;">Result&lt;T, String&gt;</code> で返却し、フロント側でトーストに表示する。</div>
+
+  <div class="grid2">
+    <div>
+      <div class="cmd-block">
+        <div class="cmd-name">list_repositories</div>
+        <div class="cmd-sig">() → <span class="ty">Vec&lt;RepoInfo&gt;</span></div>
+        <div class="cmd-desc">config.toml 登録済みリポジトリの一覧と状態（ahead / behind / modified）を返す</div>
+      </div>
+      <div class="cmd-block">
+        <div class="cmd-name">get_branches</div>
+        <div class="cmd-sig">(<span class="kw">repo_path</span>: <span class="ty">String</span>) → <span class="ty">Vec&lt;BranchInfo&gt;</span></div>
+        <div class="cmd-desc">指定リポジトリの全ローカルブランチを取得。merged / ahead / behind / last_commit を付与</div>
+      </div>
+      <div class="cmd-block">
+        <div class="cmd-name">delete_branches</div>
+        <div class="cmd-sig">(<span class="kw">repo_path</span>: <span class="ty">String</span>, <span class="kw">names</span>: <span class="ty">Vec&lt;String&gt;</span>) → <span class="ty">Vec&lt;DeleteResult&gt;</span></div>
+        <div class="cmd-desc">複数ブランチを一括削除。current ブランチはスキップ。各ブランチの成否をまとめて返却</div>
+      </div>
+      <div class="cmd-block">
+        <div class="cmd-name">get_commit_graph</div>
+        <div class="cmd-sig">(<span class="kw">repo_path</span>: <span class="ty">String</span>, <span class="kw">limit</span>: <span class="ty">u32</span>) → <span class="ty">Vec&lt;CommitNode&gt;</span></div>
+        <div class="cmd-desc">コミット履歴をグラフ描画用データ構造で返す。各ノードに parent_oids / branch_refs / lane（列番号）を付与</div>
+      </div>
+    </div>
+    <div>
+      <div class="cmd-block">
+        <div class="cmd-name">fetch_all</div>
+        <div class="cmd-sig">(<span class="kw">repo_path</span>: <span class="ty">String</span>) → <span class="ty">FetchResult</span></div>
+        <div class="cmd-desc">全リモートをフェッチ。SSH / HTTPS 両対応（git2 credential callback）</div>
+      </div>
+      <div class="cmd-block">
+        <div class="cmd-name">get_pull_requests</div>
+        <div class="cmd-sig">(<span class="kw">owner</span>: <span class="ty">String</span>, <span class="kw">repo</span>: <span class="ty">String</span>) → <span class="ty">Vec&lt;PullRequest&gt;</span></div>
+        <div class="cmd-desc">GitHub REST API <code style="font-family:var(--mono);font-size:11px;">GET /repos/{owner}/{repo}/pulls</code> を呼び出し。PAT は keyring から取得</div>
+      </div>
+      <div class="cmd-block">
+        <div class="cmd-name">get_issues</div>
+        <div class="cmd-sig">(<span class="kw">owner</span>: <span class="ty">String</span>, <span class="kw">repo</span>: <span class="ty">String</span>, <span class="kw">state</span>: <span class="ty">String</span>) → <span class="ty">Vec&lt;Issue&gt;</span></div>
+        <div class="cmd-desc">GitHub Issues を取得。state は <code style="font-family:var(--mono);font-size:11px;">"open" | "closed" | "all"</code></div>
+      </div>
+      <div class="cmd-block">
+        <div class="cmd-name">run_git_gc</div>
+        <div class="cmd-sig">(<span class="kw">repo_path</span>: <span class="ty">String</span>) → <span class="ty">GcResult</span></div>
+        <div class="cmd-desc"><code style="font-family:var(--mono);font-size:11px;">git gc --auto</code> + <code style="font-family:var(--mono);font-size:11px;">git remote prune origin</code> を実行。解放バイト数を返す</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SEC 5: DATA MODELS -->
+<div class="sec" id="models">
+  <div class="sec-header">
+    <span class="sec-index">06</span>
+    <span class="sec-accent g"></span>
+    <span class="sec-label">データモデル (Rust / serde)</span>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="grid2" style="margin-bottom:12px;">
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="card-label" style="padding:14px 18px 0;">RepoInfo</div>
+      <table class="model-table" style="margin-top:10px;">
+        <tbody>
+          <tr><td class="field-name">path</td><td class="field-type">String</td></tr>
+          <tr><td class="field-name">name</td><td class="field-type">String</td></tr>
+          <tr><td class="field-name">current_branch</td><td class="field-type">String</td></tr>
+          <tr><td class="field-name">ahead</td><td class="field-type">u32</td></tr>
+          <tr><td class="field-name">behind</td><td class="field-type">u32</td></tr>
+          <tr><td class="field-name">modified_count</td><td class="field-type">u32</td></tr>
+          <tr><td class="field-name">stash_count</td><td class="field-type">u32</td></tr>
+          <tr><td class="field-name">github_owner</td><td class="field-type">Option&lt;String&gt;</td></tr>
+          <tr><td class="field-name">github_remote</td><td class="field-type">Option&lt;String&gt;</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="card-label" style="padding:14px 18px 0;">BranchInfo</div>
+      <table class="model-table" style="margin-top:10px;">
+        <tbody>
+          <tr><td class="field-name">name</td><td class="field-type">String</td></tr>
+          <tr><td class="field-name">is_current</td><td class="field-type">bool</td></tr>
+          <tr><td class="field-name">is_merged</td><td class="field-type">bool</td></tr>
+          <tr><td class="field-name">ahead</td><td class="field-type">u32</td></tr>
+          <tr><td class="field-name">behind</td><td class="field-type">u32</td></tr>
+          <tr><td class="field-name">last_commit_ts</td><td class="field-type">i64</td></tr>
+          <tr><td class="field-name">last_commit_msg</td><td class="field-type">String</td></tr>
+          <tr><td class="field-name">author</td><td class="field-type">String</td></tr>
+          <tr><td class="field-name">remote_name</td><td class="field-type">Option&lt;String&gt;</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="config-block">
+    <div class="card-label" style="margin-bottom:14px;">~/.config/arbor/config.toml</div>
+    <pre><span class="k">[settings]</span>
+stale_threshold_days  = <span class="n">14</span>
+fetch_on_startup      = <span class="n">true</span>
+github_keychain_key   = <span class="s">"arbor_github_pat"</span>
+
+<span class="k">[ai]</span>
+provider              = <span class="s">"ollama"</span>          <span class="c"># 将来: "anthropic" | "openai"</span>
+ollama_url            = <span class="s">"http://localhost:11434"</span>
+model                 = <span class="s">"qwen3.5:latest"</span>
+enabled               = <span class="n">true</span>
+timeout_secs          = <span class="n">30</span>
+
+<span class="k">[[repositories]]</span>
+path          = <span class="s">"/home/scott/dev/NeuralVenture"</span>
+name          = <span class="s">"NeuralVenture"</span>
+github_owner  = <span class="s">"scottlz0310"</span>
+
+<span class="k">[[repositories]]</span>
+path          = <span class="s">"/home/scott/dev/act-lens"</span>
+name          = <span class="s">"act-lens"</span>
+github_owner  = <span class="s">"scottlz0310"</span>
+
+<span class="k">[[repositories]]</span>
+path          = <span class="s">"/home/scott/dev/BulkMigrator"</span>
+name          = <span class="s">"BulkMigrator"</span>
+github_owner  = <span class="s">"scottlz0310"</span></pre>
+  </div>
+</div>
+
+<!-- SEC 06: AI ENGINE -->
+<div class="sec" id="ai">
+  <div class="sec-header">
+    <span class="sec-index">07</span>
+    <span class="sec-accent p"></span>
+    <span class="sec-label">AI Insight Engine</span>
+    <div class="sec-line"></div>
+  </div>
+
+  <!-- Flow diagram -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-label">PIPELINE</div>
+    <div class="ai-flow" style="padding:8px 0;">
+      <div class="ai-flow-row">
+        <div class="ai-flow-node src">git2<small>ローカルgit状態</small></div>
+        <div class="ai-flow-arr">+</div>
+        <div class="ai-flow-node src">GitHub API<small>PR / Issue</small></div>
+      </div>
+      <div class="ai-flow-vline"></div>
+      <div class="ai-flow-row">
+        <div class="ai-flow-node agg">State Aggregator<small>構造化JSON生成</small></div>
+      </div>
+      <div class="ai-flow-vline"></div>
+      <div class="ai-flow-row" style="gap:16px;">
+        <div class="ai-flow-node rule">Rule Engine<small>高速・確定的</small></div>
+        <div style="display:flex;align-items:center;font-size:20px;color:var(--text4);">+</div>
+        <div class="ai-flow-node ai-n">AI Engine<small>qwen3.5:latest</small></div>
+      </div>
+      <div class="ai-flow-vline"></div>
+      <div class="ai-flow-row">
+        <div class="ai-flow-node ui-n">Insight[] → UI<small>Recommended Actions</small></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Insight types -->
+  <div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.1em;margin-bottom:10px;">AI の責務（3つのみ）</div>
+  <div class="insight-cards" style="margin-bottom:16px;">
+    <div class="insight-type">
+      <div class="insight-type-hdr">
+        <span class="insight-type-name ex">① Explain — 意味付け</span>
+      </div>
+      <div class="insight-type-desc">ブランチやリポジトリの状態に「なぜそれが問題か」を日本語で付与する</div>
+      <div class="insight-json"><span class="jk">"type"</span>: <span class="js">"explain"</span>,
+<span class="jk">"target"</span>: <span class="js">"experiment/multi-ai"</span>,
+<span class="jk">"reason"</span>: <span class="js">"2週間更新されておらず<br>mainから8コミット遅れている"</span>,
+<span class="jk">"source"</span>: <span class="js">"ai"</span></div>
+    </div>
+    <div class="insight-type">
+      <div class="insight-type-hdr">
+        <span class="insight-type-name pr">② Prioritize — 優先順位付け</span>
+      </div>
+      <div class="insight-type-desc">複数リポジトリ・ブランチの中から「今すぐ対処すべき」ものを選別する</div>
+      <div class="insight-json"><span class="jk">"type"</span>: <span class="js">"prioritize"</span>,
+<span class="jk">"target"</span>: <span class="js">"NeuralVenture"</span>,
+<span class="jk">"priority"</span>: <span class="jv">"high"</span>,
+<span class="jk">"reason"</span>: <span class="js">"更新頻度が最も高い<br>リポジトリ"</span>,
+<span class="jk">"source"</span>: <span class="js">"ai"</span></div>
+    </div>
+    <div class="insight-type">
+      <div class="insight-type-hdr">
+        <span class="insight-type-name ri">③ Risk — リスク評価</span>
+      </div>
+      <div class="insight-type-desc">削除などの破壊的操作に対して、リスクレベルと根拠を事前に提示する</div>
+      <div class="insight-json"><span class="jk">"type"</span>: <span class="js">"risk"</span>,
+<span class="jk">"action"</span>: <span class="js">"delete_branch"</span>,
+<span class="jk">"risk"</span>: <span class="jv">"medium"</span>,
+<span class="jk">"reason"</span>: <span class="js">"未マージだが<br>90日間更新なし"</span>,
+<span class="jk">"source"</span>: <span class="js">"ai"</span></div>
+    </div>
+  </div>
+
+  <!-- TypeScript Insight type -->
+  <div class="grid2" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="card-label">TYPESCRIPT — Insight 型定義</div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:12px 14px;font-family:var(--mono);font-size:11px;line-height:1.9;color:var(--text2);">
+        <span style="color:var(--purple);">type</span> InsightType =<br>
+        &nbsp;&nbsp;<span style="color:var(--indigo-l);">"explain"</span> | <span style="color:var(--green);">"prioritize"</span> | <span style="color:var(--red);">"risk"</span><br><br>
+        <span style="color:var(--purple);">type</span> InsightSource = <span style="color:var(--indigo-l);">"rule"</span> | <span style="color:var(--indigo-l);">"ai"</span><br><br>
+        <span style="color:var(--purple);">interface</span> <span style="color:var(--amber);">Insight</span> {<br>
+        &nbsp;&nbsp;type: InsightType<br>
+        &nbsp;&nbsp;target: <span style="color:var(--green);">string</span><br>
+        &nbsp;&nbsp;priority: <span style="color:var(--indigo-l);">"low"</span> | <span style="color:var(--indigo-l);">"medium"</span> | <span style="color:var(--indigo-l);">"high"</span><br>
+        &nbsp;&nbsp;reason: <span style="color:var(--green);">string</span><br>
+        &nbsp;&nbsp;source: InsightSource<br>
+        &nbsp;&nbsp;risk?: <span style="color:var(--indigo-l);">"low"</span> | <span style="color:var(--indigo-l);">"medium"</span> | <span style="color:var(--indigo-l);">"high"</span><br>
+        }
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">HYBRID MERGE — ルール + AI</div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:12px 14px;font-family:var(--mono);font-size:11px;line-height:1.9;color:var(--text2);">
+        <span style="color:var(--text4);">// ルールベース（高速・確定）</span><br>
+        <span style="color:var(--purple);">const</span> ruleInsights = ruleEngine(state)<br><br>
+        <span style="color:var(--text4);">// AIベース（非同期・バックグラウンド）</span><br>
+        <span style="color:var(--purple);">const</span> aiInsights = <span style="color:var(--purple);">await</span> aiEngine(state)<br><br>
+        <span style="color:var(--text4);">// マージして優先度でソート</span><br>
+        <span style="color:var(--purple);">const</span> insights = [<br>
+        &nbsp;&nbsp;...ruleInsights,<br>
+        &nbsp;&nbsp;...aiInsights<br>
+        ].sort((a, b) =><br>
+        &nbsp;&nbsp;score(b) - score(a)<br>
+        )
+      </div>
+    </div>
+  </div>
+
+  <!-- Prompt design -->
+  <div class="prompt-block">
+    <div class="prompt-block-hdr">SYSTEM PROMPT（qwen3.5:latest 向け）</div>
+    <pre class="prompt-pre"><span class="hl">/no_think</span>  <span class="cm">← thinking mode を無効化して高速化</span>
+あなたはGitリポジトリ管理アシスタントです。
+以下のリポジトリ状態を分析し、取るべきアクションを <span class="kw">JSON配列のみ</span> で出力してください。
+
+条件:
+- 削除候補は慎重に判断すること
+- 説明は <span class="kw">日本語</span> で簡潔に（30文字以内）
+- JSON以外の文字は出力しないこと
+
+出力形式:
+[{
+  <span class="str">"type"</span>: <span class="str">"explain"</span> | <span class="str">"prioritize"</span> | <span class="str">"risk"</span>,
+  <span class="str">"target"</span>: <span class="str">"ブランチ名またはリポジトリ名"</span>,
+  <span class="str">"priority"</span>: <span class="str">"low"</span> | <span class="str">"medium"</span> | <span class="str">"high"</span>,
+  <span class="str">"reason"</span>: <span class="str">"日本語の説明"</span>,
+  <span class="str">"source"</span>: <span class="str">"ai"</span>
+}]</pre>
+  </div>
+
+  <!-- Rust impl + cache -->
+  <div class="grid2">
+    <div class="card">
+      <div class="card-label">RUST — Ollama 呼び出し</div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:12px 14px;font-family:var(--mono);font-size:11px;line-height:1.9;color:var(--text2);">
+        <span style="color:var(--text4);">// 起動確認</span><br>
+        <span style="color:var(--purple);">async fn</span> <span style="color:var(--amber);">ollama_available</span>() -> <span style="color:var(--green);">bool</span> {<br>
+        &nbsp;&nbsp;reqwest::get(<span style="color:var(--indigo-l);">"http://localhost:11434<br>&nbsp;&nbsp;&nbsp;&nbsp;/api/tags"</span>)<br>
+        &nbsp;&nbsp;.<span style="color:var(--amber);">await</span><br>
+        &nbsp;&nbsp;.map(|r| r.status().<span style="color:var(--amber);">is_success</span>())<br>
+        &nbsp;&nbsp;.unwrap_or(<span style="color:var(--green);">false</span>)<br>
+        }<br><br>
+        <span style="color:var(--text4);">// 生成呼び出し</span><br>
+        client.post(<span style="color:var(--indigo-l);">"…/api/generate"</span>)<br>
+        &nbsp;&nbsp;.json(&amp;payload)<br>
+        &nbsp;&nbsp;.timeout(Duration::from_secs(<span style="color:var(--amber);">30</span>))<br>
+        &nbsp;&nbsp;.send().<span style="color:var(--purple);">await</span>?
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">キャッシュ戦略</div>
+      <div class="cache-flow">
+        <div class="cache-step"><span class="cache-step-num">1</span><span class="cache-step-txt"><span class="hl">hash(repoState)</span> を計算してキャッシュキーとする</span></div>
+        <div class="cache-step"><span class="cache-step-num">2</span><span class="cache-step-txt">同一ハッシュが存在すれば <span class="hl">即時返却</span>（Ollama呼ばない）</span></div>
+        <div class="cache-step"><span class="cache-step-num">3</span><span class="cache-step-txt">キャッシュなし → <span class="hl">バックグラウンドで</span> Ollama 呼び出し</span></div>
+        <div class="cache-step"><span class="cache-step-num">4</span><span class="cache-step-txt">結果取得後に UI を更新。<span class="hl">それまでルールベースを表示</span></span></div>
+        <div class="cache-step"><span class="cache-step-num">5</span><span class="cache-step-txt">Ollama 未起動・タイムアウト → <span class="hl">ルールベースのみで継続</span></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SEC 07: ROADMAP -->
+<div class="sec" id="roadmap">
+  <div class="sec-header">
+    <span class="sec-index">08</span>
+    <span class="sec-accent p"></span>
+    <span class="sec-label">実装ロードマップ</span>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="phase p1">
+    <div class="phase-hdr">
+      <span class="phase-tag">PHASE 1</span>
+      <span class="phase-title">シェル + dsx ラッパー + 可視化コア（〜1.5週間）</span>
+      <span class="phase-dur">weeks 1–2</span>
+    </div>
+    <div class="phase-items">
+      <div class="phase-item">Tauri v2 プロジェクト初期化（React 19 + TypeScript + Vite 6）</div>
+      <div class="phase-item">dsx インストール確認（起動時 <code style="font-family:var(--mono);font-size:11px;">dsx --version</code>）・未インストール時の案内UI</div>
+      <div class="phase-item">config.toml 読み書き + リポジトリ登録 UI（フォルダ選択ダイアログ）</div>
+      <div class="phase-item">git2 で RepoInfo / BranchInfo 取得（読み取り専用）</div>
+      <div class="phase-item">Overview ダッシュボード + Branch 一覧画面（フィルター付き）</div>
+      <div class="phase-item"><code style="font-family:var(--mono);font-size:11px;">invoke('repo_update')</code> → <code style="font-family:var(--mono);font-size:11px;">dsx repo update --no-tui -j 4</code> で完成</div>
+      <div class="phase-item"><code style="font-family:var(--mono);font-size:11px;">invoke('repo_cleanup')</code> → 確認ダイアログ → <code style="font-family:var(--mono);font-size:11px;">dsx repo cleanup</code> で完成</div>
+      <div class="phase-item">Cleanup Wizard 画面（dsx の dry-run 結果を表示 → 確認 → 実行）</div>
+      <div class="phase-item">ルールベース Insight 実装（AI なし・高速・確定的）</div>
+    </div>
+  </div>
+
+  <div class="phase p2">
+    <div class="phase-hdr">
+      <span class="phase-tag">PHASE 2</span>
+      <span class="phase-title">GitHub 連携 + グラフ可視化 + dsx env/sys（〜1.5週間）</span>
+      <span class="phase-dur">weeks 3–4</span>
+    </div>
+    <div class="phase-items">
+      <div class="phase-item">PAT 設定画面 + keyring 保存 OR <code style="font-family:var(--mono);font-size:11px;">dsx env run</code> 経由での GPAT 注入</div>
+      <div class="phase-item">GitHub REST API: PR / Issue 取得・一覧表示・CI ステータス表示</div>
+      <div class="phase-item">d3 を使った SVG コミットグラフ（lane 計算アルゴリズム）</div>
+      <div class="phase-item">TanStack Query で GitHub API キャッシュ + 自動リフレッシュ（5分間隔）</div>
+      <div class="phase-item"><code style="font-family:var(--mono);font-size:11px;">invoke('sys_update')</code> → <code style="font-family:var(--mono);font-size:11px;">dsx sys update --no-tui</code>（Settings 画面に配置）</div>
+    </div>
+  </div>
+
+  <div class="phase p3">
+    <div class="phase-hdr">
+      <span class="phase-tag">PHASE 3</span>
+      <span class="phase-title">AI Insight Engine — Ollama 統合（〜1週間）</span>
+      <span class="phase-dur">week 5</span>
+    </div>
+    <div class="phase-items">
+      <div class="phase-item">Ollama 起動確認 + graceful degradation（未起動時はルールベースのみ）</div>
+      <div class="phase-item">State Aggregator（git2 + GitHub API → 構造化 JSON）</div>
+      <div class="phase-item">qwen3.5:latest 向けプロンプト実装（<code style="font-family:var(--mono);font-size:11px;">/no_think</code> + JSON-only 出力）</div>
+      <div class="phase-item">hash(repoState) ベースキャッシュ + バックグラウンド更新</div>
+      <div class="phase-item">Overview「Recommended Actions」パネル + Cleanup AI 理由表示</div>
+      <div class="phase-item">設定画面から provider / model / URL 変更可能（将来のクラウドAPI拡張準備）</div>
+    </div>
+  </div>
+
+  <div class="phase" style="border-color:var(--border);">
+    <div style="position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:3px 0 0 3px;background:var(--text3);"></div>
+    <div class="phase-hdr">
+      <span class="phase-tag" style="color:var(--text3);">PHASE 4</span>
+      <span class="phase-title">UX 磨き + リリース（〜1週間）</span>
+      <span class="phase-dur">week 6</span>
+    </div>
+    <div class="phase-items">
+      <div class="phase-item">キーボードショートカット（Cmd/Ctrl+K コマンドパレット）</div>
+      <div class="phase-item">stash manager（一覧 / apply / drop）</div>
+      <div class="phase-item">dsx バージョン表示・アップデート確認 UI（Settings 画面）</div>
+      <div class="phase-item">Tauri updater + GitHub Releases 自動更新フロー</div>
+      <div class="phase-item">Windows (.msi) + macOS (.dmg) インストーラービルド（<code style="font-family:var(--mono);font-size:11px;">tauri build</code>）</div>
+      <div class="phase-item">README / CHANGELOG 整備・GitHub public release 公開</div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:16px;">
+    dsx 統合により git 操作の実装が不要になった結果、Phase 1 の工数が約40%削減される見込み。受け入れ側（Arbor）が実装するのは <strong style="font-weight:600;">コマンド呼び出し + stdout パース + GUI表示</strong> の3層のみ。
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <span class="footer-l">arbor · git management dashboard · spec v0.3.0 · scottlz0310 · 2026</span>
+  <span class="footer-l">Tauri v2 / Rust / React 19 / dsx (Go) / Ollama qwen3.5:latest</span>
+</div>
+
+</div><!-- /doc -->
+
+<script>
+function switchTab(id, btn) {
+  document.querySelectorAll('.mock-screen').forEach(s => s.classList.remove('a'));
+  document.querySelectorAll('.mock-tab').forEach(b => b.classList.remove('a'));
+  document.getElementById('ms-' + id).classList.add('a');
+  btn.classList.add('a');
+}
+document.querySelectorAll('.topbar-nav .tnav').forEach(link => {
+  link.addEventListener('click', function() {
+    document.querySelectorAll('.tnav').forEach(t => t.classList.remove('a'));
+    this.classList.add('a');
+  });
+});
+</script>
+</body>
+</html>

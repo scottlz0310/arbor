@@ -1,0 +1,56 @@
+/* Arbor design tokens — matches spec v0.3 */
+:root {
+  /* Backgrounds */
+  --bg0: #0c0e14;
+  --bg1: #0f1117;
+  --bg2: #141720;
+  --bg3: #1a1e2e;
+  --bg4: #1e2235;
+
+  /* Borders */
+  --border:  #1e2336;
+  --border2: #252c42;
+  --border3: #2d3554;
+
+  /* Text */
+  --text1: #e2e8f0;
+  --text2: #94a3b8;
+  --text3: #4a5568;
+  --text4: #2d3748;
+
+  /* Accent — Indigo */
+  --indigo:    #818cf8;
+  --indigo-d:  #6366f1;
+  --indigo-l:  #a5b4fc;
+  --indigo-bg: #818cf80e;
+  --indigo-bg2:#818cf818;
+
+  /* Accent — Green */
+  --green:    #4ade80;
+  --green-bg: #4ade8012;
+
+  /* Accent — Amber */
+  --amber:    #fbbf24;
+  --amber-bg: #fbbf2412;
+
+  /* Accent — Red */
+  --red:    #f87171;
+  --red-bg: #f8717112;
+
+  /* Accent — Purple */
+  --purple:    #c084fc;
+  --purple-bg: #c084fc10;
+
+  /* Typography */
+  --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+  --font-sans:    'Plus Jakarta Sans', -apple-system, sans-serif;
+  --font-display: 'Syne', sans-serif;
+
+  /* Radii */
+  --r:  6px;
+  --r2: 10px;
+  --r3: 14px;
+
+  /* Sidebar width */
+  --sidebar-w: 196px;
+}
