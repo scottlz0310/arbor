@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-capability.json",
+  "identifier": "default",
+  "description": "Default Arbor capabilities",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open"
+  ]
+}

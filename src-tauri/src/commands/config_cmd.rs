@@ -1,0 +1,96 @@
+use crate::config::{load_config, save_config, AppConfig, RepoConfig};
+use tauri::AppHandle;
+
+#[tauri::command]
+pub fn get_config() -> Result<AppConfig, String> {
+    load_config()
+}
+
+#[tauri::command]
+pub fn add_repository(
+    path: String,
+    name: String,
+    github_owner: Option<String>,
+    github_repo: Option<String>,
+) -> Result<AppConfig, String> {
+    let mut config = load_config()?;
+
+    // Validate the path is actually a git repository.
+    git2::Repository::open(&path)
+        .map_err(|e| format!("Not a git repository: {e}"))?;
+
+    // Avoid duplicate entries.
+    if config.repositories.iter().any(|r| r.path == path) {
+        return Err(format!("Repository already registered: {path}"));
+    }
+
+    config.repositories.push(RepoConfig {
+        path,
+        name,
+        github_owner,
+        github_repo,
+    });
+
+    save_config(&config)?;
+    Ok(config)
+}
+
+#[tauri::command]
+pub fn remove_repository(path: String) -> Result<AppConfig, String> {
+    let mut config = load_config()?;
+    config.repositories.retain(|r| r.path != path);
+    save_config(&config)?;
+    Ok(config)
+}
+
+/// Recursively scan a directory for git repositories and return candidate paths.
+/// Does NOT add them to config — the frontend confirms the list first.
+#[tauri::command]
+pub fn scan_directory(root: String) -> Result<Vec<String>, String> {
+    use std::path::Path;
+
+    let mut found = Vec::new();
+    scan_recursive(Path::new(&root), &mut found, 0);
+    Ok(found)
+}
+
+fn scan_recursive(dir: &std::path::Path, found: &mut Vec<String>, depth: u32) {
+    if depth > 4 {
+        return;
+    }
+    let git_dir = dir.join(".git");
+    if git_dir.exists() {
+        found.push(dir.to_string_lossy().into_owned());
+        return; // Don't descend into sub-repos.
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // Skip hidden directories (e.g. .git, node_modules handled above).
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if !name_str.starts_with('.') && name_str != "node_modules" {
+                    scan_recursive(&path, found, depth + 1);
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub fn update_settings(
+    _app: AppHandle,
+    stale_threshold_days: Option<u32>,
+    fetch_on_startup: Option<bool>,
+) -> Result<AppConfig, String> {
+    let mut config = load_config()?;
+    if let Some(v) = stale_threshold_days {
+        config.settings.stale_threshold_days = v;
+    }
+    if let Some(v) = fetch_on_startup {
+        config.settings.fetch_on_startup = v;
+    }
+    save_config(&config)?;
+    Ok(config)
+}
