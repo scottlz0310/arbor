@@ -120,8 +120,9 @@
 
 ### CI (GitHub Actions)
 - [x] T-06: `.github/workflows/ci.yml` — PR/push ごとに以下を実行
-       - Rust: `cargo check` → `cargo clippy -D warnings` → `cargo test`
-       - Frontend: `npm ci` → `typecheck` → `build` → `vitest run`
+       - Rust: `cargo check` → `cargo clippy -D warnings` → `cargo llvm-cov --lcov` → Codecov upload (flag: rust)
+       - Frontend: `npm ci` → `typecheck` → `build` → `vitest --coverage` → Codecov upload (flag: frontend)
+- [x] T-08: `codecov.yml` — フラグ別カバレッジ管理（frontend / rust）+ PR コメント設定
 
 ### pre-commit / pre-push (lefthook)
 - [x] T-07: `lefthook.yml` 設定 + `npm run prepare` でフックをインストール

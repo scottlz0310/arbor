@@ -8,7 +8,7 @@ on:
 
 jobs:
   rust:
-    name: Rust check / clippy / test
+    name: Rust check / clippy / test / coverage
     runs-on: windows-latest
     defaults:
       run:
@@ -19,7 +19,10 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -37,11 +40,19 @@ jobs:
       - name: cargo clippy
         run: cargo clippy -- -D warnings
 
-      - name: cargo test
-        run: cargo test
+      - name: cargo test with coverage
+        run: cargo llvm-cov --lcov --output-path lcov.info
+
+      - name: Upload Rust coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: src-tauri/lcov.info
+          flags: rust
+          fail_ci_if_error: true
 
   frontend:
-    name: Frontend typecheck / build / test
+    name: Frontend typecheck / build / test / coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,8 +72,15 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          # Tauri 固有のモジュールはブラウザビルドでは使えないため mock を回避
           TAURI_ENV_TARGET_TRIPLE: x86_64-unknown-linux-gnu
 
-      - name: Unit tests
-        run: npm test
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload frontend coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/lcov.info
+          flags: frontend
+          fail_ci_if_error: true
