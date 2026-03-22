@@ -115,10 +115,13 @@ async fn run_dsx_with_events(
 
     // Drain stderr concurrently on a separate thread to prevent pipe-buffer
     // deadlock if dsx writes enough stderr to fill the OS buffer.
+    // filter_map(Result::ok) is intentional: we skip unreadable lines but
+    // continue draining so no diagnostics are truncated on mid-stream errors.
+    #[allow(clippy::lines_filter_map_ok)]
     let stderr_thread = std::thread::spawn(move || {
         BufReader::new(stderr)
             .lines()
-            .map_while(Result::ok)
+            .filter_map(Result::ok)
             .collect::<Vec<String>>()
             .join("\n")
     });

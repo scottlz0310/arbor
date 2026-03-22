@@ -44,12 +44,14 @@ jobs:
         run: cargo llvm-cov --lcov --output-path lcov.info
 
       - name: Upload Rust coverage to Codecov
+        # fork PRs do not have access to secrets; skip upload in that case
+        if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: src-tauri/lcov.info
           flags: rust
-          fail_ci_if_error: true
+          fail_ci_if_error: false
 
   frontend:
     name: Frontend typecheck / build / test / coverage
@@ -78,9 +80,11 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload frontend coverage to Codecov
+        # fork PRs do not have access to secrets; skip upload in that case
+        if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage/lcov.info
           flags: frontend
-          fail_ci_if_error: true
+          fail_ci_if_error: false
