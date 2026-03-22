@@ -42,7 +42,8 @@ pub struct BranchInfo {
     pub remote_name: Option<String>,
 }
 
-/// Commit node for the Graph view (d3 lane rendering).
+/// Commit node for the Graph view (d3 lane rendering). Used in Phase 2.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitNode {
     pub oid: String,

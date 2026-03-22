@@ -118,7 +118,7 @@ async fn run_dsx_with_events(
     let stderr_thread = std::thread::spawn(move || {
         BufReader::new(stderr)
             .lines()
-            .filter_map(|l| l.ok())
+            .map_while(Result::ok)
             .collect::<Vec<String>>()
             .join("\n")
     });
