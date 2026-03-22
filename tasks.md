@@ -107,6 +107,29 @@
 
 ---
 
+## テスト & CI/CD
+
+### フロントエンドテスト
+- [x] T-01: `vitest` 導入 + `vitest.config.ts` 設定
+- [x] T-02: `src/lib/ruleEngine.test.ts` — ルールエンジン全ロジックのユニットテスト (12 ケース)
+- [ ] T-03: `@testing-library/react` 導入 + 主要コンポーネントのスナップショットテスト (Phase 2 以降)
+
+### Rust テスト
+- [x] T-04: `config.rs` — デフォルト値・TOML ラウンドトリップのユニットテスト (4 ケース)
+- [ ] T-05: `repo.rs` — `repo_info_for_path` のインテグレーションテスト (Phase 2 以降)
+
+### CI (GitHub Actions)
+- [x] T-06: `.github/workflows/ci.yml` — PR/push ごとに以下を実行
+       - Rust: `cargo check` → `cargo clippy -D warnings` → `cargo test`
+       - Frontend: `npm ci` → `typecheck` → `build` → `vitest run`
+
+### pre-commit / pre-push (lefthook)
+- [x] T-07: `lefthook.yml` 設定 + `npm run prepare` でフックをインストール
+       - pre-commit (parallel): `tsc --noEmit` + `cargo check`（高速チェック）
+       - pre-push (serial): `cargo clippy -D warnings` + `cargo test` + `npm test`
+
+---
+
 ## Phase 2 — GitHub 連携 + コミットグラフ + dsx env/sys (weeks 3–4)
 
 - [ ] P2-01: PAT 設定 UI + `keyring` クレートで OS キーチェーンに保存

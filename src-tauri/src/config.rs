@@ -85,3 +85,44 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
     let content = toml::to_string_pretty(config).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_settings_values() {
+        let s = Settings::default();
+        assert_eq!(s.stale_threshold_days, 14);
+        assert!(s.fetch_on_startup);
+        assert_eq!(s.github_keychain_key, "arbor_github_pat");
+    }
+
+    #[test]
+    fn default_ai_config_values() {
+        let ai = AiConfig::default();
+        assert_eq!(ai.provider, "ollama");
+        assert_eq!(ai.ollama_url, "http://localhost:11434");
+        assert_eq!(ai.model, "qwen3.5:latest");
+        assert!(ai.enabled);
+        assert_eq!(ai.timeout_secs, 30);
+    }
+
+    #[test]
+    fn default_app_config_has_no_repositories() {
+        let cfg = AppConfig::default();
+        assert!(cfg.repositories.is_empty());
+    }
+
+    #[test]
+    fn app_config_roundtrip_toml() {
+        let original = AppConfig::default();
+        let serialized = toml::to_string_pretty(&original).expect("serialize");
+        let deserialized: AppConfig = toml::from_str(&serialized).expect("deserialize");
+        assert_eq!(deserialized.ai.model, original.ai.model);
+        assert_eq!(
+            deserialized.settings.stale_threshold_days,
+            original.settings.stale_threshold_days
+        );
+    }
+}
