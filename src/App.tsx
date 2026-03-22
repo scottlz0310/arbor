@@ -2,21 +2,34 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
 import Overview from './views/Overview';
 import Branches from './views/Branches';
 import Cleanup from './views/Cleanup';
 import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
 import { useUiStore } from './stores/uiStore';
+import { dsxCheck } from './lib/invoke';
 
 export default function App() {
   const { loadRepos } = useRepoStore();
-  const { activeView, navigate, appendDsxLine } = useUiStore();
+  const { activeView, navigate, appendDsxLine, addToast } = useUiStore();
 
   useEffect(() => {
     loadRepos();
 
-    // Subscribe to dsx progress events emitted from Rust.
+    // dsx の存在確認。未検出なら Settings へ誘導してバナーを表示する。
+    dsxCheck().then((status) => {
+      if (!status.available) {
+        navigate('settings');
+        addToast('dsx CLI が見つかりません。Settings からインストール手順を確認してください。', 'error');
+      }
+    }).catch(() => {
+      navigate('settings');
+      addToast('dsx CLI の確認に失敗しました。Settings を確認してください。', 'error');
+    });
+
+    // dsx 進捗イベントを購読する。
     const unlisten = listen<string>('dsx_progress', (e) => {
       appendDsxLine(e.payload);
     });
@@ -26,7 +39,7 @@ export default function App() {
     };
   }, []);
 
-  // Navigate to Settings if no repos are configured yet.
+  // リポジトリが未登録なら Settings へ遷移する。
   const { repos } = useRepoStore();
   useEffect(() => {
     if (repos.length === 0 && activeView === 'overview') {
@@ -38,12 +51,20 @@ export default function App() {
     <div className="app-shell">
       <Sidebar />
       <main className="main-content">
-        {activeView === 'overview'  && <Overview />}
-        {activeView === 'branches'  && <Branches />}
-        {activeView === 'graph'     && <PlaceholderView label="Commit Graph" note="Implemented in Phase 2" />}
-        {activeView === 'prs'       && <PlaceholderView label="PR / Issues"  note="Implemented in Phase 2" />}
-        {activeView === 'cleanup'   && <Cleanup />}
-        {activeView === 'settings'  && <Settings />}
+        <ErrorBoundary viewName="Overview">
+          {activeView === 'overview' && <Overview />}
+        </ErrorBoundary>
+        <ErrorBoundary viewName="Branches">
+          {activeView === 'branches' && <Branches />}
+        </ErrorBoundary>
+        {activeView === 'graph' && <PlaceholderView label="Commit Graph" note="Implemented in Phase 2" />}
+        {activeView === 'prs'   && <PlaceholderView label="PR / Issues"  note="Implemented in Phase 2" />}
+        <ErrorBoundary viewName="Cleanup">
+          {activeView === 'cleanup' && <Cleanup />}
+        </ErrorBoundary>
+        <ErrorBoundary viewName="Settings">
+          {activeView === 'settings' && <Settings />}
+        </ErrorBoundary>
       </main>
       <ToastContainer />
     </div>
