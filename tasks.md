@@ -45,65 +45,65 @@
 ## Phase 1 — シェル + dsx ラッパー + 可視化コア (weeks 1–2)
 
 ### 環境・プロジェクト初期化
-- [ ] P1-01: 前提ツール確認 (Rust 1.78+, Node 20 LTS, cmake, git2 ビルド用 C コンパイラ)
-- [ ] P1-02: Tauri v2 + React 19 + TypeScript + Vite 6 プロジェクト初期化
-- [ ] P1-03: `src-tauri/Cargo.toml` 依存クレート設定
+- [x] P1-01: 前提ツール確認 (Rust 1.78+, Node 20 LTS, cmake, git2 ビルド用 C コンパイラ)
+- [x] P1-02: Tauri v2 + React 19 + TypeScript + Vite 6 プロジェクト初期化
+- [x] P1-03: `src-tauri/Cargo.toml` 依存クレート設定
        (tauri, git2, serde, toml, dirs, keyring, reqwest, tokio)
-- [ ] P1-04: `package.json` 依存パッケージ設定
+- [x] P1-04: `package.json` 依存パッケージ設定
        (react, zustand, @tanstack/react-query, @tauri-apps/api, @tauri-apps/plugin-dialog)
-- [ ] P1-05: `tauri.conf.json` — ウィンドウ設定 (1280x800, min 900x600)
-- [ ] P1-06: `capabilities/default.json` — dialog プラグイン権限
-- [ ] P1-07: デザイントークン CSS (`src/styles/tokens.css`) 定義
+- [x] P1-05: `tauri.conf.json` — ウィンドウ設定 (1280x800, min 900x600)
+- [x] P1-06: `capabilities/default.json` — dialog プラグイン権限
+- [x] P1-07: デザイントークン CSS (`src/styles/tokens.css`) 定義
 
 ### Rust バックエンド — データモデル & 設定
-- [ ] P1-08: `src-tauri/src/models.rs` — RepoInfo / BranchInfo / CommitNode / DeleteResult / DsxOutput 型定義
-- [ ] P1-09: `src-tauri/src/config.rs` — AppConfig / Settings / AiConfig / RepoConfig 型定義
-- [ ] P1-10: `config.rs` — `load_config()` / `save_config()` 実装 (dirs::config_dir() で OS 対応)
-- [ ] P1-11: `commands/config_cmd.rs` — `get_config` / `add_repository` / `remove_repository` / `scan_directory` コマンド
+- [x] P1-08: `src-tauri/src/models.rs` — RepoInfo / BranchInfo / CommitNode / DeleteResult / DsxOutput 型定義
+- [x] P1-09: `src-tauri/src/config.rs` — AppConfig / Settings / AiConfig / RepoConfig 型定義
+- [x] P1-10: `config.rs` — `load_config()` / `save_config()` 実装 (dirs::config_dir() で OS 対応)
+- [x] P1-11: `commands/config_cmd.rs` — `get_config` / `add_repository` / `remove_repository` / `scan_directory` コマンド
 
 ### Rust バックエンド — git2 読み取りコマンド
-- [ ] P1-12: `commands/repo.rs` — `list_repositories` (config の全リポジトリを git2 でスキャン)
-- [ ] P1-13: `commands/repo.rs` — `get_repo_status` (ahead/behind/modified/untracked/stash_count)
-- [ ] P1-14: `commands/repo.rs` — `get_branches` (ローカルブランチ全取得、is_merged 判定)
-- [ ] P1-15: `commands/repo.rs` — `delete_branches` (確認済み削除、current ブランチはスキップ)
-- [ ] P1-16: `commands/repo.rs` — `fetch_all` (HTTPS + git credential helper, Phase 1 スコープ)
+- [x] P1-12: `commands/repo.rs` — `list_repositories` (config の全リポジトリを git2 でスキャン)
+- [x] P1-13: `commands/repo.rs` — `get_repo_status` (ahead/behind/modified/untracked/stash_count)
+- [x] P1-14: `commands/repo.rs` — `get_branches` (ローカルブランチ全取得、is_merged 判定)
+- [x] P1-15: `commands/repo.rs` — `delete_branches` (確認済み削除、current ブランチはスキップ)
+- [x] P1-16: `commands/repo.rs` — `fetch_all` (HTTPS + git credential helper, Phase 1 スコープ)
 
 ### Rust バックエンド — dsx ラッパー
-- [ ] P1-17: `commands/dsx.rs` — `dsx_check` (PATH 上に dsx があるか確認 + バージョン取得)
-- [ ] P1-18: `commands/dsx.rs` — `repo_update` (`dsx repo update --no-tui -j 4` + Tauri emit で進捗通知)
-- [ ] P1-19: `commands/dsx.rs` — `repo_cleanup_preview` (`dsx repo cleanup -n` → stdout パース)
-- [ ] P1-20: `commands/dsx.rs` — `repo_cleanup` (`dsx repo cleanup` → 確認ダイアログ後実行)
-- [ ] P1-21: `lib.rs` — 全コマンドを `invoke_handler` に登録
+- [x] P1-17: `commands/dsx.rs` — `dsx_check` (PATH 上に dsx があるか確認 + バージョン取得)
+- [x] P1-18: `commands/dsx.rs` — `repo_update` (`dsx repo update --no-tui -j 4` + Tauri emit で進捗通知)
+- [x] P1-19: `commands/dsx.rs` — `repo_cleanup_preview` (`dsx repo cleanup -n` → stdout パース)
+- [x] P1-20: `commands/dsx.rs` — `repo_cleanup` (`dsx repo cleanup` → 確認ダイアログ後実行)
+- [x] P1-21: `lib.rs` — 全コマンドを `invoke_handler` に登録
 
 ### フロントエンド — 型 & ストア
-- [ ] P1-22: `src/types/index.ts` — Rust モデルに対応する TypeScript 型定義
-- [ ] P1-23: `src/lib/invoke.ts` — 型安全な invoke ラッパー関数群
-- [ ] P1-24: `src/stores/repoStore.ts` — Zustand ストア (repos / selectedRepo / loading / error)
-- [ ] P1-25: `src/stores/uiStore.ts` — Zustand ストア (activeView / notifications / dsx_progress)
+- [x] P1-22: `src/types/index.ts` — Rust モデルに対応する TypeScript 型定義
+- [x] P1-23: `src/lib/invoke.ts` — 型安全な invoke ラッパー関数群
+- [x] P1-24: `src/stores/repoStore.ts` — Zustand ストア (repos / selectedRepo / loading / error)
+- [x] P1-25: `src/stores/uiStore.ts` — Zustand ストア (activeView / notifications / dsx_progress)
 
 ### フロントエンド — コンポーネント & ビュー
-- [ ] P1-26: `src/components/Sidebar.tsx` — リポジトリリスト + ナビゲーション
-- [ ] P1-27: `src/components/AppBar.tsx` — パスブレッドクラム + アクションボタン
-- [ ] P1-28: `src/components/Toast.tsx` — エラー / 成功通知
-- [ ] P1-29: `src/components/ConfirmDialog.tsx` — 破壊的操作確認ダイアログ
-- [ ] P1-30: `src/views/Overview.tsx` — stat カード + repo グリッド
-- [ ] P1-31: `src/views/Branches.tsx` — ブランチテーブル (フィルター / チェックボックス / 削除)
-- [ ] P1-32: `src/views/Cleanup.tsx` — Cleanup Wizard (merged / stale / git maintenance セクション)
-- [ ] P1-33: `src/views/Settings.tsx` — リポジトリ管理 + dsx バージョン確認 + 設定 CRUD
-- [ ] P1-34: `src/App.tsx` — レイアウトシェル + ビュールーティング + 起動時 loadRepos()
+- [x] P1-26: `src/components/Sidebar.tsx` — リポジトリリスト + ナビゲーション
+- [x] P1-27: `src/components/AppBar.tsx` — パスブレッドクラム + アクションボタン
+- [x] P1-28: `src/components/Toast.tsx` — エラー / 成功通知
+- [x] P1-29: `src/components/ConfirmDialog.tsx` — 破壊的操作確認ダイアログ
+- [x] P1-30: `src/views/Overview.tsx` — stat カード + repo グリッド
+- [x] P1-31: `src/views/Branches.tsx` — ブランチテーブル (フィルター / チェックボックス / 削除)
+- [x] P1-32: `src/views/Cleanup.tsx` — Cleanup Wizard (merged / stale / git maintenance セクション)
+- [x] P1-33: `src/views/Settings.tsx` — リポジトリ管理 + dsx バージョン確認 + 設定 CRUD
+- [x] P1-34: `src/App.tsx` — レイアウトシェル + ビュールーティング + 起動時 loadRepos()
 
 ### ルールベース Insight Engine (AI なし)
-- [ ] P1-35: `src/lib/ruleEngine.ts` — ルールベース Insight 実装
+- [x] P1-35: `src/lib/ruleEngine.ts` — ルールベース Insight 実装
        - diverged → high risk
        - stale branch (> stale_threshold_days) → explain
        - merged branches count → prioritize cleanup
        - repo behind > 5 → prioritize pull
 
 ### 品質
-- [ ] P1-36: dsx 未インストール時の案内 UI (Settings 画面にインストール手順表示)
-- [ ] P1-37: `<ErrorBoundary>` コンポーネント追加 (ビュー単位でエラーを捕捉)
-- [ ] P1-38: 起動時 dsx_check → 未検出なら Settings ビューに遷移 + バナー表示
-- [ ] P1-39: 全破壊的操作 (delete_branches / repo_cleanup) に `<ConfirmDialog>` を挟む確認
+- [x] P1-36: dsx 未インストール時の案内 UI (Settings 画面にインストール手順表示)
+- [x] P1-37: `<ErrorBoundary>` コンポーネント追加 (ビュー単位でエラーを捕捉)
+- [x] P1-38: 起動時 dsx_check → 未検出なら Settings ビューに遷移 + バナー表示
+- [x] P1-39: 全破壊的操作 (delete_branches / repo_cleanup) に `<ConfirmDialog>` を挟む確認
 - [ ] P1-40: Windows / macOS 両方での動作確認
 
 ---
@@ -156,11 +156,11 @@
 
 ## ビルド前提条件チェックリスト
 
-- [ ] Rust 1.78+ (`rustup update`)
-- [ ] Node.js 20 LTS
+- [x] Rust 1.78+ (`rustup update`)
+- [x] Node.js 20 LTS
 - [ ] cmake (git2 ビルドに必要)
-- [ ] Windows: MSVC Build Tools または Visual Studio
+- [x] Windows: MSVC Build Tools または Visual Studio
 - [ ] macOS: Xcode Command Line Tools
-- [ ] `cargo install tauri-cli@^2`
+- [x] `cargo install tauri-cli@^2`
 - [ ] dsx CLI v0.2.2+ が PATH に存在
 - [ ] (Phase 3) Ollama インストール済み + `ollama pull qwen2.5:latest`

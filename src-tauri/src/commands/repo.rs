@@ -189,25 +189,27 @@ fn repo_info_for_path(path: &str) -> Result<RepoInfo, String> {
     let (ahead, behind) = current_ahead_behind(&repo);
 
     // Modified + untracked counts.
-    let mut opts = StatusOptions::new();
-    opts.include_untracked(true).recurse_untracked_dirs(false);
-    let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
-
-    let mut modified_count = 0u32;
-    let mut untracked_count = 0u32;
-    for entry in statuses.iter() {
-        let s = entry.status();
-        if s.contains(git2::Status::WT_MODIFIED)
-            || s.contains(git2::Status::INDEX_MODIFIED)
-            || s.contains(git2::Status::WT_DELETED)
-            || s.contains(git2::Status::INDEX_DELETED)
-        {
-            modified_count += 1;
+    let (modified_count, untracked_count) = {
+        let mut opts = StatusOptions::new();
+        opts.include_untracked(true).recurse_untracked_dirs(false);
+        let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
+        let mut modified = 0u32;
+        let mut untracked = 0u32;
+        for entry in statuses.iter() {
+            let s = entry.status();
+            if s.contains(git2::Status::WT_MODIFIED)
+                || s.contains(git2::Status::INDEX_MODIFIED)
+                || s.contains(git2::Status::WT_DELETED)
+                || s.contains(git2::Status::INDEX_DELETED)
+            {
+                modified += 1;
+            }
+            if s.contains(git2::Status::WT_NEW) {
+                untracked += 1;
+            }
         }
-        if s.contains(git2::Status::WT_NEW) {
-            untracked_count += 1;
-        }
-    }
+        (modified, untracked)
+    };
 
     // Stash count.
     let mut stash_count = 0u32;
