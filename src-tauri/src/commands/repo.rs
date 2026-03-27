@@ -216,9 +216,7 @@ pub fn get_commit_graph(
         let _ = walk.push(head.id());
     }
 
-    // Lane assignment.
-    // `lanes[i]` = the OID we are "waiting for" in lane i.
-    // None means the slot is free.
+    // Lane assignment via the pure helper (testable without git2).
     let mut lanes: Vec<Option<git2::Oid>> = Vec::new();
     let mut nodes: Vec<CommitNode> = Vec::with_capacity(max);
 
@@ -227,50 +225,7 @@ pub fn get_commit_graph(
         let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
         let parent_ids: Vec<git2::Oid> = commit.parent_ids().collect();
 
-        // Find which lane this commit belongs to.
-        let my_lane = if let Some(pos) = lanes.iter().position(|l| *l == Some(oid)) {
-            pos
-        } else {
-            // Commit not yet tracked — allocate a new (or free) lane.
-            lanes
-                .iter()
-                .position(|l| l.is_none())
-                .unwrap_or_else(|| {
-                    lanes.push(None);
-                    lanes.len() - 1
-                })
-        };
-
-        // Clear ALL slots pointing at this commit (common ancestor reachable
-        // from multiple branches).
-        for slot in lanes.iter_mut() {
-            if *slot == Some(oid) {
-                *slot = None;
-            }
-        }
-
-        // Slot my_lane now points to the first parent (continuing the lane),
-        // unless it is already tracked elsewhere.
-        if let Some(&first_parent) = parent_ids.first() {
-            if !lanes.contains(&Some(first_parent)) {
-                lanes[my_lane] = Some(first_parent);
-            }
-            // If first_parent is already tracked, my_lane stays None (lane ends here).
-        }
-
-        // Remaining parents each need their own lane (merge scenario).
-        for &parent_id in parent_ids.iter().skip(1) {
-            if !lanes.contains(&Some(parent_id)) {
-                let free = lanes
-                    .iter()
-                    .position(|l| l.is_none())
-                    .unwrap_or_else(|| {
-                        lanes.push(None);
-                        lanes.len() - 1
-                    });
-                lanes[free] = Some(parent_id);
-            }
-        }
+        let my_lane = assign_lane(&mut lanes, &oid, &parent_ids);
 
         let refs = ref_map.get(&oid).cloned().unwrap_or_default();
         let oid_str = oid.to_string();
@@ -376,4 +331,109 @@ fn upstream_ahead_behind(repo: &Repository, branch: &git2::Branch) -> (u32, u32)
         Some((a as u32, b as u32))
     })()
     .unwrap_or((0, 0))
+}
+
+/// Assigns a display lane (column index) for a commit in a topological walk.
+///
+/// `lanes` is a slot array where each entry is either `None` (free) or
+/// `Some(oid)` meaning "this slot is reserved for the commit with that OID".
+/// The function updates `lanes` in-place so callers can re-use the same vec
+/// across the entire walk.
+///
+/// Generic over `Id` so the algorithm can be unit-tested with plain integers
+/// without pulling in git2.
+fn assign_lane<Id>(lanes: &mut Vec<Option<Id>>, id: &Id, parents: &[Id]) -> usize
+where
+    Id: PartialEq + Clone,
+{
+    // Find (or allocate) the slot reserved for this commit.
+    let my_lane = if let Some(pos) = lanes.iter().position(|l| l.as_ref() == Some(id)) {
+        pos
+    } else {
+        lanes.iter().position(|l| l.is_none()).unwrap_or_else(|| {
+            lanes.push(None);
+            lanes.len() - 1
+        })
+    };
+
+    // Free all slots pointing to this commit.
+    for slot in lanes.iter_mut() {
+        if slot.as_ref() == Some(id) {
+            *slot = None;
+        }
+    }
+
+    // Reserve my_lane for the first parent (continuing the same line).
+    if let Some(first) = parents.first() {
+        if !lanes.contains(&Some(first.clone())) {
+            lanes[my_lane] = Some(first.clone());
+        }
+    }
+
+    // Allocate a new slot for each additional parent (branch lines).
+    for parent in parents.iter().skip(1) {
+        if !lanes.contains(&Some(parent.clone())) {
+            let free = lanes.iter().position(|l| l.is_none()).unwrap_or_else(|| {
+                lanes.push(None);
+                lanes.len() - 1
+            });
+            lanes[free] = Some(parent.clone());
+        }
+    }
+
+    my_lane
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::assign_lane;
+
+    fn run(commits: &[(u32, &[u32])]) -> Vec<usize> {
+        let mut lanes: Vec<Option<u32>> = Vec::new();
+        commits
+            .iter()
+            .map(|(id, parents)| assign_lane(&mut lanes, id, parents))
+            .collect()
+    }
+
+    #[test]
+    fn lane_single_commit() {
+        assert_eq!(run(&[(1, &[])]), vec![0]);
+    }
+
+    #[test]
+    fn lane_empty_input() {
+        assert_eq!(run(&[]), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn lane_linear_history() {
+        // A→B→C (topological order: A first)
+        let result = run(&[(3, &[2]), (2, &[1]), (1, &[])]);
+        assert_eq!(result, vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn lane_merge_and_rejoin() {
+        // Merge commit M has two parents: A (lane 0) and B (lane 1).
+        // After M both lines rejoin on lane 0.
+        //   M(0) -> A(0), B(1)
+        //   A(0) -> root(0)
+        //   B(1) -> root(0)
+        //   root(0) -> []
+        let result = run(&[(10, &[8, 9]), (8, &[7]), (9, &[7]), (7, &[])]);
+        assert_eq!(result, vec![0, 0, 1, 0]);
+    }
+
+    #[test]
+    fn lane_unseen_branch_tip_gets_new_lane() {
+        // Two independent branch tips before they converge.
+        //   tip_a(0) -> base(0)
+        //   tip_b(1) -> base(0)   ← base already claimed by lane 0
+        //   base(0)  -> []
+        let result = run(&[(1, &[3]), (2, &[3]), (3, &[])]);
+        assert_eq!(result, vec![0, 1, 0]);
+    }
 }
