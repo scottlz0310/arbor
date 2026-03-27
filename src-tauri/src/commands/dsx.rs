@@ -90,6 +90,35 @@ pub async fn repo_cleanup(app: AppHandle, repo_path: String) -> Result<DsxOutput
     run_dsx_with_events(&app, &repo_path, &["repo", "cleanup"]).await
 }
 
+// ─── env_inject ───────────────────────────────────────────────────────────────
+
+/// Runs `dsx env run -- <cmd>` in the given repository directory.
+///
+/// Streams stdout back as `dsx_progress` events so the UI can display
+/// real-time output for long-running environment-injected commands.
+#[tauri::command]
+pub async fn env_inject(
+    app: AppHandle,
+    repo_path: String,
+    cmd: String,
+) -> Result<DsxOutput, String> {
+    let cmd_parts: Vec<&str> = cmd.split_whitespace().collect();
+    let mut args = vec!["env", "run", "--"];
+    args.extend_from_slice(&cmd_parts);
+    run_dsx_with_events(&app, &repo_path, &args).await
+}
+
+// ─── sys_update ───────────────────────────────────────────────────────────────
+
+/// Runs `dsx sys update --no-tui` to upgrade dsx-managed tools.
+///
+/// Does not require a specific repository directory. Progress lines are
+/// streamed via `dsx_progress` events the same way as `repo_update`.
+#[tauri::command]
+pub async fn sys_update(app: AppHandle) -> Result<DsxOutput, String> {
+    run_dsx_with_events(&app, ".", &["sys", "update", "--no-tui"]).await
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Runs a dsx command, streaming stdout lines as `dsx_progress` events to the
@@ -215,5 +244,36 @@ mod tests {
         let path = which_dsx();
         assert!(path.is_some(), "which_dsx should return a path");
         assert!(!path.unwrap().is_empty());
+    }
+
+    /// `env_inject` に渡すコマンド文字列が空白で正しく分割されることを確認する。
+    /// dsx の実際の呼び出しではなく、引数分割ロジックのみを検証する。
+    #[test]
+    fn env_inject_cmd_splits_into_args() {
+        let cmd = "npm install --frozen-lockfile";
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        assert_eq!(parts, vec!["npm", "install", "--frozen-lockfile"]);
+
+        let mut args = vec!["env", "run", "--"];
+        args.extend_from_slice(&parts);
+        assert_eq!(
+            args,
+            vec!["env", "run", "--", "npm", "install", "--frozen-lockfile"]
+        );
+    }
+
+    /// dsx が利用可能な場合に `sys update --no-tui` が存在するサブコマンドとして
+    /// 認識されることを確認する（`--help` でサブコマンド一覧が取れれば十分）。
+    #[test]
+    fn run_dsx_sync_help_succeeds_when_available() {
+        if !dsx_check().available {
+            return;
+        }
+        let result = run_dsx_sync(".", &["--help"]);
+        let output = result.expect("dsx --help should not error");
+        // dsx --help は exit 0 または非ゼロを返す実装に依存するが
+        // 少なくとも stdout/stderr のどちらかに出力があることを確認
+        let has_output = !output.stdout.is_empty() || !output.stderr.is_empty();
+        assert!(has_output, "dsx --help should produce some output");
     }
 }

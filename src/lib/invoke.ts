@@ -99,3 +99,9 @@ export const repoCleanupPreview = (repo_path: string) =>
 
 export const repoCleanup = (repo_path: string) =>
   tauriInvoke<DsxOutput>('repo_cleanup', { repo_path });
+
+export const envInject = (repo_path: string, cmd: string) =>
+  tauriInvoke<DsxOutput>('env_inject', { repo_path, cmd });
+
+export const sysUpdate = () =>
+  tauriInvoke<DsxOutput>('sys_update');
