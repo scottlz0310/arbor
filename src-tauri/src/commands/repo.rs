@@ -190,13 +190,18 @@ pub fn get_commit_graph(
     let max = (limit.unwrap_or(200) as usize).min(MAX_COMMITS_LIMIT);
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
 
-    // Build oid → ref-names map (branches, tags, HEAD).
+    // Build oid → ref-names map (local branches and tags only; remotes are
+    // excluded to avoid cluttering the graph badges with origin/... labels).
     let mut ref_map: HashMap<git2::Oid, Vec<String>> = HashMap::new();
     for r in repo.references().map_err(|e| e.to_string())? {
         let r = r.map_err(|e| e.to_string())?;
-        let Some(name) = r.shorthand() else { continue };
+        let Some(full_name) = r.name() else { continue };
+        if !full_name.starts_with("refs/heads/") && !full_name.starts_with("refs/tags/") {
+            continue;
+        }
+        let Some(short) = r.shorthand() else { continue };
         if let Ok(commit) = r.peel_to_commit() {
-            ref_map.entry(commit.id()).or_default().push(name.to_string());
+            ref_map.entry(commit.id()).or_default().push(short.to_string());
         }
     }
 
@@ -204,16 +209,27 @@ pub fn get_commit_graph(
     let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
         .map_err(|e| e.to_string())?;
+    // Track whether we added any starting points to the revwalk.
+    let mut has_start = false;
     // push_glob may return NotFound on repos with no local branches (e.g. bare
-    // or freshly `git init`'d). Treat that as "no commits" rather than an error.
+    // or freshly `git init`'d). Treat that as "no branches" rather than an error.
     match walk.push_glob("refs/heads/*") {
-        Ok(()) => {}
-        Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(vec![]),
+        Ok(()) => {
+            has_start = true;
+        }
+        Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            // No local branches; we'll still try HEAD below.
+        }
         Err(e) => return Err(e.to_string()),
     }
     // Also include HEAD in case of detached state.
     if let Ok(head) = repo.head().and_then(|h| h.peel_to_commit()) {
         let _ = walk.push(head.id());
+        has_start = true;
+    }
+    // If we have no starting points at all, there is nothing to walk.
+    if !has_start {
+        return Ok(vec![]);
     }
 
     // Lane assignment via the pure helper (testable without git2).
