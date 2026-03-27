@@ -103,7 +103,7 @@
 - [x] P1-37: `<ErrorBoundary>` コンポーネント追加 (ビュー単位でエラーを捕捉)
 - [x] P1-38: 起動時 dsx_check → 未検出なら Settings ビューに遷移 + バナー表示
 - [x] P1-39: 全破壊的操作 (delete_branches / repo_cleanup) に `<ConfirmDialog>` を挟む確認
-- [ ] P1-40: Windows / macOS 両方での動作確認
+- [x] P1-40: Windows / macOS 両方での動作確認
 
 ---
 

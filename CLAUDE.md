@@ -39,7 +39,23 @@ cargo test              # テスト実行
 ```bash
 npm run dev             # Vite dev server のみ (Tauri なし)
 npm run build           # TypeScript コンパイル + Vite ビルド
+npm run typecheck       # 型チェックのみ（emit なし）
+npm test                # vitest run（ワンショット）
+npm run test:watch      # vitest ウォッチモード
+npm run test:coverage   # カバレッジ付き（coverage/lcov.info を生成）
 ```
+
+単一テストファイルを実行する場合:
+```bash
+npx vitest run src/lib/ruleEngine.test.ts
+```
+
+### Git フック（lefthook）
+
+`lefthook.yml` で定義。`npm install` 実行時に自動インストールされる。
+
+- **pre-commit（並列）**: `npm run typecheck`、`cargo check`
+- **pre-push（直列）**: `cargo clippy -- -D warnings`、`cargo test`、`npm test`
 
 ## アーキテクチャ
 
@@ -89,6 +105,7 @@ Rust backend (Tauri commands)
 
 **データフロー:** Rust コマンド → `lib/invoke.ts` → Zustand store → React コンポーネント
 **イベント:** Rust `emit("dsx_progress", line)` → `App.tsx` の `listen()` → `uiStore.appendDsxLine()`
+**サーバー状態:** `@tanstack/react-query` は現在依存関係に含まれているが、Phase 1 では未使用。Phase 2 以降の GitHub API キャッシュ用途を想定。
 
 ### 設定ファイル
 
@@ -105,6 +122,12 @@ Rust backend (Tauri commands)
 | `repo_update` | `dsx repo update --no-tui --jobs 4` | stdout を `dsx_progress` イベントでストリーム |
 | `repo_cleanup_preview` | `dsx repo cleanup -n` | dry-run、stdout をそのままフロントに返す |
 | `repo_cleanup` | `dsx repo cleanup` | ConfirmDialog 後に呼び出す |
+
+`repo_update` と `repo_cleanup` は `run_dsx_with_events` を使いストリーミング。`repo_cleanup_preview` は `run_dsx_sync`（同期）。
+
+### 認証の制約（Phase 1）
+
+`fetch_all` は git2 のシステム git 認証情報ヘルパー / SSH エージェントに依存する。SSH / HTTPS 認証情報 UI は Phase 2 以降。HTTPS リポジトリで認証情報が未設定の場合、fetch はサイレントに失敗する。
 
 ## 実装フェーズ
 
