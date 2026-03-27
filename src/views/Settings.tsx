@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, updateRepositoryGithub, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
@@ -251,11 +251,12 @@ function RepoCard({
 }: {
   repo: RepoConfig;
   onRemove: (path: string) => void;
-  onSaveGithub: (path: string, owner: string, repo: string) => Promise<void>;
+  onSaveGithub: (path: string, owner: string, repoName: string) => Promise<void>;
 }) {
   const [owner, setOwner] = useState(repo.github_owner ?? '');
   const [repoName, setRepoName] = useState(repo.github_repo ?? '');
   const [saving, setSaving] = useState(false);
+  const [detecting, setDetecting] = useState(false);
 
   const dirty = owner !== (repo.github_owner ?? '') || repoName !== (repo.github_repo ?? '');
 
@@ -263,6 +264,17 @@ function RepoCard({
     setSaving(true);
     try { await onSaveGithub(repo.path, owner, repoName); }
     finally { setSaving(false); }
+  };
+
+  const handleDetect = async () => {
+    setDetecting(true);
+    try {
+      const [detectedOwner, detectedRepo] = await detectGithubRemote(repo.path);
+      if (detectedOwner) setOwner(detectedOwner);
+      if (detectedRepo) setRepoName(detectedRepo);
+    } finally {
+      setDetecting(false);
+    }
   };
 
   const inputStyle: React.CSSProperties = {
@@ -283,6 +295,9 @@ function RepoCard({
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)' }}>{repo.name}</div>
           <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{repo.path}</div>
         </div>
+        <AppBtn onClick={handleDetect} disabled={detecting}>
+          {detecting ? '…' : 'Detect'}
+        </AppBtn>
         <AppBtn variant="danger" onClick={() => onRemove(repo.path)}>Remove</AppBtn>
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

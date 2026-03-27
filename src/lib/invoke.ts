@@ -41,6 +41,9 @@ export const updateRepositoryGithub = (args: {
   githubRepo: string | null;
 }) => tauriInvoke<AppConfig>('update_repository_github', args);
 
+export const detectGithubRemote = (path: string) =>
+  tauriInvoke<[string | null, string | null]>('detect_github_remote', { path });
+
 export const scanDirectory = (root: string) =>
   tauriInvoke<string[]>('scan_directory', { root });
 
