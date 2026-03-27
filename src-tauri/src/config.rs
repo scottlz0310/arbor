@@ -16,6 +16,10 @@ pub struct Settings {
     pub stale_threshold_days: u32,
     pub fetch_on_startup: bool,
     pub github_keychain_key: String,
+    /// Fallback PAT storage when the OS keychain is unavailable.
+    /// Stored in the config file (user-owned directory, same security as git config).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_pat: Option<String>,
 }
 
 impl Default for Settings {
@@ -24,6 +28,7 @@ impl Default for Settings {
             stale_threshold_days: 14,
             fetch_on_startup: true,
             github_keychain_key: "arbor_github_pat".to_string(),
+            github_pat: None,
         }
     }
 }
