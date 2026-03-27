@@ -47,7 +47,7 @@ pub fn remove_repository(path: String) -> Result<AppConfig, String> {
 
 /// Internal helper used by GitHub API commands to retrieve the stored PAT.
 /// Not a Tauri command — the secret stays inside the Rust process.
-pub fn load_github_pat() -> Result<String, String> {
+pub(crate) fn load_github_pat() -> Result<String, String> {
     let config = load_config()?;
     match keychain_entry(&config)?.get_password() {
         Ok(pat) => Ok(pat),

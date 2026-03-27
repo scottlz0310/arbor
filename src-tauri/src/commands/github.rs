@@ -1,19 +1,94 @@
 use crate::commands::config_cmd::load_github_pat;
 use crate::models::{CheckRun, Issue, PullRequest};
+use reqwest::{StatusCode, Url};
 use serde::Deserialize;
+use std::sync::OnceLock;
 
 const GITHUB_API: &str = "https://api.github.com";
 const API_VERSION: &str = "2022-11-28";
 
-// ─── HTTP helper ─────────────────────────────────────────────────────────────
+// ─── Shared HTTP client ───────────────────────────────────────────────────────
 
-async fn get<T: for<'de> Deserialize<'de>>(url: &str, pat: &str) -> Result<T, String> {
-    let client = reqwest::Client::builder()
-        .user_agent(concat!("Arbor/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| format!("HTTP クライアントの初期化に失敗しました: {e}"))?;
+static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
-    let resp = client
+fn get_client() -> &'static reqwest::Client {
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent(concat!("Arbor/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .expect("HTTP client build should never fail")
+    })
+}
+
+// ─── URL builder ─────────────────────────────────────────────────────────────
+
+/// Builds a GitHub API URL with properly percent-encoded path segments.
+fn api_url(path_parts: &[&str], params: &[(&str, &str)]) -> Result<Url, String> {
+    let mut url = Url::parse(GITHUB_API).map_err(|e| e.to_string())?;
+    url.path_segments_mut()
+        .map_err(|_| "URL path build error".to_string())?
+        .extend(path_parts);
+    if !params.is_empty() {
+        url.query_pairs_mut().extend_pairs(params.iter().copied());
+    }
+    Ok(url)
+}
+
+// ─── HTTP helpers ─────────────────────────────────────────────────────────────
+
+fn check_status(status: StatusCode) -> Result<(), String> {
+    if status == StatusCode::UNAUTHORIZED {
+        return Err(
+            "GitHub PAT が無効です。Settings から PAT を更新してください。".to_string(),
+        );
+    }
+    if status == StatusCode::NOT_FOUND {
+        return Err(
+            "リポジトリが見つかりません。owner / repo 名を確認してください。".to_string(),
+        );
+    }
+    if !status.is_success() {
+        return Err(format!("GitHub API エラー: HTTP {status}"));
+    }
+    Ok(())
+}
+
+/// Fetches all pages from an endpoint that returns a JSON array.
+/// Follows `Link: rel="next"` headers until exhausted.
+async fn get_all_pages<T: for<'de> Deserialize<'de>>(
+    first_url: Url,
+    pat: &str,
+) -> Result<Vec<T>, String> {
+    let mut results: Vec<T> = Vec::new();
+    let mut next: Option<String> = Some(first_url.to_string());
+
+    while let Some(url) = next {
+        let resp = get_client()
+            .get(&url)
+            .header("Authorization", format!("Bearer {pat}"))
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", API_VERSION)
+            .send()
+            .await
+            .map_err(|e| format!("GitHub API リクエストに失敗しました: {e}"))?;
+
+        check_status(resp.status())?;
+
+        next = parse_next_link(resp.headers());
+
+        let mut page: Vec<T> = resp
+            .json()
+            .await
+            .map_err(|e| format!("GitHub API レスポンスのパースに失敗しました: {e}"))?;
+        results.append(&mut page);
+    }
+
+    Ok(results)
+}
+
+/// Fetches a single response (non-array wrapper objects like CheckRunsResponse).
+async fn get_once<T: for<'de> Deserialize<'de>>(url: Url, pat: &str) -> Result<T, String> {
+    let resp = get_client()
         .get(url)
         .header("Authorization", format!("Bearer {pat}"))
         .header("Accept", "application/vnd.github+json")
@@ -22,24 +97,27 @@ async fn get<T: for<'de> Deserialize<'de>>(url: &str, pat: &str) -> Result<T, St
         .await
         .map_err(|e| format!("GitHub API リクエストに失敗しました: {e}"))?;
 
-    let status = resp.status();
-    if status == 401 {
-        return Err(
-            "GitHub PAT が無効です。Settings から PAT を更新してください。".to_string(),
-        );
-    }
-    if status == 404 {
-        return Err(
-            "リポジトリが見つかりません。owner / repo 名を確認してください。".to_string(),
-        );
-    }
-    if !status.is_success() {
-        return Err(format!("GitHub API エラー: HTTP {status}"));
-    }
+    check_status(resp.status())?;
 
     resp.json::<T>()
         .await
         .map_err(|e| format!("GitHub API レスポンスのパースに失敗しました: {e}"))
+}
+
+/// Parses the URL of the next page from a `Link` response header.
+fn parse_next_link(headers: &reqwest::header::HeaderMap) -> Option<String> {
+    let link = headers.get("link")?.to_str().ok()?;
+    // Format: <https://...?page=2>; rel="next", <...>; rel="last"
+    for part in link.split(',') {
+        let part = part.trim();
+        if part.contains(r#"rel="next""#) {
+            if let Some(url_part) = part.split(';').next() {
+                let url = url_part.trim().trim_start_matches('<').trim_end_matches('>');
+                return Some(url.to_string());
+            }
+        }
+    }
+    None
 }
 
 // ─── get_pull_requests (P2-02) ────────────────────────────────────────────────
@@ -70,7 +148,7 @@ struct RawRef {
     ref_name: String,
 }
 
-/// Returns pull requests for the given repository.
+/// Returns pull requests for the given repository (all pages).
 /// `state`: "open" | "closed" | "all"  (defaults to "open")
 #[tauri::command]
 pub async fn get_pull_requests(
@@ -80,10 +158,11 @@ pub async fn get_pull_requests(
 ) -> Result<Vec<PullRequest>, String> {
     let pat = load_github_pat()?;
     let state = state.as_deref().unwrap_or("open");
-    let url = format!(
-        "{GITHUB_API}/repos/{owner}/{repo}/pulls?state={state}&per_page=100"
-    );
-    let raw: Vec<RawPullRequest> = get(&url, &pat).await?;
+    let url = api_url(
+        &["repos", &owner, &repo, "pulls"],
+        &[("state", state), ("per_page", "100")],
+    )?;
+    let raw: Vec<RawPullRequest> = get_all_pages(url, &pat).await?;
     Ok(raw
         .into_iter()
         .map(|r| PullRequest {
@@ -124,7 +203,7 @@ struct RawLabel {
     name: String,
 }
 
-/// Returns issues for the given repository (pull requests are excluded).
+/// Returns issues for the given repository (all pages; pull requests are excluded).
 /// `state`: "open" | "closed" | "all"  (defaults to "open")
 #[tauri::command]
 pub async fn get_issues(
@@ -134,10 +213,11 @@ pub async fn get_issues(
 ) -> Result<Vec<Issue>, String> {
     let pat = load_github_pat()?;
     let state = state.as_deref().unwrap_or("open");
-    let url = format!(
-        "{GITHUB_API}/repos/{owner}/{repo}/issues?state={state}&per_page=100"
-    );
-    let raw: Vec<RawIssue> = get(&url, &pat).await?;
+    let url = api_url(
+        &["repos", &owner, &repo, "issues"],
+        &[("state", state), ("per_page", "100")],
+    )?;
+    let raw: Vec<RawIssue> = get_all_pages(url, &pat).await?;
     Ok(raw
         .into_iter()
         .filter(|r| r.pull_request.is_none())
@@ -174,6 +254,7 @@ struct RawCheckRun {
 }
 
 /// Returns check runs for the given commit ref (branch name or SHA).
+/// Branch names containing `/` are correctly percent-encoded in the URL path.
 #[tauri::command]
 pub async fn get_check_runs(
     owner: String,
@@ -181,10 +262,11 @@ pub async fn get_check_runs(
     git_ref: String,
 ) -> Result<Vec<CheckRun>, String> {
     let pat = load_github_pat()?;
-    let url = format!(
-        "{GITHUB_API}/repos/{owner}/{repo}/commits/{git_ref}/check-runs?per_page=100"
-    );
-    let raw: CheckRunsResponse = get(&url, &pat).await?;
+    let url = api_url(
+        &["repos", &owner, &repo, "commits", &git_ref, "check-runs"],
+        &[("per_page", "100")],
+    )?;
+    let raw: CheckRunsResponse = get_once(url, &pat).await?;
     Ok(raw
         .check_runs
         .into_iter()
