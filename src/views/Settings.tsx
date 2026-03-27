@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
@@ -7,6 +8,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus } from '../types';
 
 export default function Settings() {
+  const queryClient = useQueryClient();
   const { addToast } = useUiStore();
   const { loadRepos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
@@ -45,6 +47,7 @@ export default function Settings() {
       await setGithubPat(trimmed);
       setPatStored(true);
       setPatInput('');
+      queryClient.invalidateQueries({ queryKey: ['has_pat'] });
       addToast('GitHub PAT を保存しました', 'success');
     } catch (e) {
       addToast(String(e), 'error');
@@ -58,6 +61,7 @@ export default function Settings() {
     try {
       await deleteGithubPat();
       setPatStored(false);
+      queryClient.invalidateQueries({ queryKey: ['has_pat'] });
       addToast('GitHub PAT を削除しました', 'success');
     } catch (e) {
       addToast(String(e), 'error');

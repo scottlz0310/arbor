@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Settings from './Settings';
 import ToastContainer from '../components/Toast';
 import * as invoke from '../lib/invoke';
@@ -23,12 +24,13 @@ const mockConfig = {
   github_keychain_key: 'arbor_github_pat',
 };
 
-function renderWithToast() {
+function renderSettings(withToast = false) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <>
+    <QueryClientProvider client={qc}>
       <Settings />
-      <ToastContainer />
-    </>,
+      {withToast && <ToastContainer />}
+    </QueryClientProvider>,
   );
 }
 
@@ -43,7 +45,7 @@ beforeEach(() => {
 
 describe('Settings — Repositories section', () => {
   it('+ Add Repository ボタンがセクション内に表示される', async () => {
-    render(<Settings />);
+    renderSettings();
     // AppBar ではなく Repositories セクション内にボタンが存在する
     await screen.findByRole('button', { name: '+ Add Repository' });
     expect(screen.getByRole('button', { name: '+ Add Repository' })).toBeInTheDocument();
@@ -52,34 +54,34 @@ describe('Settings — Repositories section', () => {
 
 describe('Settings — dsx CLI section', () => {
   it('dsx が利用可能な場合にバージョンを表示する', async () => {
-    render(<Settings />);
+    renderSettings();
     await screen.findByText(/v0\.2\.3/);
     expect(screen.getByText(/v0\.2\.3/)).toBeInTheDocument();
   });
 
   it('dsx が利用可能な場合に Update ボタンを表示する', async () => {
-    render(<Settings />);
+    renderSettings();
     await screen.findByRole('button', { name: 'Update' });
     expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument();
   });
 
   it('dsx が利用不可の場合に Update ボタンを表示しない', async () => {
     mockDsxCheck.mockResolvedValue(unavailableDsxStatus as never);
-    render(<Settings />);
+    renderSettings();
     // インストール案内テキストが出るまで待つ
     await screen.findByText(/dsx が見つかりません/);
     expect(screen.queryByRole('button', { name: 'Update' })).not.toBeInTheDocument();
   });
 
   it('Update ボタンをクリックすると sysUpdate が呼ばれる', async () => {
-    render(<Settings />);
+    renderSettings();
     const btn = await screen.findByRole('button', { name: 'Update' });
     await userEvent.click(btn);
     expect(mockSysUpdate).toHaveBeenCalledTimes(1);
   });
 
   it('sysUpdate 完了後に dsxCheck を再呼び出しする', async () => {
-    render(<Settings />);
+    renderSettings();
     const btn = await screen.findByRole('button', { name: 'Update' });
     await userEvent.click(btn);
     await waitFor(() => {
@@ -90,7 +92,7 @@ describe('Settings — dsx CLI section', () => {
 
   it('sysUpdate が失敗した場合にエラートーストを表示する', async () => {
     mockSysUpdate.mockRejectedValue(new Error('network error') as never);
-    renderWithToast();
+    renderSettings(true);
     const btn = await screen.findByRole('button', { name: 'Update' });
     await userEvent.click(btn);
     // Toast に error メッセージが表示される（String(Error) → "Error: network error"）
