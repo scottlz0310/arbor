@@ -163,3 +163,57 @@ fn run_dsx_sync(cwd: &str, args: &[&str]) -> Result<DsxOutput, String> {
         exit_code: output.status.code().unwrap_or(-1),
     })
 }
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `available`, `version`, `path` の整合性を検証する。
+    /// dsx が PATH になくても必ず通過する。CI では dsx がインストールされるため
+    /// `available: true` の分岐も必ずカバーされる。
+    #[test]
+    fn dsx_check_fields_consistent() {
+        let status = dsx_check();
+        if status.available {
+            assert!(
+                status.version.is_some(),
+                "version must be Some when available"
+            );
+            assert!(status.path.is_some(), "path must be Some when available");
+        } else {
+            assert!(
+                status.version.is_none(),
+                "version must be None when unavailable"
+            );
+            assert!(
+                status.path.is_none(),
+                "path must be None when unavailable"
+            );
+        }
+    }
+
+    /// dsx が利用可能な場合に `--version` を同期実行し、exit code 0 を返すことを確認する。
+    #[test]
+    fn run_dsx_sync_version_succeeds_when_available() {
+        if !dsx_check().available {
+            return; // dsx が PATH になければスキップ
+        }
+        let result = run_dsx_sync(".", &["--version"]);
+        let output = result.expect("run_dsx_sync should not error when dsx is available");
+        assert_eq!(output.exit_code, 0);
+        assert!(!output.stdout.is_empty(), "stdout should contain version string");
+    }
+
+    /// dsx が利用可能な場合に `which_dsx` がパスを返すことを確認する。
+    #[test]
+    fn which_dsx_returns_some_when_available() {
+        if !dsx_check().available {
+            return;
+        }
+        let path = which_dsx();
+        assert!(path.is_some(), "which_dsx should return a path");
+        assert!(!path.unwrap().is_empty());
+    }
+}

@@ -112,7 +112,7 @@
 ### フロントエンドテスト
 - [x] T-01: `vitest` 導入 + `vitest.config.ts` 設定
 - [x] T-02: `src/lib/ruleEngine.test.ts` — ルールエンジン全ロジックのユニットテスト (12 ケース)
-- [ ] T-03: `@testing-library/react` 導入 + 主要コンポーネントのスナップショットテスト (Phase 2 以降)
+- [x] T-03: `@testing-library/react` 導入 + 主要コンポーネントのスナップショットテスト (Phase 2 以降)
 
 ### Rust テスト
 - [x] T-04: `config.rs` — デフォルト値・TOML ラウンドトリップのユニットテスト (4 ケース)

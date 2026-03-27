@@ -62,6 +62,15 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - name: Install dsx CLI
+        shell: pwsh
+        run: |
+          $ver = "0.2.3"
+          $url = "https://github.com/scottlz0310/dsx/releases/download/v${ver}/dsx_${ver}_windows_amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\dsx.zip"
+          Expand-Archive -Path "$env:TEMP\dsx.zip" -DestinationPath "$env:TEMP\dsx" -Force
+          echo "$env:TEMP\dsx" >> $env:GITHUB_PATH
+
       - name: Cache cargo registry (shared)
         uses: actions/cache@v4
         with:
