@@ -7,7 +7,7 @@ use commands::{
         add_repository, delete_github_pat, get_config, has_github_pat, remove_repository,
         scan_directory, set_github_pat, update_settings,
     },
-    dsx::{dsx_check, repo_cleanup, repo_cleanup_preview, repo_update},
+    dsx::{dsx_check, env_inject, repo_cleanup, repo_cleanup_preview, repo_update, sys_update},
     github::{get_check_runs, get_issues, get_pull_requests},
     repo::{
         delete_branches, fetch_all, get_branches, get_commit_graph, get_repo_status,
@@ -46,6 +46,8 @@ pub fn run() {
             repo_update,
             repo_cleanup_preview,
             repo_cleanup,
+            env_inject,
+            sys_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Arbor");

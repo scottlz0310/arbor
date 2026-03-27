@@ -141,9 +141,9 @@
 - [x] P2-06: TanStack Query 導入 — GitHub API キャッシュ + 5分間隔自動リフレッシュ
 - [x] P2-07: `commands/repo.rs` — `get_commit_graph` (d3 向け CommitNode 配列 + lane 計算)
 - [x] P2-08: `src/views/Graph.tsx` — SVG コミットグラフ (d3 lane 計算 + 素 SVG 描画)
-- [ ] P2-09: `commands/dsx.rs` — `env_inject` (`dsx env run -- {cmd}`)
-- [ ] P2-10: `commands/dsx.rs` — `sys_update` (`dsx sys update --no-tui`)
-- [ ] P2-11: Settings 画面に sys_update ボタン追加
+- [x] P2-09: `commands/dsx.rs` — `env_inject` (`dsx env run -- {cmd}`)
+- [x] P2-10: `commands/dsx.rs` — `sys_update` (`dsx sys update --no-tui`)
+- [x] P2-11: Settings 画面に sys_update ボタン追加
 - [x] P2-12: PAT 未設定時の GitHub API エラーを graceful に処理 (PR ビュー無効化 + 設定案内)
 
 ---

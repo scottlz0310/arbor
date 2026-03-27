@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus } from '../types';
 
@@ -14,6 +14,7 @@ export default function Settings() {
   const [patStored, setPatStored] = useState<boolean | null>(null);
   const [patInput, setPatInput]   = useState('');
   const [patLoading, setPatLoading] = useState(false);
+  const [sysUpdating, setSysUpdating] = useState(false);
 
   useEffect(() => {
     getConfig().then(setConfig).catch((e) => addToast(String(e), 'error'));
@@ -65,6 +66,21 @@ export default function Settings() {
     }
   };
 
+  const handleSysUpdate = async () => {
+    setSysUpdating(true);
+    try {
+      await sysUpdate();
+      addToast('dsx sys update 完了', 'success');
+      // バージョンを再取得して表示を更新する
+      const status = await dsxCheck();
+      setDsxStatus(status);
+    } catch (e) {
+      addToast(String(e), 'error');
+    } finally {
+      setSysUpdating(false);
+    }
+  };
+
   const handleRemoveRepo = async (path: string) => {
     try {
       const updated = await removeRepository(path);
@@ -90,11 +106,19 @@ export default function Settings() {
           <SectionTitle>dsx CLI</SectionTitle>
           {dsxStatus ? (
             dsxStatus.available ? (
-              <div style={{ fontSize: 12, color: 'var(--green)' }}>
-                ✓ dsx {dsxStatus.version} &nbsp;·&nbsp;
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
-                  {dsxStatus.path}
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontSize: 12, color: 'var(--green)', flex: 1 }}>
+                  ✓ dsx {dsxStatus.version} &nbsp;·&nbsp;
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
+                    {dsxStatus.path}
+                  </span>
+                </div>
+                <AppBtn
+                  onClick={handleSysUpdate}
+                  disabled={sysUpdating}
+                >
+                  {sysUpdating ? 'Updating…' : 'Update'}
+                </AppBtn>
               </div>
             ) : (
               <div style={{
