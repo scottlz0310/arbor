@@ -43,33 +43,143 @@ pub fn remove_repository(path: String) -> Result<AppConfig, String> {
     Ok(config)
 }
 
-// ─── GitHub PAT (OS keychain → config fallback) ───────────────────────────────
+// ─── GitHub PAT (DPAPI encrypted → config.toml) ───────────────────────────────
+//
+// keyring v3.6.x on Windows has a bug: credentials written by one Entry instance
+// cannot be read by a different Entry instance (cross-entry reads return NoEntry).
+// Because every Tauri command call creates a fresh Entry, we cannot rely on keyring.
+//
+// Instead, we encrypt the PAT with Windows DPAPI (user-account-scoped; unreadable
+// on other machines) and store the resulting base64 blob in config.toml.
+// On non-Windows the keyring crate is used directly (it works on macOS/Linux).
 
-fn keychain_entry(config: &crate::config::AppConfig) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(&config.settings.github_keychain_key, "arbor")
-        .map_err(|e| format!("OS キーチェーンへのアクセスに失敗しました: {e}"))
+#[cfg(target_os = "windows")]
+mod pat_crypto {
+    use std::ptr;
+    use windows_sys::Win32::Foundation::BOOL;
+    use windows_sys::Win32::Security::Cryptography::{
+        CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+    };
+
+    fn blob(data: &[u8]) -> CRYPT_INTEGER_BLOB {
+        CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 }
+    }
+
+    pub fn encrypt(plaintext: &str) -> Result<String, String> {
+        let input = plaintext.as_bytes();
+        let mut data_in = blob(input);
+        let mut data_out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
+        unsafe {
+            let ok: BOOL = CryptProtectData(
+                &mut data_in, ptr::null(), ptr::null_mut(),
+                ptr::null_mut(), ptr::null_mut(),
+                CRYPTPROTECT_UI_FORBIDDEN, &mut data_out,
+            );
+            if ok == 0 {
+                return Err("DPAPI 暗号化に失敗しました".to_string());
+            }
+            // Copy into a Vec before the OS-allocated buffer goes out of scope.
+            // The DPAPI buffer (LocalAlloc) is intentionally not freed here;
+            // the process-heap memory is reclaimed by the OS when the process exits.
+            // This is acceptable for a PAT that is saved at most once per session.
+            let enc = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
+            Ok(base64_encode(&enc))
+        }
+    }
+
+    pub fn decrypt(encoded: &str) -> Result<String, String> {
+        let ciphertext = base64_decode(encoded)
+            .map_err(|_| "DPAPI blob の base64 デコードに失敗しました".to_string())?;
+        let mut data_in = blob(&ciphertext);
+        let mut data_out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
+        unsafe {
+            let ok: BOOL = CryptUnprotectData(
+                &mut data_in, ptr::null_mut(), ptr::null_mut(),
+                ptr::null_mut(), ptr::null_mut(),
+                CRYPTPROTECT_UI_FORBIDDEN, &mut data_out,
+            );
+            if ok == 0 {
+                return Err("DPAPI 復号に失敗しました（別のユーザー/マシンの blob は復号できません）".to_string());
+            }
+            let bytes = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
+            String::from_utf8(bytes).map_err(|e| format!("UTF-8 変換エラー: {e}"))
+        }
+    }
+
+    // Minimal base64 via standard alphabet — avoids extra deps.
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    fn base64_encode(data: &[u8]) -> String {
+        let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+        for chunk in data.chunks(3) {
+            let b0 = chunk[0] as u32;
+            let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+            let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+            let n = (b0 << 16) | (b1 << 8) | b2;
+            out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
+            out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
+            out.push(if chunk.len() > 1 { ALPHABET[((n >> 6) & 0x3f) as usize] as char } else { '=' });
+            out.push(if chunk.len() > 2 { ALPHABET[(n & 0x3f) as usize] as char } else { '=' });
+        }
+        out
+    }
+
+    fn base64_decode(s: &str) -> Result<Vec<u8>, ()> {
+        let mut table = [0xffu8; 256];
+        for (i, &b) in ALPHABET.iter().enumerate() { table[b as usize] = i as u8; }
+        let s = s.trim_end_matches('=');
+        let mut out = Vec::with_capacity(s.len() * 3 / 4);
+        let mut buf = 0u32;
+        let mut bits = 0u32;
+        for c in s.bytes() {
+            let v = table[c as usize];
+            if v == 0xff { return Err(()); }
+            buf = (buf << 6) | v as u32;
+            bits += 6;
+            if bits >= 8 { bits -= 8; out.push(((buf >> bits) & 0xff) as u8); }
+        }
+        Ok(out)
+    }
 }
 
-/// Try to read the PAT from the keychain, returning None on any error/absence.
-fn try_keychain_get(config: &crate::config::AppConfig) -> Option<String> {
-    keychain_entry(config).ok()?.get_password().ok()
+#[cfg(not(target_os = "windows"))]
+mod pat_crypto {
+    fn keychain_entry() -> Result<keyring::Entry, String> {
+        keyring::Entry::new("arbor_github_pat", "arbor")
+            .map_err(|e| format!("keychain エラー: {e}"))
+    }
+    pub fn encrypt(plaintext: &str) -> Result<String, String> {
+        keychain_entry()?.set_password(plaintext).map_err(|e| format!("{e}"))?;
+        Ok(String::new()) // sentinel: stored in keychain, not in blob
+    }
+    pub fn decrypt(_encoded: &str) -> Result<String, String> {
+        keychain_entry()?.get_password().map_err(|e| format!("{e}"))
+    }
+}
+
+/// Encrypt the PAT and return an opaque, portable-but-user-scoped blob.
+fn pat_encrypt(plaintext: &str) -> Result<String, String> {
+    pat_crypto::encrypt(plaintext)
+}
+
+/// Decrypt the blob stored in config.github_pat_enc.
+fn pat_decrypt(encoded: &str) -> Result<String, String> {
+    pat_crypto::decrypt(encoded)
 }
 
 /// Internal helper used by GitHub API commands to retrieve the stored PAT.
 /// Not a Tauri command — the secret stays inside the Rust process.
 pub(crate) fn load_github_pat() -> Result<String, String> {
     let config = load_config()?;
-    // Keychain first, then config-file fallback.
-    if let Some(pat) = try_keychain_get(&config) {
-        return Ok(pat);
+    match &config.settings.github_pat_enc {
+        Some(blob) => pat_decrypt(blob),
+        None => Err(
+            "GitHub PAT が設定されていません。Settings から PAT を登録してください。".to_string(),
+        ),
     }
-    config.settings.github_pat.ok_or_else(|| {
-        "GitHub PAT が設定されていません。Settings から PAT を登録してください。".to_string()
-    })
 }
 
-/// Trims, validates, and saves the GitHub PAT.
-/// Tries the OS keychain first; falls back to the config file if the keychain is unreliable.
+/// Trims, validates, encrypts (DPAPI), and saves the GitHub PAT to config.toml.
 #[tauri::command]
 pub fn set_github_pat(pat: String) -> Result<(), String> {
     let trimmed = pat.trim();
@@ -77,48 +187,23 @@ pub fn set_github_pat(pat: String) -> Result<(), String> {
         return Err("GitHub PAT を入力してください".to_string());
     }
     let mut config = load_config()?;
-
-    // Attempt keychain write and immediately verify with a fresh Entry.
-    let keychain_ok = keychain_entry(&config)
-        .and_then(|e| e.set_password(trimmed).map_err(|e| format!("{e}")))
-        .and_then(|_| try_keychain_get(&config).ok_or_else(|| "verify failed".to_string()))
-        .is_ok();
-
-    if keychain_ok {
-        // Keychain is working — remove any stale config-file copy.
-        config.settings.github_pat = None;
-    } else {
-        // Keychain not reliable on this machine — persist in config file instead.
-        // The config directory (%APPDATA%\arbor) is user-owned, same security as git config.
-        config.settings.github_pat = Some(trimmed.to_string());
-    }
+    config.settings.github_pat_enc = Some(pat_encrypt(trimmed)?);
     save_config(&config)
 }
 
-/// Returns true if a GitHub PAT is stored (keychain or config fallback), false if not.
+/// Returns true if a GitHub PAT is stored, false if not.
 /// The PAT value is never exposed over IPC; retrieval is internal to Rust commands.
 #[tauri::command]
 pub fn has_github_pat() -> Result<bool, String> {
     let config = load_config()?;
-    if try_keychain_get(&config).is_some() {
-        return Ok(true);
-    }
-    Ok(config.settings.github_pat.is_some())
+    Ok(config.settings.github_pat_enc.is_some())
 }
 
-/// Removes the GitHub PAT from both the OS keychain and the config-file fallback.
+/// Removes the GitHub PAT from config.toml.
 #[tauri::command]
 pub fn delete_github_pat() -> Result<(), String> {
     let mut config = load_config()?;
-    // Delete from keychain (ignore NoEntry).
-    if let Ok(entry) = keychain_entry(&config) {
-        match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => {}
-            Err(e) => return Err(format!("GitHub PAT の削除に失敗しました: {e}")),
-        }
-    }
-    // Delete from config-file fallback.
-    config.settings.github_pat = None;
+    config.settings.github_pat_enc = None;
     save_config(&config)
 }
 
@@ -246,13 +331,25 @@ mod tests {
             Ok(val) => assert_eq!(val, SECRET, "cross-entry read returned different value"),
             Err(e) => {
                 // keyring v3.6.x on Windows fails here (NoEntry).
-                // The config-file fallback in set_github_pat/has_github_pat handles this case.
+                // DPAPI-encrypted config-file storage is used instead (see pat_crypto).
                 eprintln!(
                     "keyring cross-entry read failed: {e}\n\
                      This is a known keyring v3.6.x bug on Windows.\n\
-                     config-file fallback is active in production code."
+                     DPAPI-encrypted config-file storage is used in production."
                 );
             }
         }
+    }
+
+    /// DPAPI の暗号化 → 復号が同じ値を返すことを確認する。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn dpapi_encrypt_decrypt_roundtrip() {
+        const PAT: &str = "ghp_TestDpapiRoundtrip12345";
+        let encrypted = super::pat_encrypt(PAT).expect("DPAPI encrypt");
+        assert!(!encrypted.is_empty(), "encrypted blob should not be empty");
+        assert_ne!(encrypted, PAT, "encrypted blob should differ from plaintext");
+        let decrypted = super::pat_decrypt(&encrypted).expect("DPAPI decrypt");
+        assert_eq!(decrypted, PAT, "decrypted value should match original");
     }
 }
