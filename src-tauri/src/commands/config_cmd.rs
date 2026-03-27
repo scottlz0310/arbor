@@ -45,6 +45,19 @@ pub fn remove_repository(path: String) -> Result<AppConfig, String> {
 
 // ─── GitHub PAT (OS keychain) ─────────────────────────────────────────────────
 
+/// Internal helper used by GitHub API commands to retrieve the stored PAT.
+/// Not a Tauri command — the secret stays inside the Rust process.
+pub fn load_github_pat() -> Result<String, String> {
+    let config = load_config()?;
+    match keychain_entry(&config)?.get_password() {
+        Ok(pat) => Ok(pat),
+        Err(keyring::Error::NoEntry) => Err(
+            "GitHub PAT が設定されていません。Settings から PAT を登録してください。".to_string(),
+        ),
+        Err(e) => Err(format!("OS キーチェーンの読み取りに失敗しました: {e}")),
+    }
+}
+
 fn keychain_entry(config: &crate::config::AppConfig) -> Result<keyring::Entry, String> {
     keyring::Entry::new(&config.settings.github_keychain_key, "github")
         .map_err(|e| format!("OS キーチェーンへのアクセスに失敗しました: {e}"))

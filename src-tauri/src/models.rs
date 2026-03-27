@@ -79,3 +79,53 @@ pub struct DsxOutput {
 pub struct FetchResult {
     pub updated_refs: Vec<String>,
 }
+
+// ─── GitHub API response types ────────────────────────────────────────────────
+
+/// A GitHub pull request (subset of fields returned by the REST API).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequest {
+    pub number: u64,
+    pub title: String,
+    /// "open" | "closed"
+    pub state: String,
+    pub html_url: String,
+    pub user_login: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub draft: bool,
+    pub merged_at: Option<String>,
+    /// Source branch name.
+    pub head_ref: String,
+    /// Target branch name.
+    pub base_ref: String,
+}
+
+/// A GitHub issue (PR items are excluded).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Issue {
+    pub number: u64,
+    pub title: String,
+    /// "open" | "closed"
+    pub state: String,
+    pub html_url: String,
+    pub user_login: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub body: Option<String>,
+    pub labels: Vec<String>,
+}
+
+/// A single check run result for a commit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckRun {
+    pub id: u64,
+    pub name: String,
+    /// "queued" | "in_progress" | "completed"
+    pub status: String,
+    /// "success" | "failure" | "neutral" | "cancelled" | "skipped" | "timed_out" | "action_required"
+    pub conclusion: Option<String>,
+    pub html_url: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}

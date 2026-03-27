@@ -89,6 +89,50 @@ export interface RepoConfig {
   github_repo: string | null;
 }
 
+// ─── Mirror of GitHub API response types in models.rs ───────────────────────
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  /** "open" | "closed" */
+  state: string;
+  html_url: string;
+  user_login: string;
+  created_at: string;
+  updated_at: string;
+  draft: boolean;
+  merged_at: string | null;
+  /** Source branch name */
+  head_ref: string;
+  /** Target branch name */
+  base_ref: string;
+}
+
+export interface Issue {
+  number: number;
+  title: string;
+  /** "open" | "closed" */
+  state: string;
+  html_url: string;
+  user_login: string;
+  created_at: string;
+  updated_at: string;
+  body: string | null;
+  labels: string[];
+}
+
+export interface CheckRun {
+  id: number;
+  name: string;
+  /** "queued" | "in_progress" | "completed" */
+  status: string;
+  /** "success" | "failure" | "neutral" | "cancelled" | "skipped" | "timed_out" | "action_required" */
+  conclusion: string | null;
+  html_url: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 // ─── UI-only types ───────────────────────────────────────────────────────────
 
 export type ViewId = 'overview' | 'branches' | 'graph' | 'prs' | 'cleanup' | 'settings';

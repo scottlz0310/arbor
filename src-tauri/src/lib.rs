@@ -8,6 +8,7 @@ use commands::{
         scan_directory, set_github_pat, update_settings,
     },
     dsx::{dsx_check, repo_cleanup, repo_cleanup_preview, repo_update},
+    github::{get_check_runs, get_issues, get_pull_requests},
     repo::{delete_branches, fetch_all, get_branches, get_repo_status, list_repositories},
 };
 
@@ -26,6 +27,10 @@ pub fn run() {
             set_github_pat,
             has_github_pat,
             delete_github_pat,
+            // GitHub API
+            get_pull_requests,
+            get_issues,
+            get_check_runs,
             // Repo / git2
             list_repositories,
             get_repo_status,

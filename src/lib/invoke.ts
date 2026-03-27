@@ -6,10 +6,13 @@ import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type {
   AppConfig,
   BranchInfo,
+  CheckRun,
   DeleteResult,
   DsxOutput,
   DsxStatus,
   FetchResult,
+  Issue,
+  PullRequest,
   RepoInfo,
 } from '../types';
 
@@ -64,6 +67,20 @@ export const hasGithubPat = () =>
 
 export const deleteGithubPat = () =>
   tauriInvoke<void>('delete_github_pat');
+
+// ─── GitHub API ──────────────────────────────────────────────────────────────
+
+/** `state`: "open" | "closed" | "all" (default: "open") */
+export const getPullRequests = (owner: string, repo: string, state?: string) =>
+  tauriInvoke<PullRequest[]>('get_pull_requests', { owner, repo, state });
+
+/** `state`: "open" | "closed" | "all" (default: "open"). PRs are excluded. */
+export const getIssues = (owner: string, repo: string, state?: string) =>
+  tauriInvoke<Issue[]>('get_issues', { owner, repo, state });
+
+/** Returns check runs for the given branch name or commit SHA. */
+export const getCheckRuns = (owner: string, repo: string, git_ref: string) =>
+  tauriInvoke<CheckRun[]>('get_check_runs', { owner, repo, git_ref });
 
 // ─── dsx ─────────────────────────────────────────────────────────────────────
 
