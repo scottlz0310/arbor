@@ -161,8 +161,8 @@ function CommitRow({
 
       {/* Ref badges (one tspan each) then summary */}
       <text x={summaryX} y={cy + 4} fontSize={11}>
-        {commit.refs.map((r) => (
-          <tspan key={r} fill="#818cf8">[{r}] </tspan>
+        {commit.refs.map((r, idx) => (
+          <tspan key={`${r}-${idx}`} fill="#818cf8">[{r}] </tspan>
         ))}
         <tspan fill="#e2e8f0">{summary}</tspan>
       </text>

@@ -176,14 +176,18 @@ pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
 
 // ─── get_commit_graph ─────────────────────────────────────────────────────────
 
+/// Hard upper bound on commit graph size to prevent accidental large revwalks.
+const MAX_COMMITS_LIMIT: usize = 10_000;
+
 /// Returns up to `limit` commits (default 200) in topological order with lane
 /// assignments suitable for SVG column rendering.
+/// The requested `limit` is clamped to `MAX_COMMITS_LIMIT`.
 #[tauri::command]
 pub fn get_commit_graph(
     repo_path: String,
     limit: Option<u32>,
 ) -> Result<Vec<CommitNode>, String> {
-    let max = limit.unwrap_or(200) as usize;
+    let max = (limit.unwrap_or(200) as usize).min(MAX_COMMITS_LIMIT);
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
 
     // Build oid → ref-names map (branches, tags, HEAD).
@@ -200,7 +204,13 @@ pub fn get_commit_graph(
     let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
         .map_err(|e| e.to_string())?;
-    walk.push_glob("refs/heads/*").map_err(|e| e.to_string())?;
+    // push_glob may return NotFound on repos with no local branches (e.g. bare
+    // or freshly `git init`'d). Treat that as "no commits" rather than an error.
+    match walk.push_glob("refs/heads/*") {
+        Ok(()) => {}
+        Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(vec![]),
+        Err(e) => return Err(e.to_string()),
+    }
     // Also include HEAD in case of detached state.
     if let Ok(head) = repo.head().and_then(|h| h.peel_to_commit()) {
         let _ = walk.push(head.id());
