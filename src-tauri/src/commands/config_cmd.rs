@@ -43,8 +43,45 @@ pub fn remove_repository(path: String) -> Result<AppConfig, String> {
     Ok(config)
 }
 
-/// Recursively scan a directory for git repositories and return candidate paths.
-/// Does NOT add them to config — the frontend confirms the list first.
+// ─── GitHub PAT (OS keychain) ─────────────────────────────────────────────────
+
+/// Saves the GitHub PAT to the OS keychain using the key from config.
+#[tauri::command]
+pub fn set_github_pat(pat: String) -> Result<(), String> {
+    let config = load_config()?;
+    let entry = keyring::Entry::new(&config.settings.github_keychain_key, "github")
+        .map_err(|e| e.to_string())?;
+    entry.set_password(&pat).map_err(|e| e.to_string())
+}
+
+/// Returns the stored GitHub PAT, or None if not set.
+#[tauri::command]
+pub fn get_github_pat() -> Result<Option<String>, String> {
+    let config = load_config()?;
+    let entry = keyring::Entry::new(&config.settings.github_keychain_key, "github")
+        .map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(pat) => Ok(Some(pat)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Removes the GitHub PAT from the OS keychain.
+#[tauri::command]
+pub fn delete_github_pat() -> Result<(), String> {
+    let config = load_config()?;
+    let entry = keyring::Entry::new(&config.settings.github_keychain_key, "github")
+        .map_err(|e| e.to_string())?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+// ─── scan_directory ───────────────────────────────────────────────────────────
+
 #[tauri::command]
 pub fn scan_directory(root: String) -> Result<Vec<String>, String> {
     use std::path::Path;

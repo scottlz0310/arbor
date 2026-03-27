@@ -3,7 +3,10 @@ mod config;
 mod models;
 
 use commands::{
-    config_cmd::{add_repository, get_config, remove_repository, scan_directory, update_settings},
+    config_cmd::{
+        add_repository, delete_github_pat, get_config, get_github_pat, remove_repository,
+        scan_directory, set_github_pat, update_settings,
+    },
     dsx::{dsx_check, repo_cleanup, repo_cleanup_preview, repo_update},
     repo::{delete_branches, fetch_all, get_branches, get_repo_status, list_repositories},
 };
@@ -19,6 +22,10 @@ pub fn run() {
             remove_repository,
             scan_directory,
             update_settings,
+            // GitHub PAT
+            set_github_pat,
+            get_github_pat,
+            delete_github_pat,
             // Repo / git2
             list_repositories,
             get_repo_status,

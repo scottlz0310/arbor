@@ -133,7 +133,7 @@
 
 ## Phase 2 — GitHub 連携 + コミットグラフ + dsx env/sys (weeks 3–4)
 
-- [ ] P2-01: PAT 設定 UI + `keyring` クレートで OS キーチェーンに保存
+- [x] P2-01: PAT 設定 UI + `keyring` クレートで OS キーチェーンに保存
 - [ ] P2-02: `commands/github.rs` — `get_pull_requests` (GitHub REST API GET /repos/{o}/{r}/pulls)
 - [ ] P2-03: `commands/github.rs` — `get_issues` (state: open/closed/all)
 - [ ] P2-04: `commands/github.rs` — `get_check_runs` (CI ステータス取得)

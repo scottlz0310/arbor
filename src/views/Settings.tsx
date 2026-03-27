@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, dsxCheck } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, dsxCheck, getGithubPat, setGithubPat, deleteGithubPat } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus } from '../types';
 
@@ -11,10 +11,14 @@ export default function Settings() {
   const { loadRepos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
   const [dsxStatus, setDsxStatus] = useState<DsxStatus | null>(null);
+  const [patStored, setPatStored] = useState<boolean | null>(null);
+  const [patInput, setPatInput]   = useState('');
+  const [patLoading, setPatLoading] = useState(false);
 
   useEffect(() => {
     getConfig().then(setConfig).catch((e) => addToast(String(e), 'error'));
     dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null }));
+    getGithubPat().then((p) => setPatStored(p !== null)).catch(() => setPatStored(false));
   }, []);
 
   const handleAddRepo = async () => {
@@ -29,6 +33,35 @@ export default function Settings() {
       addToast(`Added: ${name}`, 'success');
     } catch (e) {
       addToast(String(e), 'error');
+    }
+  };
+
+  const handleSavePat = async () => {
+    const trimmed = patInput.trim();
+    if (!trimmed) return;
+    setPatLoading(true);
+    try {
+      await setGithubPat(trimmed);
+      setPatStored(true);
+      setPatInput('');
+      addToast('GitHub PAT を保存しました', 'success');
+    } catch (e) {
+      addToast(String(e), 'error');
+    } finally {
+      setPatLoading(false);
+    }
+  };
+
+  const handleClearPat = async () => {
+    setPatLoading(true);
+    try {
+      await deleteGithubPat();
+      setPatStored(false);
+      addToast('GitHub PAT を削除しました', 'success');
+    } catch (e) {
+      addToast(String(e), 'error');
+    } finally {
+      setPatLoading(false);
     }
   };
 
@@ -83,6 +116,49 @@ export default function Settings() {
           ) : (
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>Checking…</div>
           )}
+        </section>
+
+        {/* GitHub PAT */}
+        <section style={{ marginBottom: 32 }}>
+          <SectionTitle>GitHub</SectionTitle>
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.65 }}>
+            Personal Access Token (PAT) を OS キーチェーンに保存します。
+            PR / Issue 連携は Phase 2 で有効になります。
+          </div>
+          {patStored && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              marginBottom: 10, fontSize: 12, color: 'var(--green)',
+            }}>
+              <span>✓ PAT が保存されています</span>
+              <AppBtn variant="danger" onClick={handleClearPat} disabled={patLoading}>
+                Clear
+              </AppBtn>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="password"
+              placeholder={patStored ? '新しい PAT で上書き…' : 'ghp_xxxxxxxxxxxx'}
+              value={patInput}
+              onChange={(e) => setPatInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSavePat()}
+              style={{
+                flex: 1,
+                background: 'var(--bg3)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r)',
+                color: 'var(--text1)',
+                fontSize: 12,
+                fontFamily: 'var(--font-mono)',
+                padding: '6px 10px',
+                outline: 'none',
+              }}
+            />
+            <AppBtn variant="primary" onClick={handleSavePat} disabled={patLoading || !patInput.trim()}>
+              Save
+            </AppBtn>
+          </div>
         </section>
 
         {/* Repositories */}

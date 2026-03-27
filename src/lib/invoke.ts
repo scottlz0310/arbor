@@ -53,6 +53,17 @@ export const deleteBranches = (repo_path: string, names: string[]) =>
 export const fetchAll = (repo_path: string) =>
   tauriInvoke<FetchResult>('fetch_all', { repo_path });
 
+// ─── GitHub PAT ──────────────────────────────────────────────────────────────
+
+export const setGithubPat = (pat: string) =>
+  tauriInvoke<void>('set_github_pat', { pat });
+
+export const getGithubPat = () =>
+  tauriInvoke<string | null>('get_github_pat');
+
+export const deleteGithubPat = () =>
+  tauriInvoke<void>('delete_github_pat');
+
 // ─── dsx ─────────────────────────────────────────────────────────────────────
 
 export const dsxCheck = () =>
