@@ -5,6 +5,7 @@ import ToastContainer from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import Overview from './views/Overview';
 import Branches from './views/Branches';
+import PullRequests from './views/PullRequests';
 import Cleanup from './views/Cleanup';
 import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
@@ -64,7 +65,9 @@ export default function App() {
           <ErrorBoundary key="branches" viewName="Branches"><Branches /></ErrorBoundary>
         )}
         {activeView === 'graph'   && <PlaceholderView label="Commit Graph" note="Implemented in Phase 2" />}
-        {activeView === 'prs'     && <PlaceholderView label="PR / Issues"  note="Implemented in Phase 2" />}
+        {activeView === 'prs'     && (
+          <ErrorBoundary key="prs" viewName="PR / Issues"><PullRequests /></ErrorBoundary>
+        )}
         {activeView === 'cleanup' && (
           <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
         )}
