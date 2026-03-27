@@ -5,6 +5,7 @@ import ToastContainer from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import Overview from './views/Overview';
 import Branches from './views/Branches';
+import Graph from './views/Graph';
 import PullRequests from './views/PullRequests';
 import Cleanup from './views/Cleanup';
 import Settings from './views/Settings';
@@ -64,7 +65,9 @@ export default function App() {
         {activeView === 'branches' && (
           <ErrorBoundary key="branches" viewName="Branches"><Branches /></ErrorBoundary>
         )}
-        {activeView === 'graph'   && <PlaceholderView label="Commit Graph" note="Implemented in Phase 2" />}
+        {activeView === 'graph'   && (
+          <ErrorBoundary key="graph" viewName="Commit Graph"><Graph /></ErrorBoundary>
+        )}
         {activeView === 'prs'     && (
           <ErrorBoundary key="prs" viewName="PR / Issues"><PullRequests /></ErrorBoundary>
         )}
@@ -76,21 +79,6 @@ export default function App() {
         )}
       </main>
       <ToastContainer />
-    </div>
-  );
-}
-
-function PlaceholderView({ label, note }: { label: string; note: string }) {
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      height: '100%', gap: 8,
-    }}>
-      <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--text2)' }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--text3)' }}>{note}</div>
     </div>
   );
 }

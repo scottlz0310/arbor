@@ -9,7 +9,10 @@ use commands::{
     },
     dsx::{dsx_check, repo_cleanup, repo_cleanup_preview, repo_update},
     github::{get_check_runs, get_issues, get_pull_requests},
-    repo::{delete_branches, fetch_all, get_branches, get_repo_status, list_repositories},
+    repo::{
+        delete_branches, fetch_all, get_branches, get_commit_graph, get_repo_status,
+        list_repositories,
+    },
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,6 +40,7 @@ pub fn run() {
             get_branches,
             delete_branches,
             fetch_all,
+            get_commit_graph,
             // dsx
             dsx_check,
             repo_update,

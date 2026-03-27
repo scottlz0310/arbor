@@ -1,6 +1,7 @@
 use crate::config::load_config;
-use crate::models::{BranchInfo, DeleteResult, FetchResult, RepoInfo};
+use crate::models::{BranchInfo, CommitNode, DeleteResult, FetchResult, RepoInfo};
 use git2::{BranchType, Repository, StatusOptions};
+use std::collections::HashMap;
 
 // ─── list_repositories ───────────────────────────────────────────────────────
 
@@ -171,6 +172,112 @@ pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
     }
 
     Ok(FetchResult { updated_refs })
+}
+
+// ─── get_commit_graph ─────────────────────────────────────────────────────────
+
+/// Returns up to `limit` commits (default 200) in topological order with lane
+/// assignments suitable for SVG column rendering.
+#[tauri::command]
+pub fn get_commit_graph(
+    repo_path: String,
+    limit: Option<u32>,
+) -> Result<Vec<CommitNode>, String> {
+    let max = limit.unwrap_or(200) as usize;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+
+    // Build oid → ref-names map (branches, tags, HEAD).
+    let mut ref_map: HashMap<git2::Oid, Vec<String>> = HashMap::new();
+    for r in repo.references().map_err(|e| e.to_string())? {
+        let r = r.map_err(|e| e.to_string())?;
+        let Some(name) = r.shorthand() else { continue };
+        if let Ok(commit) = r.peel_to_commit() {
+            ref_map.entry(commit.id()).or_default().push(name.to_string());
+        }
+    }
+
+    // Walk in topological + time order, starting from all local branches.
+    let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
+    walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
+        .map_err(|e| e.to_string())?;
+    walk.push_glob("refs/heads/*").map_err(|e| e.to_string())?;
+    // Also include HEAD in case of detached state.
+    if let Ok(head) = repo.head().and_then(|h| h.peel_to_commit()) {
+        let _ = walk.push(head.id());
+    }
+
+    // Lane assignment.
+    // `lanes[i]` = the OID we are "waiting for" in lane i.
+    // None means the slot is free.
+    let mut lanes: Vec<Option<git2::Oid>> = Vec::new();
+    let mut nodes: Vec<CommitNode> = Vec::with_capacity(max);
+
+    for oid_result in walk.take(max) {
+        let oid = oid_result.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        let parent_ids: Vec<git2::Oid> = commit.parent_ids().collect();
+
+        // Find which lane this commit belongs to.
+        let my_lane = if let Some(pos) = lanes.iter().position(|l| *l == Some(oid)) {
+            pos
+        } else {
+            // Commit not yet tracked — allocate a new (or free) lane.
+            lanes
+                .iter()
+                .position(|l| l.is_none())
+                .unwrap_or_else(|| {
+                    lanes.push(None);
+                    lanes.len() - 1
+                })
+        };
+
+        // Clear ALL slots pointing at this commit (common ancestor reachable
+        // from multiple branches).
+        for slot in lanes.iter_mut() {
+            if *slot == Some(oid) {
+                *slot = None;
+            }
+        }
+
+        // Slot my_lane now points to the first parent (continuing the lane),
+        // unless it is already tracked elsewhere.
+        if let Some(&first_parent) = parent_ids.first() {
+            if !lanes.contains(&Some(first_parent)) {
+                lanes[my_lane] = Some(first_parent);
+            }
+            // If first_parent is already tracked, my_lane stays None (lane ends here).
+        }
+
+        // Remaining parents each need their own lane (merge scenario).
+        for &parent_id in parent_ids.iter().skip(1) {
+            if !lanes.contains(&Some(parent_id)) {
+                let free = lanes
+                    .iter()
+                    .position(|l| l.is_none())
+                    .unwrap_or_else(|| {
+                        lanes.push(None);
+                        lanes.len() - 1
+                    });
+                lanes[free] = Some(parent_id);
+            }
+        }
+
+        let refs = ref_map.get(&oid).cloned().unwrap_or_default();
+        let oid_str = oid.to_string();
+
+        nodes.push(CommitNode {
+            short_oid: oid_str[..7].to_string(),
+            oid: oid_str,
+            summary: commit.summary().unwrap_or_default().to_string(),
+            author_name: commit.author().name().unwrap_or_default().to_string(),
+            timestamp: commit.time().seconds(),
+            parent_oids: parent_ids.iter().map(|id| id.to_string()).collect(),
+            refs,
+            lane: my_lane as u32,
+        });
+    }
+
+    Ok(nodes)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
