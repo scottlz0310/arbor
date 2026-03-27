@@ -134,9 +134,9 @@
 ## Phase 2 — GitHub 連携 + コミットグラフ + dsx env/sys (weeks 3–4)
 
 - [x] P2-01: PAT 設定 UI + `keyring` クレートで OS キーチェーンに保存
-- [ ] P2-02: `commands/github.rs` — `get_pull_requests` (GitHub REST API GET /repos/{o}/{r}/pulls)
-- [ ] P2-03: `commands/github.rs` — `get_issues` (state: open/closed/all)
-- [ ] P2-04: `commands/github.rs` — `get_check_runs` (CI ステータス取得)
+- [x] P2-02: `commands/github.rs` — `get_pull_requests` (GitHub REST API GET /repos/{o}/{r}/pulls)
+- [x] P2-03: `commands/github.rs` — `get_issues` (state: open/closed/all)
+- [x] P2-04: `commands/github.rs` — `get_check_runs` (CI ステータス取得)
 - [ ] P2-05: `src/views/PullRequests.tsx` — PR / Issue 一覧 + CI ステータスドット
 - [ ] P2-06: TanStack Query 導入 — GitHub API キャッシュ + 5分間隔自動リフレッシュ
 - [ ] P2-07: `commands/repo.rs` — `get_commit_graph` (d3 向け CommitNode 配列 + lane 計算)
