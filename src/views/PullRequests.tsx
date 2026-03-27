@@ -15,7 +15,7 @@ export default function PullRequests() {
   const { navigate } = useUiStore();
   const [tab, setTab] = useState<Tab>('prs');
 
-  const { data: hasPat, isLoading: patLoading } = useQuery({
+  const { data: hasPat, isLoading: patLoading, isError: patError } = useQuery({
     queryKey: ['has_pat'],
     queryFn: hasGithubPat,
     staleTime: 60_000,
@@ -41,21 +41,22 @@ export default function PullRequests() {
     refetchInterval: STALE_MS,
   });
 
-  // CI status for each open PR — one query per unique head_ref
+  // CI status for each open PR — keyed by PR number to avoid cache collisions
+  // (e.g. forks with identically-named branches). head_ref is used as the API ref.
   const checkResults = useQueries({
     queries: prs.map((pr) => ({
-      queryKey: ['checks', owner, repo, pr.head_ref],
+      queryKey: ['checks', owner, repo, pr.number],
       queryFn: () => getCheckRuns(owner!, repo!, pr.head_ref),
-      enabled: apiEnabled,
+      enabled: apiEnabled && tab === 'prs',
       staleTime: STALE_MS,
       refetchInterval: STALE_MS,
     })),
   });
 
-  const checkMap = new Map<string, CiStatus>();
+  const checkMap = new Map<number, CiStatus>();
   prs.forEach((pr, i) => {
     const runs: CheckRun[] = checkResults[i]?.data ?? [];
-    checkMap.set(pr.head_ref, deriveCheckStatus(runs));
+    checkMap.set(pr.number, deriveCheckStatus(runs));
   });
 
   // ─── Guards ────────────────────────────────────────────────────────────────
@@ -66,6 +67,16 @@ export default function PullRequests() {
 
   if (patLoading) {
     return <LoadingCard />;
+  }
+
+  if (patError) {
+    return (
+      <EmptyCard
+        message="OS キーチェーンの読み取りに失敗しました"
+        action="Settings を確認する"
+        onAction={() => navigate('settings')}
+      />
+    );
   }
 
   if (!hasPat) {
@@ -152,6 +163,7 @@ function EmptyCard({
       <div style={{ color: 'var(--text2)', fontSize: 14 }}>{message}</div>
       {action && onAction && (
         <button
+          type="button"
           onClick={onAction}
           style={{
             padding: '6px 16px', borderRadius: 'var(--r)',
@@ -181,7 +193,7 @@ function PrTable({
   checkMap,
 }: {
   prs: PullRequest[];
-  checkMap: Map<string, CiStatus>;
+  checkMap: Map<number, CiStatus>;
 }) {
   if (prs.length === 0) {
     return (
@@ -214,7 +226,7 @@ function PrTable({
           <PrRow
             key={pr.number}
             pr={pr}
-            ciStatus={checkMap.get(pr.head_ref) ?? null}
+            ciStatus={checkMap.get(pr.number) ?? null}
           />
         ))}
       </tbody>
