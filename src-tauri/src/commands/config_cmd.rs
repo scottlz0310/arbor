@@ -43,8 +43,51 @@ pub fn remove_repository(path: String) -> Result<AppConfig, String> {
     Ok(config)
 }
 
-/// Recursively scan a directory for git repositories and return candidate paths.
-/// Does NOT add them to config — the frontend confirms the list first.
+// ─── GitHub PAT (OS keychain) ─────────────────────────────────────────────────
+
+fn keychain_entry(config: &crate::config::AppConfig) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(&config.settings.github_keychain_key, "github")
+        .map_err(|e| format!("OS キーチェーンへのアクセスに失敗しました: {e}"))
+}
+
+/// Trims, validates, and saves the GitHub PAT to the OS keychain.
+#[tauri::command]
+pub fn set_github_pat(pat: String) -> Result<(), String> {
+    let trimmed = pat.trim();
+    if trimmed.is_empty() {
+        return Err("GitHub PAT を入力してください".to_string());
+    }
+    let config = load_config()?;
+    keychain_entry(&config)?
+        .set_password(trimmed)
+        .map_err(|e| format!("GitHub PAT の保存に失敗しました: {e}"))
+}
+
+/// Returns true if a GitHub PAT is stored, false if not.
+/// The PAT value is never exposed over IPC; retrieval is internal to Rust commands.
+#[tauri::command]
+pub fn has_github_pat() -> Result<bool, String> {
+    let config = load_config()?;
+    match keychain_entry(&config)?.get_password() {
+        Ok(_) => Ok(true),
+        Err(keyring::Error::NoEntry) => Ok(false),
+        Err(e) => Err(format!("OS キーチェーンの読み取りに失敗しました: {e}")),
+    }
+}
+
+/// Removes the GitHub PAT from the OS keychain.
+#[tauri::command]
+pub fn delete_github_pat() -> Result<(), String> {
+    let config = load_config()?;
+    match keychain_entry(&config)?.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("GitHub PAT の削除に失敗しました: {e}")),
+    }
+}
+
+// ─── scan_directory ───────────────────────────────────────────────────────────
+
 #[tauri::command]
 pub fn scan_directory(root: String) -> Result<Vec<String>, String> {
     use std::path::Path;
