@@ -7,8 +7,11 @@ on:
     branches: [main]
 
 jobs:
-  rust:
-    name: Rust check / clippy / test / coverage
+  # ── Rust: lint ──────────────────────────────────────────────────────────────
+  # Runs in parallel with rust-coverage.
+  # cargo check is omitted: clippy subsumes it.
+  rust-lint:
+    name: Rust clippy
     runs-on: windows-latest
     defaults:
       run:
@@ -19,26 +22,49 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, llvm-tools-preview
+          components: clippy
 
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Cache cargo registry
+      - name: Cache cargo (lint)
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: cargo check
-        run: cargo check
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-lint-
 
       - name: cargo clippy
         run: cargo clippy -- -D warnings
+
+  # ── Rust: test + coverage ───────────────────────────────────────────────────
+  # Runs in parallel with rust-lint.
+  rust-coverage:
+    name: Rust test + coverage
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache cargo (coverage)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-cov-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cov-
 
       - name: cargo test with coverage
         run: cargo llvm-cov --lcov --output-path lcov.info
@@ -53,6 +79,7 @@ jobs:
           flags: rust
           fail_ci_if_error: false
 
+  # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend:
     name: Frontend typecheck / build / test / coverage
     runs-on: ubuntu-latest
