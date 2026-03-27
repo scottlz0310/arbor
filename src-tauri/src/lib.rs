@@ -4,7 +4,7 @@ mod models;
 
 use commands::{
     config_cmd::{
-        add_repository, delete_github_pat, get_config, get_github_pat, remove_repository,
+        add_repository, delete_github_pat, get_config, has_github_pat, remove_repository,
         scan_directory, set_github_pat, update_settings,
     },
     dsx::{dsx_check, repo_cleanup, repo_cleanup_preview, repo_update},
@@ -24,7 +24,7 @@ pub fn run() {
             update_settings,
             // GitHub PAT
             set_github_pat,
-            get_github_pat,
+            has_github_pat,
             delete_github_pat,
             // Repo / git2
             list_repositories,

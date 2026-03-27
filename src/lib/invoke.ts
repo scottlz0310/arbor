@@ -58,8 +58,9 @@ export const fetchAll = (repo_path: string) =>
 export const setGithubPat = (pat: string) =>
   tauriInvoke<void>('set_github_pat', { pat });
 
-export const getGithubPat = () =>
-  tauriInvoke<string | null>('get_github_pat');
+/** Returns true if a PAT is stored. The secret value never crosses the IPC boundary. */
+export const hasGithubPat = () =>
+  tauriInvoke<boolean>('has_github_pat');
 
 export const deleteGithubPat = () =>
   tauriInvoke<void>('delete_github_pat');

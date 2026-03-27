@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, dsxCheck, getGithubPat, setGithubPat, deleteGithubPat } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus } from '../types';
 
@@ -18,7 +18,7 @@ export default function Settings() {
   useEffect(() => {
     getConfig().then(setConfig).catch((e) => addToast(String(e), 'error'));
     dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null }));
-    getGithubPat().then((p) => setPatStored(p !== null)).catch(() => setPatStored(false));
+    hasGithubPat().then(setPatStored).catch(() => setPatStored(false));
   }, []);
 
   const handleAddRepo = async () => {

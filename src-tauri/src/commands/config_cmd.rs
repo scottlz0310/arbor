@@ -45,25 +45,33 @@ pub fn remove_repository(path: String) -> Result<AppConfig, String> {
 
 // ─── GitHub PAT (OS keychain) ─────────────────────────────────────────────────
 
-/// Saves the GitHub PAT to the OS keychain using the key from config.
-#[tauri::command]
-pub fn set_github_pat(pat: String) -> Result<(), String> {
-    let config = load_config()?;
-    let entry = keyring::Entry::new(&config.settings.github_keychain_key, "github")
-        .map_err(|e| e.to_string())?;
-    entry.set_password(&pat).map_err(|e| e.to_string())
+fn keychain_entry(config: &crate::config::AppConfig) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(&config.settings.github_keychain_key, "github")
+        .map_err(|e| format!("OS キーチェーンへのアクセスに失敗しました: {e}"))
 }
 
-/// Returns the stored GitHub PAT, or None if not set.
+/// Trims, validates, and saves the GitHub PAT to the OS keychain.
 #[tauri::command]
-pub fn get_github_pat() -> Result<Option<String>, String> {
+pub fn set_github_pat(pat: String) -> Result<(), String> {
+    let trimmed = pat.trim();
+    if trimmed.is_empty() {
+        return Err("GitHub PAT を入力してください".to_string());
+    }
     let config = load_config()?;
-    let entry = keyring::Entry::new(&config.settings.github_keychain_key, "github")
-        .map_err(|e| e.to_string())?;
-    match entry.get_password() {
-        Ok(pat) => Ok(Some(pat)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e.to_string()),
+    keychain_entry(&config)?
+        .set_password(trimmed)
+        .map_err(|e| format!("GitHub PAT の保存に失敗しました: {e}"))
+}
+
+/// Returns true if a GitHub PAT is stored, false if not.
+/// The PAT value is never exposed over IPC; retrieval is internal to Rust commands.
+#[tauri::command]
+pub fn has_github_pat() -> Result<bool, String> {
+    let config = load_config()?;
+    match keychain_entry(&config)?.get_password() {
+        Ok(_) => Ok(true),
+        Err(keyring::Error::NoEntry) => Ok(false),
+        Err(e) => Err(format!("OS キーチェーンの読み取りに失敗しました: {e}")),
     }
 }
 
@@ -71,12 +79,10 @@ pub fn get_github_pat() -> Result<Option<String>, String> {
 #[tauri::command]
 pub fn delete_github_pat() -> Result<(), String> {
     let config = load_config()?;
-    let entry = keyring::Entry::new(&config.settings.github_keychain_key, "github")
-        .map_err(|e| e.to_string())?;
-    match entry.delete_credential() {
+    match keychain_entry(&config)?.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
+        Err(e) => Err(format!("GitHub PAT の削除に失敗しました: {e}")),
     }
 }
 
