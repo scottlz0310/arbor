@@ -105,7 +105,7 @@ async fn get_once<T: for<'de> Deserialize<'de>>(url: Url, pat: &str) -> Result<T
 }
 
 /// Parses the URL of the next page from a `Link` response header.
-fn parse_next_link(headers: &reqwest::header::HeaderMap) -> Option<String> {
+pub(crate) fn parse_next_link(headers: &reqwest::header::HeaderMap) -> Option<String> {
     let link = headers.get("link")?.to_str().ok()?;
     // Format: <https://...?page=2>; rel="next", <...>; rel="last"
     for part in link.split(',') {
@@ -280,4 +280,124 @@ pub async fn get_check_runs(
             completed_at: r.completed_at,
         })
         .collect())
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::header::{HeaderMap, HeaderValue, LINK};
+
+    // ── api_url ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn api_url_simple_path() {
+        let url = api_url(&["repos", "owner", "repo", "pulls"], &[("state", "open")])
+            .expect("should build");
+        assert_eq!(
+            url.as_str(),
+            "https://api.github.com/repos/owner/repo/pulls?state=open"
+        );
+    }
+
+    #[test]
+    fn api_url_encodes_slash_in_git_ref() {
+        // Branch names like "feature/foo" must be percent-encoded as path segments.
+        let url = api_url(
+            &["repos", "owner", "repo", "commits", "feature/foo", "check-runs"],
+            &[("per_page", "100")],
+        )
+        .expect("should build");
+        assert!(
+            url.as_str().contains("feature%2Ffoo"),
+            "slash in branch name should be encoded: {url}"
+        );
+    }
+
+    #[test]
+    fn api_url_no_query_params() {
+        let url = api_url(&["repos", "owner", "repo", "pulls"], &[]).expect("should build");
+        assert_eq!(url.as_str(), "https://api.github.com/repos/owner/repo/pulls");
+    }
+
+    #[test]
+    fn api_url_multiple_params() {
+        let url = api_url(
+            &["repos", "o", "r", "issues"],
+            &[("state", "all"), ("per_page", "100")],
+        )
+        .expect("should build");
+        let s = url.as_str();
+        assert!(s.contains("state=all"), "{s}");
+        assert!(s.contains("per_page=100"), "{s}");
+    }
+
+    // ── check_status ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn check_status_ok() {
+        assert!(check_status(StatusCode::OK).is_ok());
+        assert!(check_status(StatusCode::CREATED).is_ok());
+    }
+
+    #[test]
+    fn check_status_unauthorized() {
+        let err = check_status(StatusCode::UNAUTHORIZED).unwrap_err();
+        assert!(err.contains("PAT"), "expected PAT mention: {err}");
+    }
+
+    #[test]
+    fn check_status_not_found() {
+        let err = check_status(StatusCode::NOT_FOUND).unwrap_err();
+        assert!(err.contains("リポジトリ"), "expected repo mention: {err}");
+    }
+
+    #[test]
+    fn check_status_other_error() {
+        let err = check_status(StatusCode::INTERNAL_SERVER_ERROR).unwrap_err();
+        assert!(err.contains("500"), "expected HTTP status code: {err}");
+    }
+
+    // ── parse_next_link ───────────────────────────────────────────────────────
+
+    fn make_link_header(value: &str) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        map.insert(LINK, HeaderValue::from_str(value).unwrap());
+        map
+    }
+
+    #[test]
+    fn parse_next_link_returns_next_url() {
+        let headers = make_link_header(
+            r#"<https://api.github.com/repos/o/r/pulls?page=2>; rel="next", <https://api.github.com/repos/o/r/pulls?page=5>; rel="last""#,
+        );
+        let next = parse_next_link(&headers);
+        assert_eq!(
+            next.as_deref(),
+            Some("https://api.github.com/repos/o/r/pulls?page=2")
+        );
+    }
+
+    #[test]
+    fn parse_next_link_no_next_returns_none() {
+        let headers = make_link_header(
+            r#"<https://api.github.com/repos/o/r/pulls?page=1>; rel="prev""#,
+        );
+        assert!(parse_next_link(&headers).is_none());
+    }
+
+    #[test]
+    fn parse_next_link_absent_header_returns_none() {
+        assert!(parse_next_link(&HeaderMap::new()).is_none());
+    }
+
+    #[test]
+    fn parse_next_link_last_page_only() {
+        // Only "last" present (single-page response has no "next").
+        let headers = make_link_header(
+            r#"<https://api.github.com/repos/o/r/pulls?page=1>; rel="last""#,
+        );
+        assert!(parse_next_link(&headers).is_none());
+    }
 }
