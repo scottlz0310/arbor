@@ -16,6 +16,11 @@ pub struct Settings {
     pub stale_threshold_days: u32,
     pub fetch_on_startup: bool,
     pub github_keychain_key: String,
+    /// PAT stored as a DPAPI-encrypted, base64-encoded blob.
+    /// On Windows this is tied to the current user account — not readable on other machines.
+    /// On non-Windows the keyring crate is used instead and this field stays None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_pat_enc: Option<String>,
 }
 
 impl Default for Settings {
@@ -24,6 +29,7 @@ impl Default for Settings {
             stale_threshold_days: 14,
             fetch_on_startup: true,
             github_keychain_key: "arbor_github_pat".to_string(),
+            github_pat_enc: None,
         }
     }
 }

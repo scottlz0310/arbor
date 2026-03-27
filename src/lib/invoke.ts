@@ -1,6 +1,9 @@
 /**
  * Type-safe wrappers around @tauri-apps/api/core `invoke`.
  * All commands mirror the Tauri command names in src-tauri/src/commands/.
+ *
+ * NOTE: Tauri v2 IPC converts camelCase (JS) ↔ snake_case (Rust) automatically.
+ * All multi-word argument keys must be camelCase on the JS side.
  */
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type {
@@ -25,19 +28,28 @@ export const getConfig = () =>
 export const addRepository = (args: {
   path: string;
   name: string;
-  github_owner?: string;
-  github_repo?: string;
+  githubOwner?: string;
+  githubRepo?: string;
 }) => tauriInvoke<AppConfig>('add_repository', args);
 
 export const removeRepository = (path: string) =>
   tauriInvoke<AppConfig>('remove_repository', { path });
 
+export const updateRepositoryGithub = (args: {
+  path: string;
+  githubOwner: string | null;
+  githubRepo: string | null;
+}) => tauriInvoke<AppConfig>('update_repository_github', args);
+
+export const detectGithubRemote = (path: string) =>
+  tauriInvoke<[string | null, string | null]>('detect_github_remote', { path });
+
 export const scanDirectory = (root: string) =>
   tauriInvoke<string[]>('scan_directory', { root });
 
 export const updateSettings = (args: {
-  stale_threshold_days?: number;
-  fetch_on_startup?: boolean;
+  staleThresholdDays?: number;
+  fetchOnStartup?: boolean;
 }) => tauriInvoke<AppConfig>('update_settings', args);
 
 // ─── Repo / git2 ─────────────────────────────────────────────────────────────
@@ -45,20 +57,20 @@ export const updateSettings = (args: {
 export const listRepositories = () =>
   tauriInvoke<RepoInfo[]>('list_repositories');
 
-export const getRepoStatus = (repo_path: string) =>
-  tauriInvoke<RepoInfo>('get_repo_status', { repo_path });
+export const getRepoStatus = (repoPath: string) =>
+  tauriInvoke<RepoInfo>('get_repo_status', { repoPath });
 
-export const getBranches = (repo_path: string) =>
-  tauriInvoke<BranchInfo[]>('get_branches', { repo_path });
+export const getBranches = (repoPath: string) =>
+  tauriInvoke<BranchInfo[]>('get_branches', { repoPath });
 
-export const deleteBranches = (repo_path: string, names: string[]) =>
-  tauriInvoke<DeleteResult[]>('delete_branches', { repo_path, names });
+export const deleteBranches = (repoPath: string, names: string[]) =>
+  tauriInvoke<DeleteResult[]>('delete_branches', { repoPath, names });
 
-export const fetchAll = (repo_path: string) =>
-  tauriInvoke<FetchResult>('fetch_all', { repo_path });
+export const fetchAll = (repoPath: string) =>
+  tauriInvoke<FetchResult>('fetch_all', { repoPath });
 
-export const getCommitGraph = (repo_path: string, limit?: number) =>
-  tauriInvoke<CommitNode[]>('get_commit_graph', { repo_path, limit });
+export const getCommitGraph = (repoPath: string, limit?: number) =>
+  tauriInvoke<CommitNode[]>('get_commit_graph', { repoPath, limit });
 
 // ─── GitHub PAT ──────────────────────────────────────────────────────────────
 
@@ -83,25 +95,25 @@ export const getIssues = (owner: string, repo: string, state?: string) =>
   tauriInvoke<Issue[]>('get_issues', { owner, repo, state });
 
 /** Returns check runs for the given branch name or commit SHA. */
-export const getCheckRuns = (owner: string, repo: string, git_ref: string) =>
-  tauriInvoke<CheckRun[]>('get_check_runs', { owner, repo, git_ref });
+export const getCheckRuns = (owner: string, repo: string, gitRef: string) =>
+  tauriInvoke<CheckRun[]>('get_check_runs', { owner, repo, gitRef });
 
 // ─── dsx ─────────────────────────────────────────────────────────────────────
 
 export const dsxCheck = () =>
   tauriInvoke<DsxStatus>('dsx_check');
 
-export const repoUpdate = (repo_path: string) =>
-  tauriInvoke<DsxOutput>('repo_update', { repo_path });
+export const repoUpdate = (repoPath: string) =>
+  tauriInvoke<DsxOutput>('repo_update', { repoPath });
 
-export const repoCleanupPreview = (repo_path: string) =>
-  tauriInvoke<DsxOutput>('repo_cleanup_preview', { repo_path });
+export const repoCleanupPreview = (repoPath: string) =>
+  tauriInvoke<DsxOutput>('repo_cleanup_preview', { repoPath });
 
-export const repoCleanup = (repo_path: string) =>
-  tauriInvoke<DsxOutput>('repo_cleanup', { repo_path });
+export const repoCleanup = (repoPath: string) =>
+  tauriInvoke<DsxOutput>('repo_cleanup', { repoPath });
 
-export const envInject = (repo_path: string, cmd: string) =>
-  tauriInvoke<DsxOutput>('env_inject', { repo_path, cmd });
+export const envInject = (repoPath: string, cmd: string) =>
+  tauriInvoke<DsxOutput>('env_inject', { repoPath, cmd });
 
 export const sysUpdate = () =>
   tauriInvoke<DsxOutput>('sys_update');

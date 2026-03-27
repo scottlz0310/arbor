@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { AppConfig, DsxStatus } from '../types';
+import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
 export default function Settings() {
+  const queryClient = useQueryClient();
   const { addToast } = useUiStore();
   const { loadRepos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
@@ -45,6 +47,7 @@ export default function Settings() {
       await setGithubPat(trimmed);
       setPatStored(true);
       setPatInput('');
+      queryClient.invalidateQueries({ queryKey: ['has_pat'] });
       addToast('GitHub PAT を保存しました', 'success');
     } catch (e) {
       addToast(String(e), 'error');
@@ -58,6 +61,7 @@ export default function Settings() {
     try {
       await deleteGithubPat();
       setPatStored(false);
+      queryClient.invalidateQueries({ queryKey: ['has_pat'] });
       addToast('GitHub PAT を削除しました', 'success');
     } catch (e) {
       addToast(String(e), 'error');
@@ -96,7 +100,6 @@ export default function Settings() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <AppBar
         path={<span style={{ color: 'var(--text2)' }}>Settings</span>}
-        actions={<AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>}
       />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 24, maxWidth: 680 }}>
@@ -146,10 +149,12 @@ export default function Settings() {
         <section style={{ marginBottom: 32 }}>
           <SectionTitle>GitHub</SectionTitle>
           <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.65 }}>
-            Personal Access Token (PAT) を OS キーチェーンに保存します。
-            PR / Issue 連携は Phase 2 で有効になります。
+            Personal Access Token (PAT) を保存します。PR / Issue 連携に使用されます。
           </div>
-          {patStored && (
+          {patStored === null && (
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Checking…</div>
+          )}
+          {patStored === true && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
               marginBottom: 10, fontSize: 12, color: 'var(--green)',
@@ -158,6 +163,11 @@ export default function Settings() {
               <AppBtn variant="danger" onClick={handleClearPat} disabled={patLoading}>
                 Clear
               </AppBtn>
+            </div>
+          )}
+          {patStored === false && (
+            <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 10 }}>
+              ⚠ PAT が設定されていません
             </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
@@ -187,29 +197,29 @@ export default function Settings() {
 
         {/* Repositories */}
         <section style={{ marginBottom: 32 }}>
-          <SectionTitle>Repositories</SectionTitle>
-          {config?.repositories.map((r) => (
-            <div
-              key={r.path}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '10px 14px', background: 'var(--bg3)',
-                border: '1px solid var(--border)', borderRadius: 'var(--r)',
-                marginBottom: 6,
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)' }}>{r.name}</div>
-                <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-                  {r.path}
-                </div>
-              </div>
-              <AppBtn variant="danger" onClick={() => handleRemoveRepo(r.path)}>Remove</AppBtn>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.12em', flex: 1 }}>
+              REPOSITORIES
             </div>
+            <AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>
+          </div>
+          {config?.repositories.map((r) => (
+            <RepoCard
+              key={r.path}
+              repo={r}
+              onRemove={handleRemoveRepo}
+              onSaveGithub={async (path, owner, repo) => {
+                try {
+                  const updated = await updateRepositoryGithub({ path, githubOwner: owner || null, githubRepo: repo || null });
+                  setConfig(updated);
+                  addToast('GitHub 設定を保存しました', 'success');
+                } catch (e) { addToast(String(e), 'error'); }
+              }}
+            />
           ))}
           {config?.repositories.length === 0 && (
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-              No repositories registered. Click "+ Add Repository" to get started.
+              No repositories registered.
             </div>
           )}
         </section>
@@ -225,6 +235,86 @@ export default function Settings() {
           </div>
         </section>
 
+      </div>
+    </div>
+  );
+}
+
+function RepoCard({
+  repo,
+  onRemove,
+  onSaveGithub,
+}: {
+  repo: RepoConfig;
+  onRemove: (path: string) => void;
+  onSaveGithub: (path: string, owner: string, repoName: string) => Promise<void>;
+}) {
+  const [owner, setOwner] = useState(repo.github_owner ?? '');
+  const [repoName, setRepoName] = useState(repo.github_repo ?? '');
+  const [saving, setSaving] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+
+  const dirty = owner !== (repo.github_owner ?? '') || repoName !== (repo.github_repo ?? '');
+
+  const handleSave = async () => {
+    setSaving(true);
+    try { await onSaveGithub(repo.path, owner, repoName); }
+    finally { setSaving(false); }
+  };
+
+  const handleDetect = async () => {
+    setDetecting(true);
+    try {
+      const [detectedOwner, detectedRepo] = await detectGithubRemote(repo.path);
+      if (detectedOwner) setOwner(detectedOwner);
+      if (detectedRepo) setRepoName(detectedRepo);
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--bg2)', border: '1px solid var(--border)',
+    borderRadius: 'var(--r)', color: 'var(--text1)',
+    fontSize: 11, fontFamily: 'var(--font-mono)',
+    padding: '4px 8px', outline: 'none', width: '100%',
+  };
+
+  return (
+    <div style={{
+      padding: '10px 14px', background: 'var(--bg3)',
+      border: '1px solid var(--border)', borderRadius: 'var(--r)',
+      marginBottom: 6,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)' }}>{repo.name}</div>
+          <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{repo.path}</div>
+        </div>
+        <AppBtn onClick={handleDetect} disabled={detecting}>
+          {detecting ? '…' : 'Detect'}
+        </AppBtn>
+        <AppBtn variant="danger" onClick={() => onRemove(repo.path)}>Remove</AppBtn>
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input
+          style={inputStyle}
+          placeholder="owner"
+          value={owner}
+          onChange={(e) => setOwner(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && dirty && handleSave()}
+        />
+        <span style={{ color: 'var(--text3)', fontSize: 12 }}>/</span>
+        <input
+          style={inputStyle}
+          placeholder="repo"
+          value={repoName}
+          onChange={(e) => setRepoName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && dirty && handleSave()}
+        />
+        <AppBtn variant="primary" onClick={handleSave} disabled={!dirty || saving}>
+          {saving ? '…' : 'Save'}
+        </AppBtn>
       </div>
     </div>
   );

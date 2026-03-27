@@ -6,8 +6,9 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { getBranches, repoCleanupPreview, repoCleanup, deleteBranches } from '../lib/invoke';
 import type { BranchInfo } from '../types';
 
-// Composite key: "${repoPath}:${branchName}"
-const makeKey = (repoPath: string, name: string) => `${repoPath}:${name}`;
+// Composite key: uses null byte as separator (safe on all OS — never appears in paths or branch names)
+const SEP = '\x00';
+const makeKey = (repoPath: string, name: string) => `${repoPath}${SEP}${name}`;
 
 type ConfirmType = 'dsx' | 'delete' | null;
 
@@ -25,11 +26,17 @@ export default function Cleanup() {
   const staleThreshold = 14 * 86400;
   const nowSec = Math.floor(Date.now() / 1000);
 
-  // Load branches for ALL repos.
+  // Load branches — scoped to selectedRepo if set, otherwise all repos.
   useEffect(() => {
+    const targets = selectedRepo ? repos.filter((r) => r.path === selectedRepo.path) : repos;
+    if (targets.length === 0) {
+      setMergedBranches([]);
+      setStaleBranches([]);
+      return;
+    }
     setLoading(true);
     Promise.all(
-      repos.map((r) =>
+      targets.map((r) =>
         getBranches(r.path).then((branches) =>
           branches.map((b) => ({ ...b, _repoName: r.name, _repoPath: r.path }))
         )
@@ -45,7 +52,7 @@ export default function Cleanup() {
       })
       .catch((e) => addToast(String(e), 'error'))
       .finally(() => setLoading(false));
-  }, [repos]);
+  }, [repos, selectedRepo]);
 
   const toggleSelect = (repoPath: string, name: string) =>
     setSelected((s) => {
@@ -70,7 +77,7 @@ export default function Cleanup() {
   };
 
   const handleDeleteSelectedWithConfirm = () => {
-    const branchNames = [...selected].map((k) => k.slice(k.indexOf(':') + 1));
+    const branchNames = [...selected].map((k) => k.slice(k.indexOf(SEP) + 1));
     setPreviewOut(branchNames.join('\n'));
     setConfirmType('delete');
   };
@@ -95,7 +102,7 @@ export default function Cleanup() {
         // Group selected branches by repo path.
         const byRepo = new Map<string, string[]>();
         for (const key of selected) {
-          const sep = key.indexOf(':');
+          const sep = key.indexOf(SEP);
           const repoPath = key.slice(0, sep);
           const branchName = key.slice(sep + 1);
           if (!byRepo.has(repoPath)) byRepo.set(repoPath, []);
@@ -112,9 +119,10 @@ export default function Cleanup() {
           addToast(`${selected.size} branch(es) deleted`, 'success');
         }
         setSelected(new Set());
-        // Reload branch lists.
+        // Reload branch lists (same scope as the initial load).
+        const targets = selectedRepo ? repos.filter((r) => r.path === selectedRepo.path) : repos;
         const updated = await Promise.all(
-          repos.map((r) =>
+          targets.map((r) =>
             getBranches(r.path).then((branches) =>
               branches.map((b) => ({ ...b, _repoName: r.name, _repoPath: r.path }))
             )

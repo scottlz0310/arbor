@@ -18,7 +18,8 @@ export default function PullRequests() {
   const { data: hasPat, isLoading: patLoading, isError: patError } = useQuery({
     queryKey: ['has_pat'],
     queryFn: hasGithubPat,
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const owner = selectedRepo?.github_owner ?? null;
