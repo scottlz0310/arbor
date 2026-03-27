@@ -62,6 +62,23 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - name: Install dsx CLI
+        shell: pwsh
+        run: |
+          $ver = "0.2.3"
+          $expectedHash = "95cb615947f88fd57b9c78487a99c3e4db5970c99675a30a872783448e11958e"
+          $url = "https://github.com/scottlz0310/dsx/releases/download/v${ver}/dsx_${ver}_windows_amd64.zip"
+          $zipPath = Join-Path $env:TEMP "dsx.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zipPath
+          $fileHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($fileHash -ne $expectedHash) {
+            Write-Error "SHA256 mismatch: expected $expectedHash but got $fileHash"
+            exit 1
+          }
+          $extractPath = Join-Path $env:TEMP "dsx"
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+          echo $extractPath >> $env:GITHUB_PATH
+
       - name: Cache cargo registry (shared)
         uses: actions/cache@v4
         with:
