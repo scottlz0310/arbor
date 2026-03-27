@@ -152,7 +152,10 @@ export default function Settings() {
             Personal Access Token (PAT) を OS キーチェーンに保存します。
             PR / Issue 連携は Phase 2 で有効になります。
           </div>
-          {patStored && (
+          {patStored === null && (
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Checking…</div>
+          )}
+          {patStored === true && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
               marginBottom: 10, fontSize: 12, color: 'var(--green)',
@@ -161,6 +164,11 @@ export default function Settings() {
               <AppBtn variant="danger" onClick={handleClearPat} disabled={patLoading}>
                 Clear
               </AppBtn>
+            </div>
+          )}
+          {patStored === false && (
+            <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 10 }}>
+              ⚠ PAT が設定されていません
             </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
