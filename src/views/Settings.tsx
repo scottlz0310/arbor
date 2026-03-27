@@ -149,8 +149,7 @@ export default function Settings() {
         <section style={{ marginBottom: 32 }}>
           <SectionTitle>GitHub</SectionTitle>
           <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.65 }}>
-            Personal Access Token (PAT) を OS キーチェーンに保存します。
-            PR / Issue 連携は Phase 2 で有効になります。
+            Personal Access Token (PAT) を保存します。PR / Issue 連携に使用されます。
           </div>
           {patStored === null && (
             <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Checking…</div>
