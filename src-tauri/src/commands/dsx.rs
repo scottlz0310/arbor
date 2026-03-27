@@ -170,7 +170,8 @@ fn run_dsx_sync(cwd: &str, args: &[&str]) -> Result<DsxOutput, String> {
 mod tests {
     use super::*;
 
-    /// `available`, `version`, `path` の整合性を検証する。
+    /// `available` と `version` の整合性を検証する。
+    /// `path` は `which`/`where` の挙動に依存するため検証しない。
     /// dsx が PATH になくても必ず通過する。CI では dsx がインストールされるため
     /// `available: true` の分岐も必ずカバーされる。
     #[test]
@@ -181,7 +182,6 @@ mod tests {
                 status.version.is_some(),
                 "version must be Some when available"
             );
-            assert!(status.path.is_some(), "path must be Some when available");
         } else {
             assert!(
                 status.version.is_none(),

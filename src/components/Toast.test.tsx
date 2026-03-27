@@ -1,15 +1,19 @@
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import ToastContainer from './Toast';
 import { useUiStore } from '../stores/uiStore';
 
-// Reset Zustand store state before each test.
 beforeEach(() => {
+  // Use fake timers to prevent the 4 s auto-dismiss setTimeout from leaking.
+  vi.useFakeTimers();
   act(() => {
     useUiStore.setState({ toasts: [] });
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('ToastContainer', () => {
@@ -36,12 +40,12 @@ describe('ToastContainer', () => {
     expect(screen.getByText('Second')).toBeInTheDocument();
   });
 
-  it('dismisses a toast when clicked', async () => {
+  it('dismisses a toast when clicked', () => {
     act(() => {
       useUiStore.getState().addToast('Dismiss me', 'info');
     });
     render(<ToastContainer />);
-    await userEvent.click(screen.getByText('Dismiss me'));
+    fireEvent.click(screen.getByText('Dismiss me'));
     expect(screen.queryByText('Dismiss me')).not.toBeInTheDocument();
   });
 });
