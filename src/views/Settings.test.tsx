@@ -41,6 +41,15 @@ beforeEach(() => {
   mockSysUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 } as never);
 });
 
+describe('Settings — Repositories section', () => {
+  it('+ Add Repository ボタンがセクション内に表示される', async () => {
+    render(<Settings />);
+    // AppBar ではなく Repositories セクション内にボタンが存在する
+    await screen.findByRole('button', { name: '+ Add Repository' });
+    expect(screen.getByRole('button', { name: '+ Add Repository' })).toBeInTheDocument();
+  });
+});
+
 describe('Settings — dsx CLI section', () => {
   it('dsx が利用可能な場合にバージョンを表示する', async () => {
     render(<Settings />);

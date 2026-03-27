@@ -96,7 +96,6 @@ export default function Settings() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <AppBar
         path={<span style={{ color: 'var(--text2)' }}>Settings</span>}
-        actions={<AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>}
       />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 24, maxWidth: 680 }}>
@@ -187,7 +186,12 @@ export default function Settings() {
 
         {/* Repositories */}
         <section style={{ marginBottom: 32 }}>
-          <SectionTitle>Repositories</SectionTitle>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.12em', flex: 1 }}>
+              REPOSITORIES
+            </div>
+            <AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>
+          </div>
           {config?.repositories.map((r) => (
             <div
               key={r.path}
@@ -209,7 +213,7 @@ export default function Settings() {
           ))}
           {config?.repositories.length === 0 && (
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-              No repositories registered. Click "+ Add Repository" to get started.
+              No repositories registered.
             </div>
           )}
         </section>
