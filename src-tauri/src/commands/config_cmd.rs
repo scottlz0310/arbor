@@ -6,6 +6,37 @@ pub fn get_config() -> Result<AppConfig, String> {
     load_config()
 }
 
+/// Parses a GitHub remote URL and returns `(owner, repo)`.
+/// Supports HTTPS (`https://github.com/owner/repo[.git]`) and
+/// SSH (`git@github.com:owner/repo[.git]`) formats.
+fn parse_github_url(url: &str) -> Option<(String, String)> {
+    let path = url
+        .strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("http://github.com/"))
+        .or_else(|| url.strip_prefix("git@github.com:"))?;
+    let path = path.trim_end_matches(".git");
+    let (owner, repo) = path.split_once('/')?;
+    if owner.is_empty() || repo.is_empty() { return None; }
+    Some((owner.to_string(), repo.to_string()))
+}
+
+/// Tries to read the `origin` remote URL from the git repo and detect GitHub owner/repo.
+fn detect_from_git(repo_path: &str) -> Option<(String, String)> {
+    let repo = git2::Repository::open(repo_path).ok()?;
+    let remote = repo.find_remote("origin").ok()?;
+    parse_github_url(remote.url()?)
+}
+
+/// Returns the GitHub owner and repo detected from the `origin` remote URL.
+/// Returns `null` for both fields if the remote is not a GitHub URL.
+#[tauri::command]
+pub fn detect_github_remote(path: String) -> (Option<String>, Option<String>) {
+    match detect_from_git(&path) {
+        Some((owner, repo)) => (Some(owner), Some(repo)),
+        None => (None, None),
+    }
+}
+
 #[tauri::command]
 pub fn add_repository(
     path: String,
@@ -23,6 +54,16 @@ pub fn add_repository(
     if config.repositories.iter().any(|r| r.path == path) {
         return Err(format!("Repository already registered: {path}"));
     }
+
+    // Auto-detect GitHub owner/repo from the origin remote if not provided.
+    let (github_owner, github_repo) = if github_owner.is_some() || github_repo.is_some() {
+        (github_owner, github_repo)
+    } else {
+        match detect_from_git(&path) {
+            Some((owner, repo)) => (Some(owner), Some(repo)),
+            None => (None, None),
+        }
+    };
 
     config.repositories.push(RepoConfig {
         path,
@@ -282,6 +323,32 @@ pub fn update_settings(
 
 #[cfg(test)]
 mod tests {
+    use super::parse_github_url;
+
+    #[test]
+    fn parse_github_url_https() {
+        let r = parse_github_url("https://github.com/scottlz0310/arbor.git").unwrap();
+        assert_eq!(r, ("scottlz0310".into(), "arbor".into()));
+    }
+
+    #[test]
+    fn parse_github_url_https_no_git_suffix() {
+        let r = parse_github_url("https://github.com/org/repo").unwrap();
+        assert_eq!(r, ("org".into(), "repo".into()));
+    }
+
+    #[test]
+    fn parse_github_url_ssh() {
+        let r = parse_github_url("git@github.com:scottlz0310/arbor.git").unwrap();
+        assert_eq!(r, ("scottlz0310".into(), "arbor".into()));
+    }
+
+    #[test]
+    fn parse_github_url_non_github_returns_none() {
+        assert!(parse_github_url("https://gitlab.com/org/repo.git").is_none());
+        assert!(parse_github_url("git@bitbucket.org:org/repo.git").is_none());
+    }
+
     /// キーチェーンの書き込み → 読み取り → 削除が正常に動作することを確認する。
     /// キーチェーンが利用できない環境（CI サービスアカウント等）ではスキップする。
     #[test]
