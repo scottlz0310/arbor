@@ -1,6 +1,7 @@
 use crate::config::load_config;
-use crate::models::{BranchInfo, DeleteResult, FetchResult, RepoInfo};
+use crate::models::{BranchInfo, CommitNode, DeleteResult, FetchResult, RepoInfo};
 use git2::{BranchType, Repository, StatusOptions};
+use std::collections::HashMap;
 
 // ─── list_repositories ───────────────────────────────────────────────────────
 
@@ -173,6 +174,93 @@ pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
     Ok(FetchResult { updated_refs })
 }
 
+// ─── get_commit_graph ─────────────────────────────────────────────────────────
+
+/// Hard upper bound on commit graph size to prevent accidental large revwalks.
+const MAX_COMMITS_LIMIT: usize = 10_000;
+
+/// Returns up to `limit` commits (default 200) in topological order with lane
+/// assignments suitable for SVG column rendering.
+/// The requested `limit` is clamped to `MAX_COMMITS_LIMIT`.
+#[tauri::command]
+pub fn get_commit_graph(
+    repo_path: String,
+    limit: Option<u32>,
+) -> Result<Vec<CommitNode>, String> {
+    let max = (limit.unwrap_or(200) as usize).min(MAX_COMMITS_LIMIT);
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+
+    // Build oid → ref-names map (local branches and tags only; remotes are
+    // excluded to avoid cluttering the graph badges with origin/... labels).
+    let mut ref_map: HashMap<git2::Oid, Vec<String>> = HashMap::new();
+    for r in repo.references().map_err(|e| e.to_string())? {
+        let r = r.map_err(|e| e.to_string())?;
+        let Some(full_name) = r.name() else { continue };
+        if !full_name.starts_with("refs/heads/") && !full_name.starts_with("refs/tags/") {
+            continue;
+        }
+        let Some(short) = r.shorthand() else { continue };
+        if let Ok(commit) = r.peel_to_commit() {
+            ref_map.entry(commit.id()).or_default().push(short.to_string());
+        }
+    }
+
+    // Walk in topological + time order, starting from all local branches.
+    let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
+    walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
+        .map_err(|e| e.to_string())?;
+    // Track whether we added any starting points to the revwalk.
+    let mut has_start = false;
+    // push_glob may return NotFound on repos with no local branches (e.g. bare
+    // or freshly `git init`'d). Treat that as "no branches" rather than an error.
+    match walk.push_glob("refs/heads/*") {
+        Ok(()) => {
+            has_start = true;
+        }
+        Err(e) if e.code() == git2::ErrorCode::NotFound => {
+            // No local branches; we'll still try HEAD below.
+        }
+        Err(e) => return Err(e.to_string()),
+    }
+    // Also include HEAD in case of detached state.
+    if let Ok(head) = repo.head().and_then(|h| h.peel_to_commit()) {
+        let _ = walk.push(head.id());
+        has_start = true;
+    }
+    // If we have no starting points at all, there is nothing to walk.
+    if !has_start {
+        return Ok(vec![]);
+    }
+
+    // Lane assignment via the pure helper (testable without git2).
+    let mut lanes: Vec<Option<git2::Oid>> = Vec::new();
+    let mut nodes: Vec<CommitNode> = Vec::with_capacity(max);
+
+    for oid_result in walk.take(max) {
+        let oid = oid_result.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        let parent_ids: Vec<git2::Oid> = commit.parent_ids().collect();
+
+        let my_lane = assign_lane(&mut lanes, &oid, &parent_ids);
+
+        let refs = ref_map.get(&oid).cloned().unwrap_or_default();
+        let oid_str = oid.to_string();
+
+        nodes.push(CommitNode {
+            short_oid: oid_str[..7].to_string(),
+            oid: oid_str,
+            summary: commit.summary().unwrap_or_default().to_string(),
+            author_name: commit.author().name().unwrap_or_default().to_string(),
+            timestamp: commit.time().seconds(),
+            parent_oids: parent_ids.iter().map(|id| id.to_string()).collect(),
+            refs,
+            lane: my_lane as u32,
+        });
+    }
+
+    Ok(nodes)
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 fn repo_info_for_path(path: &str) -> Result<RepoInfo, String> {
@@ -259,4 +347,109 @@ fn upstream_ahead_behind(repo: &Repository, branch: &git2::Branch) -> (u32, u32)
         Some((a as u32, b as u32))
     })()
     .unwrap_or((0, 0))
+}
+
+/// Assigns a display lane (column index) for a commit in a topological walk.
+///
+/// `lanes` is a slot array where each entry is either `None` (free) or
+/// `Some(oid)` meaning "this slot is reserved for the commit with that OID".
+/// The function updates `lanes` in-place so callers can re-use the same vec
+/// across the entire walk.
+///
+/// Generic over `Id` so the algorithm can be unit-tested with plain integers
+/// without pulling in git2.
+fn assign_lane<Id>(lanes: &mut Vec<Option<Id>>, id: &Id, parents: &[Id]) -> usize
+where
+    Id: PartialEq + Clone,
+{
+    // Find (or allocate) the slot reserved for this commit.
+    let my_lane = if let Some(pos) = lanes.iter().position(|l| l.as_ref() == Some(id)) {
+        pos
+    } else {
+        lanes.iter().position(|l| l.is_none()).unwrap_or_else(|| {
+            lanes.push(None);
+            lanes.len() - 1
+        })
+    };
+
+    // Free all slots pointing to this commit.
+    for slot in lanes.iter_mut() {
+        if slot.as_ref() == Some(id) {
+            *slot = None;
+        }
+    }
+
+    // Reserve my_lane for the first parent (continuing the same line).
+    if let Some(first) = parents.first() {
+        if !lanes.contains(&Some(first.clone())) {
+            lanes[my_lane] = Some(first.clone());
+        }
+    }
+
+    // Allocate a new slot for each additional parent (branch lines).
+    for parent in parents.iter().skip(1) {
+        if !lanes.contains(&Some(parent.clone())) {
+            let free = lanes.iter().position(|l| l.is_none()).unwrap_or_else(|| {
+                lanes.push(None);
+                lanes.len() - 1
+            });
+            lanes[free] = Some(parent.clone());
+        }
+    }
+
+    my_lane
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::assign_lane;
+
+    fn run(commits: &[(u32, &[u32])]) -> Vec<usize> {
+        let mut lanes: Vec<Option<u32>> = Vec::new();
+        commits
+            .iter()
+            .map(|(id, parents)| assign_lane(&mut lanes, id, parents))
+            .collect()
+    }
+
+    #[test]
+    fn lane_single_commit() {
+        assert_eq!(run(&[(1, &[])]), vec![0]);
+    }
+
+    #[test]
+    fn lane_empty_input() {
+        assert_eq!(run(&[]), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn lane_linear_history() {
+        // A→B→C (topological order: A first)
+        let result = run(&[(3, &[2]), (2, &[1]), (1, &[])]);
+        assert_eq!(result, vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn lane_merge_and_rejoin() {
+        // Merge commit M has two parents: A (lane 0) and B (lane 1).
+        // After M both lines rejoin on lane 0.
+        //   M(0) -> A(0), B(1)
+        //   A(0) -> root(0)
+        //   B(1) -> root(0)
+        //   root(0) -> []
+        let result = run(&[(10, &[8, 9]), (8, &[7]), (9, &[7]), (7, &[])]);
+        assert_eq!(result, vec![0, 0, 1, 0]);
+    }
+
+    #[test]
+    fn lane_unseen_branch_tip_gets_new_lane() {
+        // Two independent branch tips before they converge.
+        //   tip_a(0) -> base(0)
+        //   tip_b(1) -> base(0)   ← base already claimed by lane 0
+        //   base(0)  -> []
+        let result = run(&[(1, &[3]), (2, &[3]), (3, &[])]);
+        assert_eq!(result, vec![0, 1, 0]);
+    }
 }

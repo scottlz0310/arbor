@@ -7,6 +7,7 @@ import type {
   AppConfig,
   BranchInfo,
   CheckRun,
+  CommitNode,
   DeleteResult,
   DsxOutput,
   DsxStatus,
@@ -55,6 +56,9 @@ export const deleteBranches = (repo_path: string, names: string[]) =>
 
 export const fetchAll = (repo_path: string) =>
   tauriInvoke<FetchResult>('fetch_all', { repo_path });
+
+export const getCommitGraph = (repo_path: string, limit?: number) =>
+  tauriInvoke<CommitNode[]>('get_commit_graph', { repo_path, limit });
 
 // ─── GitHub PAT ──────────────────────────────────────────────────────────────
 
