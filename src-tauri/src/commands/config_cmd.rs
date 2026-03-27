@@ -43,6 +43,25 @@ pub fn remove_repository(path: String) -> Result<AppConfig, String> {
     Ok(config)
 }
 
+/// Updates the GitHub owner/repo fields for an existing registered repository.
+#[tauri::command]
+pub fn update_repository_github(
+    path: String,
+    github_owner: Option<String>,
+    github_repo: Option<String>,
+) -> Result<AppConfig, String> {
+    let mut config = load_config()?;
+    let repo = config
+        .repositories
+        .iter_mut()
+        .find(|r| r.path == path)
+        .ok_or_else(|| format!("Repository not found: {path}"))?;
+    repo.github_owner = github_owner;
+    repo.github_repo = github_repo;
+    save_config(&config)?;
+    Ok(config)
+}
+
 // ─── GitHub PAT (DPAPI encrypted → config.toml) ───────────────────────────────
 //
 // keyring v3.6.x on Windows has a bug: credentials written by one Entry instance

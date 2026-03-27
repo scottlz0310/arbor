@@ -3,9 +3,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { AppConfig, DsxStatus } from '../types';
+import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
 export default function Settings() {
   const queryClient = useQueryClient();
@@ -204,23 +204,18 @@ export default function Settings() {
             <AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>
           </div>
           {config?.repositories.map((r) => (
-            <div
+            <RepoCard
               key={r.path}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '10px 14px', background: 'var(--bg3)',
-                border: '1px solid var(--border)', borderRadius: 'var(--r)',
-                marginBottom: 6,
+              repo={r}
+              onRemove={handleRemoveRepo}
+              onSaveGithub={async (path, owner, repo) => {
+                try {
+                  const updated = await updateRepositoryGithub({ path, githubOwner: owner || null, githubRepo: repo || null });
+                  setConfig(updated);
+                  addToast('GitHub 設定を保存しました', 'success');
+                } catch (e) { addToast(String(e), 'error'); }
               }}
-            >
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)' }}>{r.name}</div>
-                <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-                  {r.path}
-                </div>
-              </div>
-              <AppBtn variant="danger" onClick={() => handleRemoveRepo(r.path)}>Remove</AppBtn>
-            </div>
+            />
           ))}
           {config?.repositories.length === 0 && (
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>
@@ -240,6 +235,71 @@ export default function Settings() {
           </div>
         </section>
 
+      </div>
+    </div>
+  );
+}
+
+function RepoCard({
+  repo,
+  onRemove,
+  onSaveGithub,
+}: {
+  repo: RepoConfig;
+  onRemove: (path: string) => void;
+  onSaveGithub: (path: string, owner: string, repo: string) => Promise<void>;
+}) {
+  const [owner, setOwner] = useState(repo.github_owner ?? '');
+  const [repoName, setRepoName] = useState(repo.github_repo ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const dirty = owner !== (repo.github_owner ?? '') || repoName !== (repo.github_repo ?? '');
+
+  const handleSave = async () => {
+    setSaving(true);
+    try { await onSaveGithub(repo.path, owner, repoName); }
+    finally { setSaving(false); }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--bg2)', border: '1px solid var(--border)',
+    borderRadius: 'var(--r)', color: 'var(--text1)',
+    fontSize: 11, fontFamily: 'var(--font-mono)',
+    padding: '4px 8px', outline: 'none', width: '100%',
+  };
+
+  return (
+    <div style={{
+      padding: '10px 14px', background: 'var(--bg3)',
+      border: '1px solid var(--border)', borderRadius: 'var(--r)',
+      marginBottom: 6,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)' }}>{repo.name}</div>
+          <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{repo.path}</div>
+        </div>
+        <AppBtn variant="danger" onClick={() => onRemove(repo.path)}>Remove</AppBtn>
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input
+          style={inputStyle}
+          placeholder="owner"
+          value={owner}
+          onChange={(e) => setOwner(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && dirty && handleSave()}
+        />
+        <span style={{ color: 'var(--text3)', fontSize: 12 }}>/</span>
+        <input
+          style={inputStyle}
+          placeholder="repo"
+          value={repoName}
+          onChange={(e) => setRepoName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && dirty && handleSave()}
+        />
+        <AppBtn variant="primary" onClick={handleSave} disabled={!dirty || saving}>
+          {saving ? '…' : 'Save'}
+        </AppBtn>
       </div>
     </div>
   );

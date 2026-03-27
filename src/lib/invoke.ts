@@ -35,6 +35,12 @@ export const addRepository = (args: {
 export const removeRepository = (path: string) =>
   tauriInvoke<AppConfig>('remove_repository', { path });
 
+export const updateRepositoryGithub = (args: {
+  path: string;
+  githubOwner: string | null;
+  githubRepo: string | null;
+}) => tauriInvoke<AppConfig>('update_repository_github', args);
+
 export const scanDirectory = (root: string) =>
   tauriInvoke<string[]>('scan_directory', { root });
 
