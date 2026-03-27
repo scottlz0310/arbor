@@ -127,7 +127,7 @@ Rust backend (Tauri commands)
 
 ### 認証の制約（Phase 1）
 
-`fetch_all` は git2 のシステム git 認証情報ヘルパー / SSH エージェントに依存する。SSH / HTTPS 認証情報 UI は Phase 2 以降。HTTPS リポジトリで認証情報が未設定の場合、fetch はサイレントに失敗する。
+`fetch_all` は git2 のシステム git 認証情報ヘルパー / SSH エージェントに依存する。SSH / HTTPS 認証情報 UI は Phase 2 以降。HTTPS リポジトリで認証情報が未設定の場合、`remote.fetch(...)` のエラーが `Result::Err` としてフロントに返され、UI 側で例外を捕捉して Toast 表示される。
 
 ## 実装フェーズ
 
