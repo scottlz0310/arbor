@@ -67,11 +67,11 @@ mod pat_crypto {
 
     pub fn encrypt(plaintext: &str) -> Result<String, String> {
         let input = plaintext.as_bytes();
-        let mut data_in = blob(input);
+        let data_in = blob(input);
         let mut data_out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
         unsafe {
             let ok: BOOL = CryptProtectData(
-                &mut data_in, ptr::null(), ptr::null_mut(),
+                &data_in, ptr::null(), ptr::null_mut(),
                 ptr::null_mut(), ptr::null_mut(),
                 CRYPTPROTECT_UI_FORBIDDEN, &mut data_out,
             );
@@ -90,11 +90,11 @@ mod pat_crypto {
     pub fn decrypt(encoded: &str) -> Result<String, String> {
         let ciphertext = base64_decode(encoded)
             .map_err(|_| "DPAPI blob の base64 デコードに失敗しました".to_string())?;
-        let mut data_in = blob(&ciphertext);
+        let data_in = blob(&ciphertext);
         let mut data_out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
         unsafe {
             let ok: BOOL = CryptUnprotectData(
-                &mut data_in, ptr::null_mut(), ptr::null_mut(),
+                &data_in, ptr::null_mut(), ptr::null_mut(),
                 ptr::null_mut(), ptr::null_mut(),
                 CRYPTPROTECT_UI_FORBIDDEN, &mut data_out,
             );
@@ -110,7 +110,7 @@ mod pat_crypto {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     fn base64_encode(data: &[u8]) -> String {
-        let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+        let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
         for chunk in data.chunks(3) {
             let b0 = chunk[0] as u32;
             let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
