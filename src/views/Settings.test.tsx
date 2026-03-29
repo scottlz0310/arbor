@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act } from 'react';
@@ -44,11 +44,15 @@ beforeEach(() => {
 });
 
 describe('Settings — Repositories section', () => {
-  it('+ Add Repository ボタンがセクション内に表示される', async () => {
+  it('+ Add Repository ボタンが AppBar ではなく Repositories セクション内に表示される', async () => {
     renderSettings();
-    // AppBar ではなく Repositories セクション内にボタンが存在する
-    await screen.findByRole('button', { name: '+ Add Repository' });
-    expect(screen.getByRole('button', { name: '+ Add Repository' })).toBeInTheDocument();
+    // REPOSITORIES 見出しを基点に親 section を取得してスコープを絞る
+    const heading = await screen.findByText('REPOSITORIES');
+    const repoSection = heading.closest('section')!;
+    expect(within(repoSection).getByRole('button', { name: '+ Add Repository' })).toBeInTheDocument();
+    // AppBar 内（section 外）には存在しないことも確認
+    const allBtns = screen.getAllByRole('button', { name: '+ Add Repository' });
+    expect(allBtns).toHaveLength(1);
   });
 });
 

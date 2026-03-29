@@ -156,8 +156,10 @@ pub fn update_settings(
 #[cfg(test)]
 mod tests {
     /// キーチェーンの書き込み → 読み取り → 削除が正常に動作することを確認する。
-    /// キーチェーンが利用できない環境（CI サービスアカウント等）ではスキップする。
+    /// 実際の OS キーチェーンに書き込むため、デフォルトでは #[ignore] にする。
+    /// `cargo test -- --ignored keyring_roundtrip` で明示的に実行すること。
     #[test]
+    #[ignore = "実 OS キーチェーンへのアクセスが必要。cargo test -- --ignored で実行"]
     fn keyring_roundtrip() {
         const SERVICE: &str = "arbor_keyring_test";
         const USER: &str = "test";

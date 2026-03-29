@@ -19,9 +19,13 @@ export default function Settings() {
   const [sysUpdating, setSysUpdating] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     getConfig().then(setConfig).catch((e) => addToast(String(e), 'error'));
     dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null }));
-    hasGithubPat().then(setPatStored).catch(() => setPatStored(false));
+    hasGithubPat()
+      .then((v) => { if (!cancelled) setPatStored(v); })
+      .catch(() => { if (!cancelled) setPatStored(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const handleAddRepo = async () => {
