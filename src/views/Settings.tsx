@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
@@ -7,6 +8,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus } from '../types';
 
 export default function Settings() {
+  const queryClient = useQueryClient();
   const { addToast } = useUiStore();
   const { loadRepos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
@@ -17,9 +19,13 @@ export default function Settings() {
   const [sysUpdating, setSysUpdating] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     getConfig().then(setConfig).catch((e) => addToast(String(e), 'error'));
     dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null }));
-    hasGithubPat().then(setPatStored).catch(() => setPatStored(false));
+    hasGithubPat()
+      .then((v) => { if (!cancelled) setPatStored(v); })
+      .catch(() => { if (!cancelled) setPatStored(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const handleAddRepo = async () => {
@@ -45,6 +51,7 @@ export default function Settings() {
       await setGithubPat(trimmed);
       setPatStored(true);
       setPatInput('');
+      queryClient.invalidateQueries({ queryKey: ['has_pat'] });
       addToast('GitHub PAT を保存しました', 'success');
     } catch (e) {
       addToast(String(e), 'error');
@@ -58,6 +65,7 @@ export default function Settings() {
     try {
       await deleteGithubPat();
       setPatStored(false);
+      queryClient.invalidateQueries({ queryKey: ['has_pat'] });
       addToast('GitHub PAT を削除しました', 'success');
     } catch (e) {
       addToast(String(e), 'error');
@@ -96,7 +104,6 @@ export default function Settings() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <AppBar
         path={<span style={{ color: 'var(--text2)' }}>Settings</span>}
-        actions={<AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>}
       />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 24, maxWidth: 680 }}>
@@ -149,7 +156,10 @@ export default function Settings() {
             Personal Access Token (PAT) を OS キーチェーンに保存します。
             PR / Issue 連携は Phase 2 で有効になります。
           </div>
-          {patStored && (
+          {patStored === null && (
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Checking…</div>
+          )}
+          {patStored === true && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
               marginBottom: 10, fontSize: 12, color: 'var(--green)',
@@ -158,6 +168,11 @@ export default function Settings() {
               <AppBtn variant="danger" onClick={handleClearPat} disabled={patLoading}>
                 Clear
               </AppBtn>
+            </div>
+          )}
+          {patStored === false && (
+            <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 10 }}>
+              ⚠ PAT が設定されていません
             </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
@@ -187,7 +202,12 @@ export default function Settings() {
 
         {/* Repositories */}
         <section style={{ marginBottom: 32 }}>
-          <SectionTitle>Repositories</SectionTitle>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.12em', flex: 1 }}>
+              REPOSITORIES
+            </div>
+            <AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>
+          </div>
           {config?.repositories.map((r) => (
             <div
               key={r.path}
@@ -209,7 +229,7 @@ export default function Settings() {
           ))}
           {config?.repositories.length === 0 && (
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-              No repositories registered. Click "+ Add Repository" to get started.
+              No repositories registered.
             </div>
           )}
         </section>

@@ -150,3 +150,46 @@ pub fn update_settings(
     save_config(&config)?;
     Ok(config)
 }
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    /// キーチェーンの書き込み → 読み取り → 削除が正常に動作することを確認する。
+    /// 実際の OS キーチェーンに書き込むため、デフォルトでは #[ignore] にする。
+    /// `cargo test -- --ignored keyring_roundtrip` で明示的に実行すること。
+    #[test]
+    #[ignore = "実 OS キーチェーンへのアクセスが必要。cargo test -- --ignored で実行"]
+    fn keyring_roundtrip() {
+        const SERVICE: &str = "arbor_keyring_test";
+        const USER: &str = "test";
+        const SECRET: &str = "roundtrip_secret_12345";
+
+        let entry = match keyring::Entry::new(SERVICE, USER) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("keyring::Entry::new failed ({e}) — skipping");
+                return;
+            }
+        };
+
+        // 前回テストの残骸を削除
+        let _ = entry.delete_credential();
+
+        if let Err(e) = entry.set_password(SECRET) {
+            eprintln!("set_password failed ({e}) — keyring not functional, skipping");
+            return;
+        }
+
+        match entry.get_password() {
+            Ok(val) => {
+                let _ = entry.delete_credential();
+                assert_eq!(val, SECRET, "キーチェーンの読み取り値が書き込み値と一致しない");
+            }
+            Err(e) => {
+                let _ = entry.delete_credential();
+                panic!("set_password は成功したが get_password が失敗: {e}");
+            }
+        }
+    }
+}
