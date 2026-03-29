@@ -23,7 +23,7 @@
     "zustand": "^5.0.12"
   },
   "engines": {
-    "node": ">=20.19.6"
+    "node": ">=24.14.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",
@@ -32,12 +32,12 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^4.7.0",
+    "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^4.1.2",
     "jsdom": "^29.0.1",
     "lefthook": "^2.1.4",
-    "typescript": "^5.9.3",
-    "vite": "^6.4.1",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.3",
     "vitest": "^4.1.2"
   }
 }
