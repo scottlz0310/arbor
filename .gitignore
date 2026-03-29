@@ -22,6 +22,10 @@ src-tauri/gen/
 # Contains mutation testing data
 **/mutants.out*/
 
+# Playwright MCP server artifacts
+.playwright-mcp/
+*.png
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
