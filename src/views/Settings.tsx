@@ -216,6 +216,7 @@ export default function Settings() {
                 try {
                   const updated = await updateRepositoryGithub({ path, githubOwner: owner || null, githubRepo: repo || null });
                   setConfig(updated);
+                  await loadRepos();
                   addToast('GitHub 設定を保存しました', 'success');
                 } catch (e) { addToast(String(e), 'error'); }
               }}
@@ -253,16 +254,22 @@ function RepoCard({
   onRemove: (path: string) => void;
   onSaveGithub: (path: string, owner: string, repoName: string) => Promise<void>;
 }) {
+  const { addToast } = useUiStore();
   const [owner, setOwner] = useState(repo.github_owner ?? '');
   const [repoName, setRepoName] = useState(repo.github_repo ?? '');
   const [saving, setSaving] = useState(false);
   const [detecting, setDetecting] = useState(false);
 
-  const dirty = owner !== (repo.github_owner ?? '') || repoName !== (repo.github_repo ?? '');
+  const ownerTrimmed = owner.trim();
+  const repoTrimmed = repoName.trim();
+  const dirty = ownerTrimmed !== (repo.github_owner ?? '') || repoTrimmed !== (repo.github_repo ?? '');
+  const bothSet = ownerTrimmed !== '' && repoTrimmed !== '';
+  const bothEmpty = ownerTrimmed === '' && repoTrimmed === '';
+  const validCombo = bothSet || bothEmpty;
 
   const handleSave = async () => {
     setSaving(true);
-    try { await onSaveGithub(repo.path, owner, repoName); }
+    try { await onSaveGithub(repo.path, ownerTrimmed, repoTrimmed); }
     finally { setSaving(false); }
   };
 
@@ -272,6 +279,8 @@ function RepoCard({
       const [detectedOwner, detectedRepo] = await detectGithubRemote(repo.path);
       if (detectedOwner) setOwner(detectedOwner);
       if (detectedRepo) setRepoName(detectedRepo);
+    } catch (e) {
+      addToast(String(e), 'error');
     } finally {
       setDetecting(false);
     }
@@ -316,10 +325,15 @@ function RepoCard({
           onChange={(e) => setRepoName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && dirty && handleSave()}
         />
-        <AppBtn variant="primary" onClick={handleSave} disabled={!dirty || saving}>
+        <AppBtn variant="primary" onClick={handleSave} disabled={!dirty || saving || !validCombo}>
           {saving ? '…' : 'Save'}
         </AppBtn>
       </div>
+      {!validCombo && (
+        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>
+          owner と repo は両方設定するか、両方空にしてください
+        </div>
+      )}
     </div>
   );
 }

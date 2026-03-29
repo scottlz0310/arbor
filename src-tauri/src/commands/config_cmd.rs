@@ -14,7 +14,7 @@ fn parse_github_url(url: &str) -> Option<(String, String)> {
         .strip_prefix("https://github.com/")
         .or_else(|| url.strip_prefix("http://github.com/"))
         .or_else(|| url.strip_prefix("git@github.com:"))?;
-    let path = path.trim_end_matches(".git");
+    let path = path.trim_end_matches('/').trim_end_matches(".git");
     let (owner, repo) = path.split_once('/')?;
     if owner.is_empty() || repo.is_empty() { return None; }
     Some((owner.to_string(), repo.to_string()))
@@ -85,20 +85,30 @@ pub fn remove_repository(path: String) -> Result<AppConfig, String> {
 }
 
 /// Updates the GitHub owner/repo fields for an existing registered repository.
+/// Both must be `Some` (non-empty) or both `None`; mixed state is rejected.
 #[tauri::command]
 pub fn update_repository_github(
     path: String,
     github_owner: Option<String>,
     github_repo: Option<String>,
 ) -> Result<AppConfig, String> {
+    // Normalise: empty strings are treated as None.
+    let owner = github_owner.and_then(|s| { let t = s.trim().to_string(); if t.is_empty() { None } else { Some(t) } });
+    let repo_name = github_repo.and_then(|s| { let t = s.trim().to_string(); if t.is_empty() { None } else { Some(t) } });
+    // Validate: both set or both None.
+    match (&owner, &repo_name) {
+        (Some(_), None) | (None, Some(_)) =>
+            return Err("github_owner と github_repo は両方設定するか、両方空にしてください".to_string()),
+        _ => {}
+    }
     let mut config = load_config()?;
     let repo = config
         .repositories
         .iter_mut()
         .find(|r| r.path == path)
         .ok_or_else(|| format!("Repository not found: {path}"))?;
-    repo.github_owner = github_owner;
-    repo.github_repo = github_repo;
+    repo.github_owner = owner;
+    repo.github_repo = repo_name;
     save_config(&config)?;
     Ok(config)
 }
