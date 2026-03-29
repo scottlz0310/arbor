@@ -61,6 +61,12 @@ mod pat_crypto {
         CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
 
+    // LocalFree is not exposed by windows-sys 0.52; declare it directly.
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LocalFree(hmem: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+    }
+
     fn blob(data: &[u8]) -> CRYPT_INTEGER_BLOB {
         CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 }
     }
@@ -78,11 +84,8 @@ mod pat_crypto {
             if ok == 0 {
                 return Err("DPAPI 暗号化に失敗しました".to_string());
             }
-            // Copy into a Vec before the OS-allocated buffer goes out of scope.
-            // The DPAPI buffer (LocalAlloc) is intentionally not freed here;
-            // the process-heap memory is reclaimed by the OS when the process exits.
-            // This is acceptable for a PAT that is saved at most once per session.
             let enc = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
+            LocalFree(data_out.pbData.cast());
             Ok(base64_encode(&enc))
         }
     }
@@ -102,6 +105,7 @@ mod pat_crypto {
                 return Err("DPAPI 復号に失敗しました（別のユーザー/マシンの blob は復号できません）".to_string());
             }
             let bytes = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
+            LocalFree(data_out.pbData.cast());
             String::from_utf8(bytes).map_err(|e| format!("UTF-8 変換エラー: {e}"))
         }
     }
@@ -144,16 +148,36 @@ mod pat_crypto {
 
 #[cfg(not(target_os = "windows"))]
 mod pat_crypto {
+    // Keep the same service/user pair as used before this PR for backward compatibility.
+    const SERVICE: &str = "arbor_github_pat";
+    const USER: &str = "github";
+
     fn keychain_entry() -> Result<keyring::Entry, String> {
-        keyring::Entry::new("arbor_github_pat", "arbor")
+        keyring::Entry::new(SERVICE, USER)
             .map_err(|e| format!("keychain エラー: {e}"))
     }
+
     pub fn encrypt(plaintext: &str) -> Result<String, String> {
         keychain_entry()?.set_password(plaintext).map_err(|e| format!("{e}"))?;
-        Ok(String::new()) // sentinel: stored in keychain, not in blob
+        Ok(String::new()) // sentinel: PAT is in keyring, not in this blob
     }
+
     pub fn decrypt(_encoded: &str) -> Result<String, String> {
         keychain_entry()?.get_password().map_err(|e| format!("{e}"))
+    }
+
+    /// Returns true if a PAT entry exists in the keyring.
+    pub fn has_in_keyring() -> bool {
+        keychain_entry().map(|e| e.get_password().is_ok()).unwrap_or(false)
+    }
+
+    /// Removes the keyring entry. `NoEntry` is treated as success.
+    pub fn delete() -> Result<(), String> {
+        match keychain_entry()?.delete_password() {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!("{e}")),
+        }
     }
 }
 
@@ -169,17 +193,26 @@ fn pat_decrypt(encoded: &str) -> Result<String, String> {
 
 /// Internal helper used by GitHub API commands to retrieve the stored PAT.
 /// Not a Tauri command — the secret stays inside the Rust process.
+/// On Windows: decrypts the DPAPI blob from `github_pat_enc`.
+/// On non-Windows: reads from OS keyring (falls back to keyring directly when
+/// `github_pat_enc` is None, supporting pre-migration installs).
 pub(crate) fn load_github_pat() -> Result<String, String> {
     let config = load_config()?;
     match &config.settings.github_pat_enc {
         Some(blob) => pat_decrypt(blob),
-        None => Err(
-            "GitHub PAT が設定されていません。Settings から PAT を登録してください。".to_string(),
-        ),
+        None => {
+            // Non-Windows: fall back to keyring for pre-migration PATs (github_pat_enc absent).
+            #[cfg(not(target_os = "windows"))]
+            return pat_crypto::decrypt("");
+            #[cfg(target_os = "windows")]
+            Err("GitHub PAT が設定されていません。Settings から PAT を登録してください。".to_string())
+        }
     }
 }
 
-/// Trims, validates, encrypts (DPAPI), and saves the GitHub PAT to config.toml.
+/// Trims, validates, and saves the GitHub PAT.
+/// On Windows: encrypts with DPAPI and stores as a base64 blob in config.toml.
+/// On non-Windows: stores in OS keyring; `github_pat_enc` holds an empty sentinel.
 #[tauri::command]
 pub fn set_github_pat(pat: String) -> Result<(), String> {
     let trimmed = pat.trim();
@@ -193,18 +226,31 @@ pub fn set_github_pat(pat: String) -> Result<(), String> {
 
 /// Returns true if a GitHub PAT is stored, false if not.
 /// The PAT value is never exposed over IPC; retrieval is internal to Rust commands.
+/// On non-Windows: also checks keyring directly for pre-migration installs where
+/// `github_pat_enc` is None.
 #[tauri::command]
 pub fn has_github_pat() -> Result<bool, String> {
     let config = load_config()?;
-    Ok(config.settings.github_pat_enc.is_some())
+    if config.settings.github_pat_enc.is_some() {
+        return Ok(true);
+    }
+    // Non-Windows: fall back to keyring for pre-migration PATs.
+    #[cfg(not(target_os = "windows"))]
+    return Ok(pat_crypto::has_in_keyring());
+    #[cfg(target_os = "windows")]
+    Ok(false)
 }
 
 /// Removes the GitHub PAT from config.toml.
+/// On non-Windows: also deletes the keyring entry.
 #[tauri::command]
 pub fn delete_github_pat() -> Result<(), String> {
     let mut config = load_config()?;
     config.settings.github_pat_enc = None;
-    save_config(&config)
+    save_config(&config)?;
+    #[cfg(not(target_os = "windows"))]
+    pat_crypto::delete()?;
+    Ok(())
 }
 
 // ─── scan_directory ───────────────────────────────────────────────────────────
