@@ -3,7 +3,7 @@ pre-commit:
   commands:
     typecheck:
       glob: "src/**/*.{ts,tsx}"
-      run: npm run typecheck
+      run: pnpm run typecheck
     cargo-check:
       glob: "src-tauri/**/*.rs"
       run: cargo check --manifest-path src-tauri/Cargo.toml
@@ -19,4 +19,4 @@ pre-push:
       run: cargo test --manifest-path src-tauri/Cargo.toml
     frontend-test:
       glob: "src/**/*.{ts,tsx}"
-      run: npm test
+      run: pnpm test
