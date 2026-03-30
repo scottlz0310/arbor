@@ -44,7 +44,15 @@ pub fn list_repositories() -> Result<Vec<RepoInfo>, String> {
 
 #[tauri::command]
 pub fn get_repo_status(repo_path: String) -> Result<RepoInfo, String> {
-    repo_info_for_path(&repo_path)
+    let config = load_config()?;
+    let mut info = repo_info_for_path(&repo_path)?;
+    // Merge GitHub owner/repo and display name from config, mirroring list_repositories.
+    if let Some(repo_cfg) = config.repositories.iter().find(|r| r.path == repo_path) {
+        info.github_owner = repo_cfg.github_owner.clone();
+        info.github_repo = repo_cfg.github_repo.clone();
+        info.name = repo_cfg.name.clone();
+    }
+    Ok(info)
 }
 
 // ─── get_branches ─────────────────────────────────────────────────────────────
