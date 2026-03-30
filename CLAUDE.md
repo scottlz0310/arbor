@@ -24,13 +24,13 @@ dsx --version           # dsx CLI v0.2.2+ が PATH に必要
 ### 起動・ビルド
 ```bash
 pnpm install            # フロントエンド依存インストール
-cargo tauri dev         # 開発サーバー起動 (Vite + Tauri ホットリロード)
-cargo tauri build       # リリースビルド (.msi / .dmg)
+pnpm tauri dev          # 開発サーバー起動 (Vite + Tauri ホットリロード)
+pnpm tauri build        # リリースビルド (.msi / .dmg)
 ```
 
 ### Rust チェック
 ```bash
-cd src-tauri
+# src-tauri/ に cd せずプロジェクトルートから実行可能
 cargo check             # コンパイルチェック（ビルドなし、高速）
 cargo clippy            # Lint
 cargo test              # テスト実行
