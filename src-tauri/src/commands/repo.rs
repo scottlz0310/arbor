@@ -1,7 +1,18 @@
-use crate::config::load_config;
+use crate::config::{load_config, RepoConfig};
 use crate::models::{BranchInfo, CommitNode, DeleteResult, FetchResult, RepoInfo};
 use git2::{BranchType, Repository, StatusOptions};
 use std::collections::HashMap;
+
+// ─── apply_repo_cfg ──────────────────────────────────────────────────────────
+
+/// Overlays `github_owner`, `github_repo`, and display `name` from a registered
+/// `RepoConfig` onto a live `RepoInfo`. Used by both `list_repositories` and
+/// `get_repo_status` so the two code paths cannot drift.
+fn apply_repo_cfg(info: &mut RepoInfo, cfg: &RepoConfig) {
+    info.github_owner = cfg.github_owner.clone();
+    info.github_repo = cfg.github_repo.clone();
+    info.name = cfg.name.clone();
+}
 
 // ─── list_repositories ───────────────────────────────────────────────────────
 
@@ -12,10 +23,7 @@ pub fn list_repositories() -> Result<Vec<RepoInfo>, String> {
     for repo_cfg in &config.repositories {
         match repo_info_for_path(&repo_cfg.path) {
             Ok(mut info) => {
-                info.github_owner = repo_cfg.github_owner.clone();
-                info.github_repo = repo_cfg.github_repo.clone();
-                // Override display name with configured name.
-                info.name = repo_cfg.name.clone();
+                apply_repo_cfg(&mut info, repo_cfg);
                 result.push(info);
             }
             Err(e) => {
@@ -44,7 +52,12 @@ pub fn list_repositories() -> Result<Vec<RepoInfo>, String> {
 
 #[tauri::command]
 pub fn get_repo_status(repo_path: String) -> Result<RepoInfo, String> {
-    repo_info_for_path(&repo_path)
+    let config = load_config()?;
+    let mut info = repo_info_for_path(&repo_path)?;
+    if let Some(repo_cfg) = config.repositories.iter().find(|r| r.path == repo_path) {
+        apply_repo_cfg(&mut info, repo_cfg);
+    }
+    Ok(info)
 }
 
 // ─── get_branches ─────────────────────────────────────────────────────────────
@@ -404,7 +417,67 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::assign_lane;
+    use super::{apply_repo_cfg, assign_lane};
+    use crate::config::RepoConfig;
+    use crate::models::RepoInfo;
+
+    // ── apply_repo_cfg ────────────────────────────────────────────────────────
+
+    fn stub_info() -> RepoInfo {
+        RepoInfo {
+            path: "/tmp/repo".to_string(),
+            name: "derived-name".to_string(),
+            current_branch: "main".to_string(),
+            ahead: 0,
+            behind: 0,
+            modified_count: 0,
+            untracked_count: 0,
+            stash_count: 0,
+            github_owner: None,
+            github_repo: None,
+            last_fetched_at: None,
+        }
+    }
+
+    fn stub_cfg(owner: Option<&str>, repo: Option<&str>) -> RepoConfig {
+        RepoConfig {
+            path: "/tmp/repo".to_string(),
+            name: "configured-name".to_string(),
+            github_owner: owner.map(String::from),
+            github_repo: repo.map(String::from),
+        }
+    }
+
+    #[test]
+    fn apply_repo_cfg_sets_github_fields_and_name() {
+        let mut info = stub_info();
+        apply_repo_cfg(&mut info, &stub_cfg(Some("owner"), Some("myrepo")));
+        assert_eq!(info.github_owner.as_deref(), Some("owner"));
+        assert_eq!(info.github_repo.as_deref(), Some("myrepo"));
+        assert_eq!(info.name, "configured-name");
+    }
+
+    #[test]
+    fn apply_repo_cfg_clears_github_fields_when_none() {
+        let mut info = stub_info();
+        info.github_owner = Some("old-owner".to_string());
+        info.github_repo = Some("old-repo".to_string());
+        apply_repo_cfg(&mut info, &stub_cfg(None, None));
+        assert!(info.github_owner.is_none());
+        assert!(info.github_repo.is_none());
+    }
+
+    #[test]
+    fn apply_repo_cfg_does_not_touch_git_fields() {
+        let mut info = stub_info();
+        info.ahead = 3;
+        info.behind = 1;
+        info.modified_count = 2;
+        apply_repo_cfg(&mut info, &stub_cfg(Some("o"), Some("r")));
+        assert_eq!(info.ahead, 3);
+        assert_eq!(info.behind, 1);
+        assert_eq!(info.modified_count, 2);
+    }
 
     fn run(commits: &[(u32, &[u32])]) -> Vec<usize> {
         let mut lanes: Vec<Option<u32>> = Vec::new();
