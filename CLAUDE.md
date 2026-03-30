@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # git2 ビルドに cmake が必要 (Windows: MSVC Build Tools or Visual Studio)
 rustup update           # Rust 1.78+
 node --version          # Node 24 LTS
-pnpm --version          # pnpm 10+（npm/npx は使わない）
+pnpm --version          # pnpm 10+（フロントエンド開発・ビルドに使用）
 dsx --version           # dsx CLI v0.2.2+ が PATH に必要
 ```
 
