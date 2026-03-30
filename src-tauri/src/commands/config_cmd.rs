@@ -126,7 +126,6 @@ pub fn update_repository_github(
 #[cfg(target_os = "windows")]
 mod pat_crypto {
     use std::ptr;
-    use windows_sys::Win32::Foundation::BOOL;
     use windows_sys::Win32::Security::Cryptography::{
         CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
@@ -146,7 +145,7 @@ mod pat_crypto {
         let data_in = blob(input);
         let mut data_out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
         unsafe {
-            let ok: BOOL = CryptProtectData(
+            let ok: i32 = CryptProtectData(
                 &data_in, ptr::null(), ptr::null_mut(),
                 ptr::null_mut(), ptr::null_mut(),
                 CRYPTPROTECT_UI_FORBIDDEN, &mut data_out,
@@ -166,7 +165,7 @@ mod pat_crypto {
         let data_in = blob(&ciphertext);
         let mut data_out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
         unsafe {
-            let ok: BOOL = CryptUnprotectData(
+            let ok: i32 = CryptUnprotectData(
                 &data_in, ptr::null_mut(), ptr::null_mut(),
                 ptr::null_mut(), ptr::null_mut(),
                 CRYPTPROTECT_UI_FORBIDDEN, &mut data_out,
