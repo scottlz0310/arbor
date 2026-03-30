@@ -16,13 +16,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # git2 ビルドに cmake が必要 (Windows: MSVC Build Tools or Visual Studio)
 rustup update           # Rust 1.78+
-node --version          # Node 20 LTS
+node --version          # Node 24 LTS
+pnpm --version          # pnpm 10+（npm/npx の代わりに使用）
 dsx --version           # dsx CLI v0.2.2+ が PATH に必要
 ```
 
 ### 起動・ビルド
 ```bash
-npm install             # フロントエンド依存インストール
+pnpm install            # フロントエンド依存インストール
 cargo tauri dev         # 開発サーバー起動 (Vite + Tauri ホットリロード)
 cargo tauri build       # リリースビルド (.msi / .dmg)
 ```
@@ -37,25 +38,25 @@ cargo test              # テスト実行
 
 ### フロントエンドのみ
 ```bash
-npm run dev             # Vite dev server のみ (Tauri なし)
-npm run build           # TypeScript コンパイル + Vite ビルド
-npm run typecheck       # 型チェックのみ（emit なし）
-npm test                # vitest run（ワンショット）
-npm run test:watch      # vitest ウォッチモード
-npm run test:coverage   # カバレッジ付き（coverage/lcov.info を生成）
+pnpm dev                # Vite dev server のみ (Tauri なし)
+pnpm build              # TypeScript コンパイル + Vite ビルド
+pnpm typecheck          # 型チェックのみ（emit なし）
+pnpm test               # vitest run（ワンショット）
+pnpm test:watch         # vitest ウォッチモード
+pnpm test:coverage      # カバレッジ付き（coverage/lcov.info を生成）
 ```
 
 単一テストファイルを実行する場合:
 ```bash
-npx vitest run src/lib/ruleEngine.test.ts
+pnpm vitest run src/lib/ruleEngine.test.ts
 ```
 
 ### Git フック（lefthook）
 
-`lefthook.yml` で定義。`npm install` 実行時に自動インストールされる。
+`lefthook.yml` で定義。`pnpm install` 実行時に自動インストールされる。
 
-- **pre-commit（並列）**: `npm run typecheck`、`cargo check`
-- **pre-push（直列）**: `cargo clippy -- -D warnings`、`cargo test`、`npm test`
+- **pre-commit（並列）**: `pnpm run typecheck`、`cargo check`
+- **pre-push（直列）**: `cargo clippy -- -D warnings`、`cargo test`、`pnpm test`
 
 ## アーキテクチャ
 
