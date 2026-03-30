@@ -30,10 +30,10 @@ pnpm tauri build        # リリースビルド (.msi / .dmg)
 
 ### Rust チェック
 ```bash
-# src-tauri/ に cd せずプロジェクトルートから実行可能
-cargo check             # コンパイルチェック（ビルドなし、高速）
-cargo clippy            # Lint
-cargo test              # テスト実行
+# Cargo.toml は src-tauri/ 配下のため --manifest-path を指定する
+cargo check  --manifest-path src-tauri/Cargo.toml   # コンパイルチェック（ビルドなし、高速）
+cargo clippy --manifest-path src-tauri/Cargo.toml   # Lint
+cargo test   --manifest-path src-tauri/Cargo.toml   # テスト実行
 ```
 
 ### フロントエンドのみ
