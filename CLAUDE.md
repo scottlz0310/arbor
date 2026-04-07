@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 rustup update           # Rust 1.78+
 node --version          # Node 24 LTS
 pnpm --version          # pnpm 10+（npm/npx の代わりに使用）
-dsx --version           # dsx CLI v0.2.2+ が PATH に必要
+dsx --version           # dsx CLI v0.2.5+ が PATH に必要
 ```
 
 ### 起動・ビルド
