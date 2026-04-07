@@ -9,7 +9,7 @@ import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
 export default function Settings() {
   const queryClient = useQueryClient();
-  const { addToast } = useUiStore();
+  const { addToast, setDsxRunning } = useUiStore();
   const { loadRepos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
   const [dsxStatus, setDsxStatus] = useState<DsxStatus | null>(null);
@@ -128,6 +128,7 @@ export default function Settings() {
 
   const handleSysUpdate = async () => {
     setSysUpdating(true);
+    setDsxRunning(true);
     try {
       await sysUpdate();
       addToast('dsx sys update 完了', 'success');
@@ -138,6 +139,7 @@ export default function Settings() {
       addToast(String(e), 'error');
     } finally {
       setSysUpdating(false);
+      setDsxRunning(false);
     }
   };
 
