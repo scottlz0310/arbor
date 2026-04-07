@@ -73,11 +73,11 @@ export default function Settings() {
     if (!scanResults) return;
     const targets = scanResults.filter((p) => scanSelected.has(p));
     let added = 0;
+    let lastConfig: AppConfig | null = null;
     for (const path of targets) {
       const name = path.split(/[\\/]/).pop() ?? path;
       try {
-        const updated = await addRepository({ path, name });
-        setConfig(updated);
+        lastConfig = await addRepository({ path, name });
         added++;
       } catch (e) {
         // already registered は skip、その他はトーストへ
@@ -87,6 +87,7 @@ export default function Settings() {
       }
     }
     if (added > 0) {
+      if (lastConfig) setConfig(lastConfig);
       await loadRepos();
       addToast(`${added} 件のリポジトリを追加しました`, 'success');
     }
@@ -305,7 +306,7 @@ export default function Settings() {
                         }}
                       />
                       <span style={{ color: 'var(--text1)', fontWeight: 600 }}>{name}</span>
-                      <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ flex: 1, minWidth: 0, color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {p}
                       </span>
                     </label>
