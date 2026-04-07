@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
@@ -17,6 +17,9 @@ export default function Settings() {
   const [patInput, setPatInput]   = useState('');
   const [patLoading, setPatLoading] = useState(false);
   const [sysUpdating, setSysUpdating] = useState(false);
+  const [scanResults, setScanResults] = useState<string[] | null>(null);
+  const [scanSelected, setScanSelected] = useState<Set<string>>(new Set());
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +44,55 @@ export default function Settings() {
     } catch (e) {
       addToast(String(e), 'error');
     }
+  };
+
+  const handleScanAndAdd = async () => {
+    const selected = await open({ directory: true, multiple: false, title: 'スキャンするフォルダを選択' });
+    if (!selected) return;
+    const root = typeof selected === 'string' ? selected : selected[0];
+    setScanning(true);
+    try {
+      const found = await scanDirectory(root);
+      // 既登録パスを除外する
+      const registered = new Set(config?.repositories.map((r) => r.path) ?? []);
+      const newPaths = found.filter((p) => !registered.has(p));
+      if (newPaths.length === 0) {
+        addToast('新しいリポジトリは見つかりませんでした', 'success');
+        return;
+      }
+      setScanResults(newPaths);
+      setScanSelected(new Set(newPaths));
+    } catch (e) {
+      addToast(String(e), 'error');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleBulkRegister = async () => {
+    if (!scanResults) return;
+    const targets = scanResults.filter((p) => scanSelected.has(p));
+    let added = 0;
+    let lastConfig: AppConfig | null = null;
+    for (const path of targets) {
+      const name = path.split(/[\\/]/).pop() ?? path;
+      try {
+        lastConfig = await addRepository({ path, name });
+        added++;
+      } catch (e) {
+        // already registered は skip、その他はトーストへ
+        if (!String(e).includes('already registered')) {
+          addToast(`${name}: ${String(e)}`, 'error');
+        }
+      }
+    }
+    if (added > 0) {
+      if (lastConfig) setConfig(lastConfig);
+      await loadRepos();
+      addToast(`${added} 件のリポジトリを追加しました`, 'success');
+    }
+    setScanResults(null);
+    setScanSelected(new Set());
   };
 
   const handleSavePat = async () => {
@@ -205,8 +257,76 @@ export default function Settings() {
             <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.12em', flex: 1 }}>
               REPOSITORIES
             </div>
+            <AppBtn onClick={handleScanAndAdd} disabled={scanning} style={{ marginRight: 6 }}>
+              {scanning ? 'Scanning…' : '⊕ Scan Folder'}
+            </AppBtn>
             <AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>
           </div>
+
+          {/* スキャン結果確認 UI (#43) */}
+          {scanResults && (
+            <div style={{
+              background: 'var(--bg3)',
+              border: '1px solid var(--border2)',
+              borderRadius: 'var(--r2)',
+              padding: '14px 16px',
+              marginBottom: 12,
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)', marginBottom: 4 }}>
+                {scanResults.length} 件のリポジトリが見つかりました
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 10 }}>
+                ※ 最大 4 階層まで探索。登録するリポジトリを選択してください。
+              </div>
+              <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 10 }}>
+                {scanResults.map((p) => {
+                  const name = p.split(/[\\/]/).pop() ?? p;
+                  const checked = scanSelected.has(p);
+                  return (
+                    <label
+                      key={p}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '4px 2px',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setScanSelected((prev) => {
+                            const next = new Set(prev);
+                            checked ? next.delete(p) : next.add(p);
+                            return next;
+                          });
+                        }}
+                      />
+                      <span style={{ color: 'var(--text1)', fontWeight: 600 }}>{name}</span>
+                      <span style={{ flex: 1, minWidth: 0, color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <AppBtn onClick={() => { setScanResults(null); setScanSelected(new Set()); }}>
+                  Cancel
+                </AppBtn>
+                <AppBtn
+                  variant="primary"
+                  onClick={handleBulkRegister}
+                  disabled={scanSelected.size === 0}
+                >
+                  {scanSelected.size} 件を追加
+                </AppBtn>
+              </div>
+            </div>
+          )}
           {config?.repositories.map((r) => (
             <RepoCard
               key={r.path}
