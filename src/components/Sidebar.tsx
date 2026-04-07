@@ -47,8 +47,14 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Repository list */}
-      <div style={{ padding: '8px', borderBottom: '1px solid var(--border)' }}>
+      {/* Repository list — flex:1 + overflow-y:auto でスクロール可能にする (#44) */}
+      <div style={{
+        padding: '8px',
+        borderBottom: '1px solid var(--border)',
+        flex: 1,
+        minHeight: 0,
+        overflowY: 'auto',
+      }}>
         {repos.map((repo) => (
           <button
             key={repo.path}
@@ -105,8 +111,8 @@ export default function Sidebar() {
         ))}
       </div>
 
-      {/* Navigation */}
-      <nav style={{ padding: '8px', flex: 1 }}>
+      {/* Navigation — 固定高さ（flex:1 は repo list 側に移動） */}
+      <nav style={{ padding: '8px' }}>
         {NAV_ITEMS.map((item) => (
           <button
             key={item.id}
