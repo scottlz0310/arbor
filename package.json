@@ -23,7 +23,7 @@
     "zustand": "^5.0.12"
   },
   "engines": {
-    "node": ">=24.14.1",
+    "node": ">=24.15.0",
     "pnpm": ">=10.33.0"
   },
   "packageManager": "pnpm@10.33.0",
