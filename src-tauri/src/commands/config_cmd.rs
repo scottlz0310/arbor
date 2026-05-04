@@ -271,12 +271,23 @@ mod pat_crypto {
     }
 
     pub fn decrypt(_encoded: &str) -> Result<String, String> {
-        keychain_entry()?.get_password().map_err(|e| format!("{e}"))
+        keychain_entry()?.get_password().map_err(|e| match e {
+            keyring_core::Error::NoEntry => {
+                "GitHub PAT が設定されていません。Settings から PAT を登録してください。".to_string()
+            }
+            other => format!("{other}"),
+        })
     }
 
-    /// Returns true if a PAT entry exists in the keyring.
-    pub fn has_in_keyring() -> bool {
-        keychain_entry().map(|e| e.get_password().is_ok()).unwrap_or(false)
+    /// Returns `Ok(true)` if a PAT entry exists in the keyring, `Ok(false)` if not,
+    /// and `Err` if the credential store could not be initialised or queried.
+    /// Returning a Result lets callers distinguish "no PAT" from "store unavailable".
+    pub fn has_in_keyring() -> Result<bool, String> {
+        match keychain_entry()?.get_password() {
+            Ok(_) => Ok(true),
+            Err(keyring_core::Error::NoEntry) => Ok(false),
+            Err(e) => Err(format!("{e}")),
+        }
     }
 
     /// Removes the keyring entry. `NoEntry` is treated as success.
@@ -302,7 +313,7 @@ fn pat_decrypt(encoded: &str) -> Result<String, String> {
 /// Internal helper used by GitHub API commands to retrieve the stored PAT.
 /// Not a Tauri command — the secret stays inside the Rust process.
 /// On Windows: decrypts the DPAPI blob from `github_pat_enc`.
-/// On non-Windows: reads from OS keyring (falls back to keyring directly when
+/// On macOS/Linux: reads from OS keyring (falls back to keyring directly when
 /// `github_pat_enc` is None, supporting pre-migration installs).
 pub(crate) fn load_github_pat() -> Result<String, String> {
     let config = load_config()?;
@@ -320,7 +331,7 @@ pub(crate) fn load_github_pat() -> Result<String, String> {
 
 /// Trims, validates, and saves the GitHub PAT.
 /// On Windows: encrypts with DPAPI and stores as a base64 blob in config.toml.
-/// On non-Windows: stores in OS keyring; `github_pat_enc` holds an empty sentinel.
+/// On macOS/Linux: stores in OS keyring; `github_pat_enc` holds an empty sentinel.
 #[tauri::command]
 pub fn set_github_pat(pat: String) -> Result<(), String> {
     let trimmed = pat.trim();
@@ -344,7 +355,7 @@ pub fn has_github_pat() -> Result<bool, String> {
     }
     // macOS/Linux: fall back to keyring for pre-migration PATs.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    return Ok(pat_crypto::has_in_keyring());
+    return pat_crypto::has_in_keyring();
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     Ok(false)
 }
