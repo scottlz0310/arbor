@@ -18,7 +18,7 @@ pub struct Settings {
     pub github_keychain_key: String,
     /// PAT stored as a DPAPI-encrypted, base64-encoded blob on Windows.
     /// On Windows this is tied to the current user account — not readable on other machines.
-    /// On non-Windows the keyring-core crate stores the PAT; this field holds an empty-string
+    /// On macOS/Linux the keyring-core crate stores the PAT; this field holds an empty-string
     /// sentinel (`Some("")`) as a presence marker, and may be `None` for pre-migration installs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github_pat_enc: Option<String>,

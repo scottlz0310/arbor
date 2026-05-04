@@ -122,6 +122,14 @@ pub fn update_repository_github(
 //
 // macOS/Linux: use keyring-core v1 with a platform-native credential store
 // (Apple Keychain on macOS, Secret Service via D-Bus on Linux).
+//
+// Other platforms are unsupported — Arbor (Tauri) only ships for these three OS.
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+compile_error!(
+    "Arbor は Windows / macOS / Linux のみをサポートしています。\n\
+     PAT ストレージ実装が未提供のターゲットです。"
+);
 
 #[cfg(target_os = "windows")]
 mod pat_crypto {
@@ -254,7 +262,7 @@ mod pat_crypto {
     fn keychain_entry() -> Result<keyring_core::Entry, String> {
         ensure_default_store()?;
         keyring_core::Entry::new(SERVICE, USER)
-            .map_err(|e| format!("keychain エラー: {e}"))
+            .map_err(|e| format!("credential store エラー: {e}"))
     }
 
     pub fn encrypt(plaintext: &str) -> Result<String, String> {
