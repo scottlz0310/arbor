@@ -9,5 +9,14 @@
     "github>scottlz0310/renovate-config//presets/options/automerge",
     "github>scottlz0310/renovate-config//presets/options/schedule",
     "github>scottlz0310/renovate-config//presets/options/security"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["keyring"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false,
+      "description": "keyring v4 はライブラリではなくサンプルアプリ化された。credential store API は keyring-core へ分離されたため major update は適用しない（移行は別 ISSUE 管理）"
+    }
   ]
 }
