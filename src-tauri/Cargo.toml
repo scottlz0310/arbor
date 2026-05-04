@@ -19,7 +19,6 @@ toml           = "1.1.2"
 git2           = "0.20.4"
 tokio          = { version = "1.52.1", features = ["full"] }
 reqwest        = { version = "0.13.3", features = ["json"] }
-keyring        = "3.6.3"
 dirs           = "6.0.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -27,3 +26,13 @@ windows-sys    = { version = "0.61.2", features = [
     "Win32_Security_Cryptography",
     "Win32_System_Memory",
 ] }
+
+# Windows では DPAPI を使用するため keyring 系は不要。
+# macOS/Linux のみ keyring-core + platform-native credential store を依存。
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring-core   = "1.0"
+apple-native-keyring-store = { version = "1.0", features = ["keychain"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring-core   = "1.0"
+dbus-secret-service-keyring-store = { version = "1.0", features = ["crypto-rust"] }

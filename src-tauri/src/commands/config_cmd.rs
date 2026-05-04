@@ -113,15 +113,15 @@ pub fn update_repository_github(
     Ok(config)
 }
 
-// ─── GitHub PAT (DPAPI encrypted → config.toml) ───────────────────────────────
+// ─── GitHub PAT storage ───────────────────────────────────────────────────────
 //
-// keyring v3.6.x on Windows has a bug: credentials written by one Entry instance
-// cannot be read by a different Entry instance (cross-entry reads return NoEntry).
-// Because every Tauri command call creates a fresh Entry, we cannot rely on keyring.
-//
-// Instead, we encrypt the PAT with Windows DPAPI (user-account-scoped; unreadable
+// Windows: keyring v3.6.x had a cross-entry-read bug (separate Entry instances
+// could not read each other's credentials), and v4 is no longer a library.
+// We encrypt the PAT with Windows DPAPI (user-account-scoped; unreadable
 // on other machines) and store the resulting base64 blob in config.toml.
-// On non-Windows the keyring crate is used directly (it works on macOS/Linux).
+//
+// macOS/Linux: use keyring-core v1 with a platform-native credential store
+// (Apple Keychain on macOS, Secret Service via D-Bus on Linux).
 
 #[cfg(target_os = "windows")]
 mod pat_crypto {
@@ -217,12 +217,36 @@ mod pat_crypto {
 
 #[cfg(not(target_os = "windows"))]
 mod pat_crypto {
+    use std::sync::Once;
+
     // Keep the same service/user pair as used before this PR for backward compatibility.
     const SERVICE: &str = "arbor_github_pat";
     const USER: &str = "github";
 
-    fn keychain_entry() -> Result<keyring::Entry, String> {
-        keyring::Entry::new(SERVICE, USER)
+    static INIT_STORE: Once = Once::new();
+
+    /// keyring-core requires a default credential store to be registered once
+    /// per process before any Entry can be created.
+    /// Store::new() returns Result<Arc<Self>>, which is unsized to Arc<dyn CredentialStore>
+    /// when passed to keyring_core::set_default_store.
+    pub(super) fn ensure_default_store() {
+        INIT_STORE.call_once(|| {
+            #[cfg(target_os = "macos")]
+            match apple_native_keyring_store::keychain::Store::new() {
+                Ok(s) => keyring_core::set_default_store(s),
+                Err(e) => eprintln!("credential store の初期化に失敗: {e}"),
+            }
+            #[cfg(target_os = "linux")]
+            match dbus_secret_service_keyring_store::Store::new() {
+                Ok(s) => keyring_core::set_default_store(s),
+                Err(e) => eprintln!("credential store の初期化に失敗: {e}"),
+            }
+        });
+    }
+
+    fn keychain_entry() -> Result<keyring_core::Entry, String> {
+        ensure_default_store();
+        keyring_core::Entry::new(SERVICE, USER)
             .map_err(|e| format!("keychain エラー: {e}"))
     }
 
@@ -242,9 +266,9 @@ mod pat_crypto {
 
     /// Removes the keyring entry. `NoEntry` is treated as success.
     pub fn delete() -> Result<(), String> {
-        match keychain_entry()?.delete_password() {
+        match keychain_entry()?.delete_credential() {
             Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(keyring_core::Error::NoEntry) => Ok(()),
             Err(e) => Err(format!("{e}")),
         }
     }
@@ -407,6 +431,7 @@ mod tests {
     /// キーチェーンの書き込み → 読み取り → 削除が正常に動作することを確認する。
     /// 実際の OS キーチェーンに書き込むため、デフォルトでは #[ignore] にする。
     /// `cargo test -- --ignored keyring_roundtrip` で明示的に実行すること。
+    #[cfg(not(target_os = "windows"))]
     #[test]
     #[ignore = "実 OS キーチェーンへのアクセスが必要。cargo test -- --ignored で実行"]
     fn keyring_roundtrip() {
@@ -414,10 +439,12 @@ mod tests {
         const USER: &str = "test";
         const SECRET: &str = "roundtrip_secret_12345";
 
-        let entry = match keyring::Entry::new(SERVICE, USER) {
+        super::pat_crypto::ensure_default_store();
+
+        let entry = match keyring_core::Entry::new(SERVICE, USER) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("keyring::Entry::new failed ({e}) — skipping");
+                eprintln!("keyring_core::Entry::new failed ({e}) — skipping");
                 return;
             }
         };
@@ -443,18 +470,23 @@ mod tests {
     }
 
     /// 別の Entry インスタンスで書き込まれた値を読み取れるか確認する。
-    /// keyring v3.6.x on Windows ではこのテストが失敗する（cross-entry read が NoEntry を返す）。
-    /// そのため set_github_pat は config-file フォールバックを使用している。
+    /// keyring v3.6.x on Windows では cross-entry read が NoEntry を返す既知のバグがあったため、
+    /// Windows では DPAPI フォールバックを採用してきた。Windows ではそもそも keyring-core 依存を
+    /// 持たないため、このテストは non-Windows でのみコンパイル対象とする。
+    #[cfg(not(target_os = "windows"))]
     #[test]
+    #[ignore = "実 OS キーチェーンへのアクセスが必要。cargo test -- --ignored で実行"]
     fn keyring_cross_entry_roundtrip() {
         const SERVICE: &str = "arbor_cross_entry_test";
         const USER: &str = "arbor";
         const SECRET: &str = "cross_entry_secret_12345";
 
-        // Clean up any leftover from a previous run.
-        if let Ok(e) = keyring::Entry::new(SERVICE, USER) { let _ = e.delete_credential(); }
+        super::pat_crypto::ensure_default_store();
 
-        let entry1 = match keyring::Entry::new(SERVICE, USER) {
+        // Clean up any leftover from a previous run.
+        if let Ok(e) = keyring_core::Entry::new(SERVICE, USER) { let _ = e.delete_credential(); }
+
+        let entry1 = match keyring_core::Entry::new(SERVICE, USER) {
             Ok(e) => e,
             Err(e) => { eprintln!("entry1::new failed ({e}) — skipping"); return; }
         };
@@ -463,7 +495,7 @@ mod tests {
         }
 
         // Read with a completely separate Entry instance (simulates separate Tauri command calls).
-        let entry2 = match keyring::Entry::new(SERVICE, USER) {
+        let entry2 = match keyring_core::Entry::new(SERVICE, USER) {
             Ok(e) => e,
             Err(e) => { let _ = entry1.delete_credential(); eprintln!("entry2::new failed ({e}) — skipping"); return; }
         };
@@ -472,15 +504,7 @@ mod tests {
 
         match result {
             Ok(val) => assert_eq!(val, SECRET, "cross-entry read returned different value"),
-            Err(e) => {
-                // keyring v3.6.x on Windows fails here (NoEntry).
-                // DPAPI-encrypted config-file storage is used instead (see pat_crypto).
-                eprintln!(
-                    "keyring cross-entry read failed: {e}\n\
-                     This is a known keyring v3.6.x bug on Windows.\n\
-                     DPAPI-encrypted config-file storage is used in production."
-                );
-            }
+            Err(e) => panic!("cross-entry read failed: {e}"),
         }
     }
 
