@@ -8,7 +8,7 @@ on:
 
 jobs:
   # ── Rust: lint ──────────────────────────────────────────────────────────────
-  # Runs in parallel with rust-coverage.
+  # Runs in parallel with rust-coverage and rust-platform-check.
   # cargo check is omitted: clippy subsumes it.
   rust-lint:
     name: Rust clippy
@@ -43,8 +43,71 @@ jobs:
       - name: cargo clippy
         run: cargo clippy -- -D warnings
 
+  # ── Rust: macOS / Linux dependency + build verification ────────────────────
+  # Windows remains covered by rust-lint and rust-coverage; this matrix catches
+  # target-conditional dependencies that do not compile on Windows.
+  rust-platform-check:
+    name: Rust check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux system dependencies
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libdbus-1-dev \
+            libssl-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            pkg-config \
+            wget
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry (shared)
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - name: Cache cargo target (platform check)
+        uses: actions/cache@v5
+        with:
+          path: src-tauri/target
+          key: ${{ runner.os }}-cargo-target-platform-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-target-platform-
+
+      - name: cargo check
+        run: cargo check
+
+      - name: cargo clippy
+        run: cargo clippy -- -D warnings
+
+      - name: cargo test
+        run: cargo test
+
   # ── Rust: test + coverage ───────────────────────────────────────────────────
-  # Runs in parallel with rust-lint.
+  # Runs in parallel with rust-lint and rust-platform-check.
   rust-coverage:
     name: Rust test + coverage
     runs-on: windows-latest
