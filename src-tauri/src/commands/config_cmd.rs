@@ -215,37 +215,44 @@ mod pat_crypto {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod pat_crypto {
-    use std::sync::Once;
+    use std::sync::Mutex;
 
     // Keep the same service/user pair as used before this PR for backward compatibility.
     const SERVICE: &str = "arbor_github_pat";
     const USER: &str = "github";
 
-    static INIT_STORE: Once = Once::new();
+    /// `false` until the default credential store has been successfully registered.
+    /// Initialization failures do not flip this flag, so subsequent calls retry
+    /// (`Once::call_once` would have permanently locked us out after a transient failure).
+    static INIT_STORE: Mutex<bool> = Mutex::new(false);
 
-    /// keyring-core requires a default credential store to be registered once
-    /// per process before any Entry can be created.
-    /// Store::new() returns Result<Arc<Self>>, which is unsized to Arc<dyn CredentialStore>
-    /// when passed to keyring_core::set_default_store.
-    pub(super) fn ensure_default_store() {
-        INIT_STORE.call_once(|| {
-            #[cfg(target_os = "macos")]
-            match apple_native_keyring_store::keychain::Store::new() {
-                Ok(s) => keyring_core::set_default_store(s),
-                Err(e) => eprintln!("credential store の初期化に失敗: {e}"),
-            }
-            #[cfg(target_os = "linux")]
-            match dbus_secret_service_keyring_store::Store::new() {
-                Ok(s) => keyring_core::set_default_store(s),
-                Err(e) => eprintln!("credential store の初期化に失敗: {e}"),
-            }
-        });
+    /// Registers a platform-native credential store as keyring-core's default,
+    /// at most once per process. Failures propagate so the caller can surface
+    /// them and retry on the next invocation.
+    pub(super) fn ensure_default_store() -> Result<(), String> {
+        let mut initialized = INIT_STORE
+            .lock()
+            .map_err(|e| format!("credential store 初期化ロックの取得に失敗: {e}"))?;
+        if *initialized {
+            return Ok(());
+        }
+
+        #[cfg(target_os = "macos")]
+        let store = apple_native_keyring_store::keychain::Store::new()
+            .map_err(|e| format!("credential store の初期化に失敗: {e}"))?;
+        #[cfg(target_os = "linux")]
+        let store = dbus_secret_service_keyring_store::Store::new()
+            .map_err(|e| format!("credential store の初期化に失敗: {e}"))?;
+
+        keyring_core::set_default_store(store);
+        *initialized = true;
+        Ok(())
     }
 
     fn keychain_entry() -> Result<keyring_core::Entry, String> {
-        ensure_default_store();
+        ensure_default_store()?;
         keyring_core::Entry::new(SERVICE, USER)
             .map_err(|e| format!("keychain エラー: {e}"))
     }
@@ -294,10 +301,10 @@ pub(crate) fn load_github_pat() -> Result<String, String> {
     match &config.settings.github_pat_enc {
         Some(blob) => pat_decrypt(blob),
         None => {
-            // Non-Windows: fall back to keyring for pre-migration PATs (github_pat_enc absent).
-            #[cfg(not(target_os = "windows"))]
+            // macOS/Linux: fall back to keyring for pre-migration PATs (github_pat_enc absent).
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
             return pat_crypto::decrypt("");
-            #[cfg(target_os = "windows")]
+            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
             Err("GitHub PAT が設定されていません。Settings から PAT を登録してください。".to_string())
         }
     }
@@ -319,7 +326,7 @@ pub fn set_github_pat(pat: String) -> Result<(), String> {
 
 /// Returns true if a GitHub PAT is stored, false if not.
 /// The PAT value is never exposed over IPC; retrieval is internal to Rust commands.
-/// On non-Windows: also checks keyring directly for pre-migration installs where
+/// On macOS/Linux: also checks keyring directly for pre-migration installs where
 /// `github_pat_enc` is None.
 #[tauri::command]
 pub fn has_github_pat() -> Result<bool, String> {
@@ -327,21 +334,21 @@ pub fn has_github_pat() -> Result<bool, String> {
     if config.settings.github_pat_enc.is_some() {
         return Ok(true);
     }
-    // Non-Windows: fall back to keyring for pre-migration PATs.
-    #[cfg(not(target_os = "windows"))]
+    // macOS/Linux: fall back to keyring for pre-migration PATs.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     return Ok(pat_crypto::has_in_keyring());
-    #[cfg(target_os = "windows")]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     Ok(false)
 }
 
 /// Removes the GitHub PAT from config.toml.
-/// On non-Windows: also deletes the keyring entry.
+/// On macOS/Linux: also deletes the keyring entry.
 #[tauri::command]
 pub fn delete_github_pat() -> Result<(), String> {
     let mut config = load_config()?;
     config.settings.github_pat_enc = None;
     save_config(&config)?;
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pat_crypto::delete()?;
     Ok(())
 }
@@ -431,7 +438,7 @@ mod tests {
     /// キーチェーンの書き込み → 読み取り → 削除が正常に動作することを確認する。
     /// 実際の OS キーチェーンに書き込むため、デフォルトでは #[ignore] にする。
     /// `cargo test -- --ignored keyring_roundtrip` で明示的に実行すること。
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     #[ignore = "実 OS キーチェーンへのアクセスが必要。cargo test -- --ignored で実行"]
     fn keyring_roundtrip() {
@@ -439,7 +446,10 @@ mod tests {
         const USER: &str = "test";
         const SECRET: &str = "roundtrip_secret_12345";
 
-        super::pat_crypto::ensure_default_store();
+        if let Err(e) = super::pat_crypto::ensure_default_store() {
+            eprintln!("ensure_default_store failed ({e}) — skipping");
+            return;
+        }
 
         let entry = match keyring_core::Entry::new(SERVICE, USER) {
             Ok(e) => e,
@@ -472,8 +482,8 @@ mod tests {
     /// 別の Entry インスタンスで書き込まれた値を読み取れるか確認する。
     /// keyring v3.6.x on Windows では cross-entry read が NoEntry を返す既知のバグがあったため、
     /// Windows では DPAPI フォールバックを採用してきた。Windows ではそもそも keyring-core 依存を
-    /// 持たないため、このテストは non-Windows でのみコンパイル対象とする。
-    #[cfg(not(target_os = "windows"))]
+    /// 持たないため、このテストは macOS/Linux でのみコンパイル対象とする。
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     #[ignore = "実 OS キーチェーンへのアクセスが必要。cargo test -- --ignored で実行"]
     fn keyring_cross_entry_roundtrip() {
@@ -481,7 +491,10 @@ mod tests {
         const USER: &str = "arbor";
         const SECRET: &str = "cross_entry_secret_12345";
 
-        super::pat_crypto::ensure_default_store();
+        if let Err(e) = super::pat_crypto::ensure_default_store() {
+            eprintln!("ensure_default_store failed ({e}) — skipping");
+            return;
+        }
 
         // Clean up any leftover from a previous run.
         if let Ok(e) = keyring_core::Entry::new(SERVICE, USER) { let _ = e.delete_credential(); }
