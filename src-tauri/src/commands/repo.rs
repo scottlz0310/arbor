@@ -428,9 +428,66 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_repo_cfg, assign_lane};
+    use super::{
+        apply_repo_cfg, assign_lane, fetch_all, get_branches, get_commit_graph, repo_info_for_path,
+    };
     use crate::config::RepoConfig;
     use crate::models::RepoInfo;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(prefix: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should be after epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "arbor-{prefix}-{}-{unique}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self { path }
+        }
+
+        fn path_str(&self) -> &str {
+            self.path.to_str().expect("temp path should be utf-8")
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn init_repo_with_commit(message: &str) -> TempDir {
+        let dir = TempDir::new("repo");
+        let mut opts = git2::RepositoryInitOptions::new();
+        opts.initial_head("main");
+        let repo = git2::Repository::init_opts(&dir.path, &opts).expect("init repo");
+        std::fs::write(dir.path.join("README.md"), "hello\n").expect("write file");
+
+        let mut index = repo.index().expect("index");
+        index.add_path(Path::new("README.md")).expect("add path");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("write tree");
+        let signature = git2::Signature::now("Arbor Test", "arbor@example.invalid")
+            .expect("test signature");
+
+        {
+            let tree = repo.find_tree(tree_id).expect("find tree");
+            repo.commit(Some("HEAD"), &signature, &signature, message, &tree, &[])
+                .expect("commit");
+        }
+
+        drop(repo);
+        dir
+    }
 
     // ── apply_repo_cfg ────────────────────────────────────────────────────────
 
@@ -488,6 +545,54 @@ mod tests {
         assert_eq!(info.ahead, 3);
         assert_eq!(info.behind, 1);
         assert_eq!(info.modified_count, 2);
+    }
+
+    #[test]
+    fn repo_info_for_path_reads_current_branch() {
+        let repo = init_repo_with_commit("initial commit");
+
+        let info = repo_info_for_path(repo.path_str()).expect("repo info");
+
+        assert_eq!(info.current_branch, "main");
+    }
+
+    #[test]
+    fn get_commit_graph_includes_summary_and_ref_name() {
+        let repo = init_repo_with_commit("graph summary");
+
+        let graph = get_commit_graph(repo.path_str().to_string(), Some(10)).expect("commit graph");
+
+        assert_eq!(graph.len(), 1);
+        assert_eq!(graph[0].summary, "graph summary");
+        assert!(graph[0].refs.iter().any(|name| name == "main"));
+    }
+
+    #[test]
+    fn get_branches_uses_commit_summary() {
+        let repo = init_repo_with_commit("branch summary");
+
+        let branches = get_branches(repo.path_str().to_string()).expect("branches");
+        let branch = branches
+            .iter()
+            .find(|branch| branch.name == "main")
+            .expect("main branch");
+
+        assert_eq!(branch.last_commit_msg, "branch summary");
+    }
+
+    #[test]
+    fn fetch_all_handles_named_local_remote() {
+        let source = init_repo_with_commit("remote source");
+        let target = TempDir::new("fetch-target");
+        let mut opts = git2::RepositoryInitOptions::new();
+        opts.initial_head("main");
+        let repo = git2::Repository::init_opts(&target.path, &opts).expect("init target");
+        repo.remote("origin", source.path_str()).expect("add origin");
+        drop(repo);
+
+        let result = fetch_all(target.path_str().to_string()).expect("fetch all");
+
+        assert!(result.updated_refs.iter().all(|name| name == "origin"));
     }
 
     fn run(commits: &[(u32, &[u32])]) -> Vec<usize> {

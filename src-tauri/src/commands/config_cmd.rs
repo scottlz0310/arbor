@@ -474,7 +474,38 @@ pub fn update_ai_config(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_github_url;
+    use super::{detect_from_git, parse_github_url};
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(prefix: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should be after epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "arbor-{prefix}-{}-{unique}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self { path }
+        }
+
+        fn path_str(&self) -> &str {
+            self.path.to_str().expect("temp path should be utf-8")
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
 
     #[test]
     fn parse_github_url_https() {
@@ -498,6 +529,18 @@ mod tests {
     fn parse_github_url_non_github_returns_none() {
         assert!(parse_github_url("https://gitlab.com/org/repo.git").is_none());
         assert!(parse_github_url("git@bitbucket.org:org/repo.git").is_none());
+    }
+
+    #[test]
+    fn detect_from_git_reads_origin_remote_url() {
+        let dir = TempDir::new("github-remote");
+        let repo = git2::Repository::init(&dir.path).expect("init repo");
+        repo.remote("origin", "https://github.com/scottlz0310/arbor.git")
+            .expect("add origin");
+        drop(repo);
+
+        let detected = detect_from_git(dir.path_str()).expect("detect GitHub remote");
+        assert_eq!(detected, ("scottlz0310".into(), "arbor".into()));
     }
 
     /// キーチェーンの書き込み → 読み取り → 削除が正常に動作することを確認する。
