@@ -25,7 +25,7 @@ fn parse_github_url(url: &str) -> Option<(String, String)> {
 fn detect_from_git(repo_path: &str) -> Option<(String, String)> {
     let repo = git2::Repository::open(repo_path).ok()?;
     let remote = repo.find_remote("origin").ok()?;
-    parse_github_url(remote.url()?)
+    parse_github_url(remote.url().ok()?)
 }
 
 /// Returns the GitHub owner and repo detected from the `origin` remote URL.
