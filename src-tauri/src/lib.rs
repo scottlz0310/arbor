@@ -3,7 +3,7 @@ mod config;
 mod models;
 
 use commands::{
-    ai::{get_ai_insights, ollama_available},
+    ai::{get_ai_insights, get_ai_insights_cached, ollama_available, AiCacheState},
     config_cmd::{
         add_repository, delete_github_pat, detect_github_remote, get_config, has_github_pat,
         remove_repository, scan_directory, set_github_pat, update_repository_github, update_settings,
@@ -20,6 +20,7 @@ use commands::{
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(AiCacheState::default())
         .invoke_handler(tauri::generate_handler![
             // Config
             get_config,
@@ -47,6 +48,7 @@ pub fn run() {
             // AI / Ollama
             ollama_available,
             get_ai_insights,
+            get_ai_insights_cached,
             // dsx
             dsx_check,
             repo_update,

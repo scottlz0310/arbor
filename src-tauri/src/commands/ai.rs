@@ -1,10 +1,44 @@
 use crate::config::load_config;
 use crate::models::{AiInsight, RepoInfo};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const TAGS_PATH: &str = "/api/tags";
 const GENERATE_PATH: &str = "/api/generate";
+/// キャッシュの有効期間。TTL 経過後にバックグラウンド refresh が走る。
+const CACHE_TTL_SECS: u64 = 300; // 5 分
+
+// ─── Cache state (P3-04) ──────────────────────────────────────────────────────
+
+struct CacheEntry {
+    insights: Vec<AiInsight>,
+    updated_at: Instant,
+    /// バックグラウンド refresh が進行中なら true。重複 spawn を防ぐ (in-flight dedupe)。
+    refresh_in_progress: bool,
+}
+
+pub struct AiCacheState {
+    entries: Mutex<HashMap<u64, CacheEntry>>,
+}
+
+impl Default for AiCacheState {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+fn hash_repos(repos: &[RepoInfo]) -> u64 {
+    let summary = build_state_summary(repos);
+    let mut hasher = DefaultHasher::new();
+    summary.hash(&mut hasher);
+    hasher.finish()
+}
 
 // ─── Ollama API request / response types ─────────────────────────────────────
 
@@ -22,7 +56,6 @@ struct GenerateResponse {
 
 // ─── State Aggregator (P3-03) ─────────────────────────────────────────────────
 
-/// Converts repository states into a compact JSON string for the prompt.
 fn build_state_summary(repos: &[RepoInfo]) -> String {
     #[derive(Serialize)]
     struct RepoSummary<'a> {
@@ -53,7 +86,6 @@ fn build_state_summary(repos: &[RepoInfo]) -> String {
 
 // ─── Prompt builder (P3-06) ───────────────────────────────────────────────────
 
-/// Builds the /no_think JSON-only prompt for Ollama.
 fn build_prompt(state_json: &str) -> String {
     format!(
         "/no_think\n\
@@ -69,7 +101,6 @@ fn build_prompt(state_json: &str) -> String {
 
 // ─── Response parser ──────────────────────────────────────────────────────────
 
-/// Strips optional code fences that some models add despite the prompt.
 fn strip_code_fences(s: &str) -> &str {
     let s = s.trim();
     let stripped = s
@@ -82,10 +113,8 @@ fn strip_code_fences(s: &str) -> &str {
 
 fn parse_insights(raw: &str) -> Result<Vec<AiInsight>, String> {
     let json_str = strip_code_fences(raw);
-    // `kind` の検証は InsightKind enum の Serde が担う（未知の文字列で即 Err）。
     let insights: Vec<AiInsight> = serde_json::from_str(json_str)
         .map_err(|e| format!("AI レスポンスの JSON パースに失敗しました: {e}\nRaw: {raw}"))?;
-    // `priority` は enum で表現できないため境界チェックをコードで閉じる。
     for insight in &insights {
         if insight.priority > 3 {
             return Err(format!(
@@ -97,43 +126,14 @@ fn parse_insights(raw: &str) -> Result<Vec<AiInsight>, String> {
     Ok(insights)
 }
 
-/// Builds a URL by joining `base` and `path`, normalizing any trailing slash in base.
 fn ollama_url(base: &str, path: &str) -> String {
     format!("{}{}", base.trim_end_matches('/'), path)
 }
 
-// ─── Tauri commands ───────────────────────────────────────────────────────────
+// ─── Core fetch (shared by both commands) ────────────────────────────────────
 
-/// Returns true if Ollama is running and reachable (P3-01).
-/// Always returns Ok(false) — never Err — so callers can use this as a
-/// pure availability probe without error handling before the fallback path.
-#[tauri::command]
-pub async fn ollama_available() -> Result<bool, String> {
-    // Treat config-load failure the same as "not reachable": return false, not Err.
-    let config = match load_config() {
-        Ok(c) => c,
-        Err(_) => return Ok(false),
-    };
-    if !config.ai.enabled {
-        return Ok(false);
-    }
-    let url = ollama_url(&config.ai.ollama_url, TAGS_PATH);
-    let client = reqwest::Client::new();
-    let reachable = client
-        .get(&url)
-        .timeout(Duration::from_secs(5))
-        .send()
-        .await
-        .map(|r| r.status().is_success())
-        .unwrap_or(false);
-    Ok(reachable)
-}
-
-/// Generates AI insights for the given repositories via Ollama (P3-02).
-/// Errors propagate to the frontend; the caller should fall back to the
-/// rule-based engine on failure.
-#[tauri::command]
-pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, String> {
+/// Calls Ollama and returns parsed insights. Does not touch the cache.
+async fn fetch_from_ollama(repos: &[RepoInfo]) -> Result<Vec<AiInsight>, String> {
     let config = load_config()?;
     let ai = &config.ai;
 
@@ -141,10 +141,10 @@ pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, Str
         return Err("AI Insight は設定で無効化されています".to_string());
     }
 
-    let state_json = build_state_summary(&repos);
+    let state_json = build_state_summary(repos);
     let prompt = build_prompt(&state_json);
-
     let url = ollama_url(&ai.ollama_url, GENERATE_PATH);
+
     let client = reqwest::Client::new();
     let req_body = GenerateRequest {
         model: ai.model.clone(),
@@ -170,6 +170,128 @@ pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, Str
         .map_err(|e| format!("Ollama レスポンスのパースに失敗しました: {e}"))?;
 
     parse_insights(&gen.response)
+}
+
+// ─── Tauri commands ───────────────────────────────────────────────────────────
+
+/// Returns true if Ollama is running and reachable (P3-01).
+/// Always returns Ok(false) — never Err — so callers can use this as a
+/// pure availability probe without error handling before the fallback path.
+#[tauri::command]
+pub async fn ollama_available() -> Result<bool, String> {
+    let config = match load_config() {
+        Ok(c) => c,
+        Err(_) => return Ok(false),
+    };
+    if !config.ai.enabled {
+        return Ok(false);
+    }
+    let url = ollama_url(&config.ai.ollama_url, TAGS_PATH);
+    let client = reqwest::Client::new();
+    let reachable = client
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+    Ok(reachable)
+}
+
+/// Generates AI insights via Ollama without caching (P3-02).
+/// Errors propagate to the frontend; caller should fall back to the rule-based engine.
+#[tauri::command]
+pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, String> {
+    fetch_from_ollama(&repos).await
+}
+
+/// Generates AI insights with TTL-based stale-while-revalidate caching (P3-04).
+///
+/// - Cache hit, TTL 未満    → stale をそのまま返す（Ollama 再呼び出しなし）
+/// - Cache hit, TTL 経過    → stale を即返却し、バックグラウンド refresh を spawn
+///                           (in-flight dedupe: 既に refresh 中なら追加 spawn しない)
+///                           完了後: cache 更新 → emit("ai_insights_updated")
+/// - Cache miss            → 同期フェッチ → cache 保存 → 返却
+#[tauri::command]
+pub async fn get_ai_insights_cached(
+    repos: Vec<RepoInfo>,
+    app: AppHandle,
+    cache: State<'_, AiCacheState>,
+) -> Result<Vec<AiInsight>, String> {
+    let key = hash_repos(&repos);
+
+    // キャッシュチェック: stale の有無と refresh が必要かどうかを同時に判定する。
+    let (cached_insights, should_refresh) = {
+        let entries = cache.entries.lock().map_err(|e| e.to_string())?;
+        match entries.get(&key) {
+            None => (None, false),
+            Some(entry) => {
+                let expired = entry.updated_at.elapsed().as_secs() >= CACHE_TTL_SECS;
+                // TTL 経過かつ refresh が走っていない場合のみ再計算する。
+                let should = expired && !entry.refresh_in_progress;
+                (Some(entry.insights.clone()), should)
+            }
+        }
+    };
+
+    if let Some(stale) = cached_insights {
+        if should_refresh {
+            // in-flight フラグを立ててから spawn（重複 spawn 防止）。
+            {
+                let mut entries = cache.entries.lock().map_err(|e| e.to_string())?;
+                if let Some(entry) = entries.get_mut(&key) {
+                    entry.refresh_in_progress = true;
+                }
+            }
+            let repos_bg = repos.clone();
+            let app_bg = app.clone();
+            tokio::spawn(async move {
+                let cache_bg = app_bg.state::<AiCacheState>();
+                match fetch_from_ollama(&repos_bg).await {
+                    Ok(fresh) => {
+                        // cache を先に更新してから emit する。
+                        // これにより、フロントが emit を受けて即 getAiInsightsCached を
+                        // 呼んでも必ず新しい値が返る。
+                        if let Ok(mut entries) = cache_bg.entries.lock() {
+                            entries.insert(
+                                key,
+                                CacheEntry {
+                                    insights: fresh.clone(),
+                                    updated_at: Instant::now(),
+                                    refresh_in_progress: false,
+                                },
+                            );
+                        };
+                        let _ = app_bg.emit("ai_insights_updated", &fresh);
+                    }
+                    Err(_) => {
+                        // refresh 失敗時はフラグを降ろして次回 TTL 経過後に再試行できるようにする。
+                        if let Ok(mut entries) = cache_bg.entries.lock() {
+                            if let Some(entry) = entries.get_mut(&key) {
+                                entry.refresh_in_progress = false;
+                            }
+                        };
+                    }
+                }
+            });
+        }
+        return Ok(stale);
+    }
+
+    // Cache miss: 同期フェッチ → 保存 → 返却。
+    let insights = fetch_from_ollama(&repos).await?;
+    {
+        let mut entries = cache.entries.lock().map_err(|e| e.to_string())?;
+        entries.insert(
+            key,
+            CacheEntry {
+                insights: insights.clone(),
+                updated_at: Instant::now(),
+                refresh_in_progress: false,
+            },
+        );
+    }
+    Ok(insights)
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -256,7 +378,6 @@ mod tests {
 
     #[test]
     fn parse_insights_invalid_kind_returns_err() {
-        // LLM が "warning" など仕様外の kind を返した場合、Serde の enum 検証で弾く。
         let raw = r#"[{"repo_name":"r","kind":"warning","message":"x","priority":1}]"#;
         let err = parse_insights(raw).unwrap_err();
         assert!(err.contains("JSON パース"), "{err}");
@@ -271,7 +392,74 @@ mod tests {
 
     #[test]
     fn ollama_url_trims_trailing_slash() {
-        assert_eq!(ollama_url("http://localhost:11434/", TAGS_PATH), "http://localhost:11434/api/tags");
-        assert_eq!(ollama_url("http://localhost:11434", GENERATE_PATH), "http://localhost:11434/api/generate");
+        assert_eq!(
+            ollama_url("http://localhost:11434/", TAGS_PATH),
+            "http://localhost:11434/api/tags"
+        );
+        assert_eq!(
+            ollama_url("http://localhost:11434", GENERATE_PATH),
+            "http://localhost:11434/api/generate"
+        );
+    }
+
+    #[test]
+    fn hash_repos_same_input_gives_same_hash() {
+        let repos = vec![make_repo("a", 1, 2, 3), make_repo("b", 0, 0, 0)];
+        assert_eq!(hash_repos(&repos), hash_repos(&repos));
+    }
+
+    #[test]
+    fn hash_repos_different_input_gives_different_hash() {
+        let r1 = vec![make_repo("a", 1, 0, 0)];
+        let r2 = vec![make_repo("a", 2, 0, 0)]; // ahead changed
+        assert_ne!(hash_repos(&r1), hash_repos(&r2));
+    }
+
+    fn make_cache_entry(insights: Vec<AiInsight>, age_secs: u64, in_progress: bool) -> CacheEntry {
+        CacheEntry {
+            insights,
+            updated_at: Instant::now() - Duration::from_secs(age_secs),
+            refresh_in_progress: in_progress,
+        }
+    }
+
+    #[test]
+    fn ai_cache_state_stores_and_retrieves() {
+        let cache = AiCacheState::default();
+        let insight = AiInsight {
+            repo_name: "r".to_string(),
+            kind: InsightKind::Explain,
+            message: "ok".to_string(),
+            priority: 1,
+        };
+        {
+            let mut entries = cache.entries.lock().unwrap();
+            entries.insert(42u64, make_cache_entry(vec![insight.clone()], 0, false));
+        }
+        let entries = cache.entries.lock().unwrap();
+        let got = entries.get(&42u64).unwrap();
+        assert_eq!(got.insights[0].repo_name, "r");
+        assert!(!got.refresh_in_progress);
+    }
+
+    #[test]
+    fn cache_entry_within_ttl_is_not_expired() {
+        let entry = make_cache_entry(vec![], 0, false);
+        assert!(entry.updated_at.elapsed().as_secs() < CACHE_TTL_SECS);
+    }
+
+    #[test]
+    fn cache_entry_beyond_ttl_is_expired() {
+        let entry = make_cache_entry(vec![], CACHE_TTL_SECS + 10, false);
+        assert!(entry.updated_at.elapsed().as_secs() >= CACHE_TTL_SECS);
+    }
+
+    #[test]
+    fn cache_entry_in_progress_suppresses_refresh() {
+        // in-flight dedupe: refresh_in_progress=true のとき should_refresh は false になる。
+        let entry = make_cache_entry(vec![], CACHE_TTL_SECS + 10, true);
+        let expired = entry.updated_at.elapsed().as_secs() >= CACHE_TTL_SECS;
+        let should_refresh = expired && !entry.refresh_in_progress;
+        assert!(!should_refresh, "refresh が進行中なら追加 spawn しない");
     }
 }

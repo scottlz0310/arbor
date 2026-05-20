@@ -5,6 +5,16 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ## [Unreleased]
 
+### feat (追加予定)
+
+- **Phase 3 — AI Insight キャッシュ & フォールバック耐障害性** ([#99](https://github.com/scottlz0310/arbor/issues/99))
+  - `AiCacheState` (Tauri State) による `hash(repoState)` ベースのキャッシュ
+  - `get_ai_insights_cached` コマンド: stale-while-revalidate — キャッシュヒット時は即返却 + バックグラウンド再計算 → `emit("ai_insights_updated", ...)`
+  - `src/lib/aiService.ts` 新規作成: `fetchInsights()` でOllama不可・エラー時に `generateInsights()` へフォールバック
+  - `convertAiInsights()`: `AiInsight[]` → `Insight[]` の変換（priority 0-3 → low/medium/high）
+  - `getAiInsightsCached` を `lib/invoke.ts` に追加
+  - テスト追加: Rust 3件（hash一貫性・差分・キャッシュ読み書き）、Frontend 10件（変換・フォールバック全パス）
+
 ### feat
 
 - **Phase 3 — Ollama バックエンド基盤** (`src-tauri/src/commands/ai.rs`)

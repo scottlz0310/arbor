@@ -128,3 +128,11 @@ export const ollamaAvailable = () =>
 /** Generates AI insights for the given repositories. Throws on Ollama error — caller should fall back to rule-based engine. */
 export const getAiInsights = (repos: RepoInfo[]) =>
   tauriInvoke<AiInsight[]>('get_ai_insights', { repos });
+
+/**
+ * Generates AI insights with stale-while-revalidate caching.
+ * On cache hit: returns the cached value immediately and emits "ai_insights_updated" when a fresh value is ready.
+ * On cache miss: fetches synchronously and returns the result.
+ */
+export const getAiInsightsCached = (repos: RepoInfo[]) =>
+  tauriInvoke<AiInsight[]>('get_ai_insights_cached', { repos });
