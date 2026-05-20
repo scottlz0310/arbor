@@ -4,7 +4,8 @@ import { useUiStore } from '../stores/uiStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { getBranches, repoCleanupPreview, repoCleanup, deleteBranches } from '../lib/invoke';
-import type { BranchInfo } from '../types';
+import { fetchInsights } from '../lib/aiService';
+import type { BranchInfo, Insight } from '../types';
 
 // Composite key: uses null byte as separator (safe on all OS — never appears in paths or branch names)
 const SEP = '\x00';
@@ -22,9 +23,20 @@ export default function Cleanup() {
   const [confirmType, setConfirmType]           = useState<ConfirmType>(null);
   const [previewOut, setPreviewOut]             = useState('');
   const [loading, setLoading]                   = useState(false);
+  const [insights, setInsights]                 = useState<Insight[]>([]);
 
   const staleThreshold = 14 * 86400;
   const nowSec = Math.floor(Date.now() / 1000);
+
+  // AI / ルールベース Insight を取得 (P3-08)
+  useEffect(() => {
+    if (repos.length === 0) return;
+    fetchInsights(repos, {}, 14).then(({ insights: ins }) => setInsights(ins));
+  }, [repos]);
+
+  // ブランチ名でインサイトを検索するヘルパー
+  const findInsightReason = (branchName: string): string | undefined =>
+    insights.find((ins) => ins.target === branchName)?.reason;
 
   // Load branches — scoped to selectedRepo if set, otherwise all repos.
   useEffect(() => {
@@ -187,6 +199,7 @@ export default function Cleanup() {
               checked={selected.has(makeKey(b._repoPath, b.name))}
               onToggle={() => toggleSelect(b._repoPath, b.name)}
               checkAccent="var(--red)"
+              aiReason={findInsightReason(b.name)}
             />
           ))}
         </CleanupSection>
@@ -208,6 +221,7 @@ export default function Cleanup() {
                 checked={selected.has(makeKey(b._repoPath, b.name))}
                 onToggle={() => toggleSelect(b._repoPath, b.name)}
                 checkAccent="var(--indigo)"
+                aiReason={findInsightReason(b.name)}
               />
             );
           })}
@@ -301,6 +315,7 @@ function CleanupItem({
   checked,
   onToggle,
   checkAccent,
+  aiReason,
 }: {
   name: string;
   info: string;
@@ -308,28 +323,38 @@ function CleanupItem({
   checked: boolean;
   onToggle: () => void;
   checkAccent: string;
+  aiReason?: string;
 }) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
       padding: '7px 10px', background: 'var(--bg3)',
       border: '1px solid var(--border)', borderRadius: 'var(--r)',
       marginBottom: 4,
     }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        style={{ accentColor: checkAccent, cursor: 'pointer', width: 13, height: 13 }}
-      />
-      <span style={{
-        fontFamily: 'var(--font-mono)', fontSize: 11, flex: 1,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        color: nameColor,
-      }}>
-        {name}
-      </span>
-      <span style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0 }}>{info}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          style={{ accentColor: checkAccent, cursor: 'pointer', width: 13, height: 13, flexShrink: 0 }}
+        />
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: 11, flex: 1,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          color: nameColor,
+        }}>
+          {name}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0 }}>{info}</span>
+      </div>
+      {aiReason && (
+        <div style={{
+          marginTop: 4, paddingLeft: 21,
+          fontSize: 10, color: 'var(--indigo-l)', lineHeight: 1.5,
+        }}>
+          ✦ {aiReason}
+        </div>
+      )}
     </div>
   );
 }

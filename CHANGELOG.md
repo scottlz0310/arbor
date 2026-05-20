@@ -7,6 +7,15 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ### feat (追加予定)
 
+- **Phase 3 — AI Insight UI 統合** ([#100](https://github.com/scottlz0310/arbor/issues/100))
+  - Overview に「RECOMMENDED ACTIONS」パネルを追加 (P3-07)
+    - `fetchInsights()` でルールベース / AI Insight を取得し、最大 5 件の `InsightCard` を表示
+    - `insightSource` バッジで AI / Rules を区別表示
+    - `listen('ai_insights_updated', ...)` でバックグラウンド更新をリアルタイム反映
+  - Cleanup Wizard に AI 理由テキストを表示 (P3-08)
+    - マージ済み / ステールブランチ行の下に `✦ {aiReason}` を表示
+    - `findInsightReason(branchName)` で Insight を branch 名で引き当て
+
 - **Phase 3 — AI Insight キャッシュ & フォールバック耐障害性** ([#99](https://github.com/scottlz0310/arbor/issues/99))
   - `AiCacheState` (Tauri State) による `hash(repoState)` ベースのキャッシュ
   - `get_ai_insights_cached` コマンド: stale-while-revalidate — キャッシュヒット時は即返却 + バックグラウンド再計算 → `emit("ai_insights_updated", ...)`
