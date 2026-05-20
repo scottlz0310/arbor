@@ -1,5 +1,5 @@
 use crate::config::load_config;
-use crate::models::{AiInsight, InsightKind, RepoInfo};
+use crate::models::{AiInsight, RepoInfo};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
