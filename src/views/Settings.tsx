@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
@@ -21,9 +21,31 @@ export default function Settings() {
   const [scanSelected, setScanSelected] = useState<Set<string>>(new Set());
   const [scanning, setScanning] = useState(false);
 
+  // AI 設定フォームのローカルステート
+  const [aiForm, setAiForm] = useState({
+    provider: 'ollama',
+    ollamaUrl: 'http://localhost:11434',
+    model: 'qwen3.5:latest',
+    enabled: true,
+    timeoutSecs: '30',
+  });
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<boolean | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    getConfig().then(setConfig).catch((e) => addToast(String(e), 'error'));
+    getConfig().then((cfg) => {
+      if (cancelled) return;
+      setConfig(cfg);
+      setAiForm({
+        provider: cfg.ai.provider,
+        ollamaUrl: cfg.ai.ollama_url,
+        model: cfg.ai.model,
+        enabled: cfg.ai.enabled,
+        timeoutSecs: String(cfg.ai.timeout_secs),
+      });
+    }).catch((e) => addToast(String(e), 'error'));
     dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null }));
     hasGithubPat()
       .then((v) => { if (!cancelled) setPatStored(v); })
@@ -143,6 +165,53 @@ export default function Settings() {
     }
   };
 
+  const handleSaveAiConfig = async () => {
+    const timeoutNum = parseInt(aiForm.timeoutSecs, 10);
+    if (isNaN(timeoutNum) || timeoutNum < 1 || timeoutNum > 300) {
+      addToast('タイムアウトは 1〜300 秒の範囲で入力してください', 'error');
+      return;
+    }
+    setAiSaving(true);
+    try {
+      const updated = await updateAiConfig({
+        provider: aiForm.provider,
+        ollamaUrl: aiForm.ollamaUrl,
+        model: aiForm.model,
+        enabled: aiForm.enabled,
+        timeoutSecs: timeoutNum,
+      });
+      setConfig(updated);
+      // Rust 側で trim() した値が返るので aiForm をサーバー値に再同期して dirty state をリセット
+      setAiForm({
+        provider: updated.ai.provider,
+        ollamaUrl: updated.ai.ollama_url,
+        model: updated.ai.model,
+        enabled: updated.ai.enabled,
+        timeoutSecs: String(updated.ai.timeout_secs),
+      });
+      setAiTestResult(null);
+      addToast('AI 設定を保存しました', 'success');
+    } catch (e) {
+      addToast(String(e), 'error');
+    } finally {
+      setAiSaving(false);
+    }
+  };
+
+  const handleTestAiConnection = async () => {
+    setAiTesting(true);
+    setAiTestResult(null);
+    try {
+      // 保存済み config ではなく、フォームに入力中の URL で疎通確認する
+      const ok = await testAiConnection(aiForm.ollamaUrl);
+      setAiTestResult(ok);
+    } catch {
+      setAiTestResult(false);
+    } finally {
+      setAiTesting(false);
+    }
+  };
+
   const handleRemoveRepo = async (path: string) => {
     try {
       const updated = await removeRepository(path);
@@ -152,6 +221,26 @@ export default function Settings() {
     } catch (e) {
       addToast(String(e), 'error');
     }
+  };
+
+  const aiDirty = config !== null && (
+    aiForm.provider !== config.ai.provider ||
+    aiForm.ollamaUrl !== config.ai.ollama_url ||
+    aiForm.model !== config.ai.model ||
+    aiForm.enabled !== config.ai.enabled ||
+    aiForm.timeoutSecs !== String(config.ai.timeout_secs)
+  );
+
+  const aiInputStyle: React.CSSProperties = {
+    width: '100%',
+    background: 'var(--bg3)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--r)',
+    color: 'var(--text1)',
+    fontSize: 12,
+    padding: '6px 10px',
+    outline: 'none',
+    boxSizing: 'border-box',
   };
 
   return (
@@ -351,14 +440,88 @@ export default function Settings() {
           )}
         </section>
 
-        {/* AI config summary */}
+        {/* AI Engine settings (P3-09) */}
         <section>
-          <SectionTitle>AI Engine (Phase 3)</SectionTitle>
-          <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.75 }}>
-            <div>Provider &nbsp;— {config?.ai.provider ?? '—'}</div>
-            <div>Model &nbsp;&nbsp;&nbsp;&nbsp;— <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--indigo-l)' }}>{config?.ai.model ?? '—'}</span></div>
-            <div>URL &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— <span style={{ fontFamily: 'var(--font-mono)' }}>{config?.ai.ollama_url ?? '—'}</span></div>
-            <div style={{ marginTop: 8, color: 'var(--text4)' }}>Full AI settings UI is available in Phase 3.</div>
+          <SectionTitle>AI Engine</SectionTitle>
+
+          {/* enabled toggle */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={aiForm.enabled}
+              onChange={(e) => setAiForm((f) => ({ ...f, enabled: e.target.checked }))}
+              style={{ accentColor: 'var(--indigo-l)', cursor: 'pointer', width: 13, height: 13 }}
+            />
+            <span style={{ fontSize: 12, color: 'var(--text1)' }}>AI Insight を有効化</span>
+          </label>
+
+          {/* Provider / Model row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4, fontWeight: 600 }}>PROVIDER</div>
+              <input
+                style={aiInputStyle}
+                value={aiForm.provider}
+                onChange={(e) => setAiForm((f) => ({ ...f, provider: e.target.value }))}
+                placeholder="ollama"
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4, fontWeight: 600 }}>MODEL</div>
+              <input
+                style={{ ...aiInputStyle, fontFamily: 'var(--font-mono)', color: 'var(--indigo-l)' }}
+                value={aiForm.model}
+                onChange={(e) => setAiForm((f) => ({ ...f, model: e.target.value }))}
+                placeholder="qwen3.5:latest"
+              />
+            </div>
+          </div>
+
+          {/* Ollama URL row */}
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4, fontWeight: 600 }}>OLLAMA URL</div>
+            <input
+              style={aiInputStyle}
+              value={aiForm.ollamaUrl}
+              onChange={(e) => setAiForm((f) => ({ ...f, ollamaUrl: e.target.value }))}
+              placeholder="http://localhost:11434"
+            />
+          </div>
+
+          {/* Timeout row */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4, fontWeight: 600 }}>TIMEOUT (sec)</div>
+            <input
+              type="number"
+              min={1}
+              max={300}
+              style={{ ...aiInputStyle, width: 80 }}
+              value={aiForm.timeoutSecs}
+              onChange={(e) => setAiForm((f) => ({ ...f, timeoutSecs: e.target.value }))}
+            />
+          </div>
+
+          {/* Actions row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <AppBtn onClick={handleTestAiConnection} disabled={aiTesting}>
+              {aiTesting ? 'Testing…' : 'Test Connection'}
+            </AppBtn>
+            {aiTestResult !== null && (
+              <span style={{
+                fontSize: 11,
+                color: aiTestResult ? 'var(--green)' : 'var(--red)',
+              }}>
+                {aiTestResult ? '✓ Ollama 接続成功' : '✗ Ollama に接続できません'}
+              </span>
+            )}
+            <div style={{ flex: 1 }} />
+            <AppBtn
+              variant="primary"
+              onClick={handleSaveAiConfig}
+              disabled={!aiDirty || aiSaving}
+            >
+              {aiSaving ? 'Saving…' : 'Save'}
+            </AppBtn>
           </div>
         </section>
 

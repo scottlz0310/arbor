@@ -7,6 +7,18 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ### feat (追加予定)
 
+- **Phase 3 — AI 設定 UI** ([#101](https://github.com/scottlz0310/arbor/issues/101))
+  - Settings 画面の AI Engine セクションを編集可能フォームに刷新 (P3-09)
+    - provider / model / Ollama URL / timeout_secs を個別に編集・保存可能
+    - AI Insight の enabled トグル
+    - 「Test Connection」ボタンで Ollama 疎通確認 (✓/✗ インライン表示)
+    - dirty state 管理: 変更がある場合のみ「Save」が有効になる
+  - Rust: `update_ai_config` コマンドを `config_cmd.rs` に追加
+    - 全フィールドを optional に受け取り、変更分のみ `config.toml` に書き込む
+    - バリデーション: URL/model/provider 空文字 Err、timeout_secs 範囲 (1–300) Err
+    - 保存後に `AiCacheState::clear()` でキャッシュを即時無効化
+  - `AiCacheState::clear()` メソッドを `ai.rs` に追加
+
 - **Phase 3 — AI Insight UI 統合** ([#100](https://github.com/scottlz0310/arbor/issues/100))
   - Overview に「RECOMMENDED ACTIONS」パネルを追加 (P3-07)
     - `fetchInsights()` でルールベース / AI Insight を取得し、最大 5 件の `InsightCard` を表示

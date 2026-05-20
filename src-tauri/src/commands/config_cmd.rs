@@ -1,5 +1,6 @@
+use crate::commands::ai::AiCacheState;
 use crate::config::{load_config, save_config, AppConfig, RepoConfig};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 #[tauri::command]
 pub fn get_config() -> Result<AppConfig, String> {
@@ -421,6 +422,51 @@ pub fn update_settings(
         config.settings.fetch_on_startup = v;
     }
     save_config(&config)?;
+    Ok(config)
+}
+
+/// AI 設定 (provider / model / ollama_url / enabled / timeout_secs) を更新する。
+/// 変更後はキャッシュを即時クリアして次回 get_ai_insights_cached で新設定を使わせる。
+#[tauri::command]
+pub fn update_ai_config(
+    app: AppHandle,
+    provider: Option<String>,
+    ollama_url: Option<String>,
+    model: Option<String>,
+    enabled: Option<bool>,
+    timeout_secs: Option<u64>,
+) -> Result<AppConfig, String> {
+    let mut config = load_config()?;
+    if let Some(v) = provider {
+        let t = v.trim().to_string();
+        if t.is_empty() { return Err("provider を入力してください".to_string()); }
+        config.ai.provider = t;
+    }
+    if let Some(v) = ollama_url {
+        let t = v.trim().to_string();
+        if t.is_empty() { return Err("Ollama URL を入力してください".to_string()); }
+        if !t.starts_with("http://") && !t.starts_with("https://") {
+            return Err("Ollama URL は http:// または https:// で始まる必要があります".to_string());
+        }
+        config.ai.ollama_url = t;
+    }
+    if let Some(v) = model {
+        let t = v.trim().to_string();
+        if t.is_empty() { return Err("モデル名を入力してください".to_string()); }
+        config.ai.model = t;
+    }
+    if let Some(v) = enabled {
+        config.ai.enabled = v;
+    }
+    if let Some(v) = timeout_secs {
+        if v == 0 || v > 300 {
+            return Err("タイムアウトは 1〜300 秒の範囲で入力してください".to_string());
+        }
+        config.ai.timeout_secs = v;
+    }
+    save_config(&config)?;
+    // 設定変更後はキャッシュを即時クリアする
+    app.state::<AiCacheState>().clear();
     Ok(config)
 }
 

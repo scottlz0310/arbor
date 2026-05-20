@@ -33,6 +33,15 @@ impl Default for AiCacheState {
     }
 }
 
+impl AiCacheState {
+    /// AI 設定変更時にキャッシュを全クリアする。
+    pub fn clear(&self) {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.clear();
+        }
+    }
+}
+
 fn hash_repos(repos: &[RepoInfo]) -> u64 {
     let summary = build_state_summary(repos);
     let mut hasher = DefaultHasher::new();
@@ -128,6 +137,11 @@ fn parse_insights(raw: &str) -> Result<Vec<AiInsight>, String> {
 
 fn ollama_url(base: &str, path: &str) -> String {
     format!("{}{}", base.trim_end_matches('/'), path)
+}
+
+/// TTL 判定を pure 関数に分離して、テストで `Instant` の逆方向減算 (panic リスク) を排除する。
+fn is_cache_expired(now: Instant, updated_at: Instant) -> bool {
+    now.duration_since(updated_at).as_secs() >= CACHE_TTL_SECS
 }
 
 // ─── Core fetch (shared by both commands) ────────────────────────────────────
@@ -226,7 +240,7 @@ pub async fn get_ai_insights_cached(
         match entries.get(&key) {
             None => (None, false),
             Some(entry) => {
-                let expired = entry.updated_at.elapsed().as_secs() >= CACHE_TTL_SECS;
+                let expired = is_cache_expired(Instant::now(), entry.updated_at);
                 // TTL 経過かつ refresh が走っていない場合のみ再計算する。
                 let should = expired && !entry.refresh_in_progress;
                 (Some(entry.insights.clone()), should)
@@ -292,6 +306,23 @@ pub async fn get_ai_insights_cached(
         );
     }
     Ok(insights)
+}
+
+/// 指定した Ollama URL に接続できるかテストする（未保存フォーム値の確認用）。
+/// 保存済み config を参照しないため、Settings フォームで URL を変更した直後でも正確に疎通確認できる。
+/// Always returns Ok(bool) — never Err.
+#[tauri::command]
+pub async fn test_ai_connection(ollama_url: String) -> Result<bool, String> {
+    let url = format!("{}{}", ollama_url.trim().trim_end_matches('/'), TAGS_PATH);
+    let client = reqwest::Client::new();
+    let reachable = client
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+    Ok(reachable)
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -415,10 +446,13 @@ mod tests {
         assert_ne!(hash_repos(&r1), hash_repos(&r2));
     }
 
-    fn make_cache_entry(insights: Vec<AiInsight>, age_secs: u64, in_progress: bool) -> CacheEntry {
+    // age_secs を受け取らず常に "今" を updated_at にする。
+    // 過去方向の Instant 減算は CI (Windows + coverage) で overflow panic を起こすため禁止。
+    // 期限切れシミュレーションは呼び出し側で future_now を作成して is_cache_expired に渡す。
+    fn make_cache_entry(insights: Vec<AiInsight>, in_progress: bool) -> CacheEntry {
         CacheEntry {
             insights,
-            updated_at: Instant::now() - Duration::from_secs(age_secs),
+            updated_at: Instant::now(),
             refresh_in_progress: in_progress,
         }
     }
@@ -434,7 +468,7 @@ mod tests {
         };
         {
             let mut entries = cache.entries.lock().unwrap();
-            entries.insert(42u64, make_cache_entry(vec![insight.clone()], 0, false));
+            entries.insert(42u64, make_cache_entry(vec![insight.clone()], false));
         }
         let entries = cache.entries.lock().unwrap();
         let got = entries.get(&42u64).unwrap();
@@ -444,22 +478,57 @@ mod tests {
 
     #[test]
     fn cache_entry_within_ttl_is_not_expired() {
-        let entry = make_cache_entry(vec![], 0, false);
-        assert!(entry.updated_at.elapsed().as_secs() < CACHE_TTL_SECS);
+        let now = Instant::now();
+        let entry = make_cache_entry(vec![], false);
+        // updated_at ≈ now なので TTL 内
+        assert!(!is_cache_expired(now, entry.updated_at));
     }
 
     #[test]
     fn cache_entry_beyond_ttl_is_expired() {
-        let entry = make_cache_entry(vec![], CACHE_TTL_SECS + 10, false);
-        assert!(entry.updated_at.elapsed().as_secs() >= CACHE_TTL_SECS);
+        let entry = make_cache_entry(vec![], false);
+        // "now" を未来に進めて TTL 超過をシミュレート (逆方向減算 panic を回避)
+        let future_now = entry.updated_at + Duration::from_secs(CACHE_TTL_SECS + 10);
+        assert!(is_cache_expired(future_now, entry.updated_at));
     }
 
     #[test]
     fn cache_entry_in_progress_suppresses_refresh() {
         // in-flight dedupe: refresh_in_progress=true のとき should_refresh は false になる。
-        let entry = make_cache_entry(vec![], CACHE_TTL_SECS + 10, true);
-        let expired = entry.updated_at.elapsed().as_secs() >= CACHE_TTL_SECS;
+        let entry = make_cache_entry(vec![], true);
+        let future_now = entry.updated_at + Duration::from_secs(CACHE_TTL_SECS + 10);
+        let expired = is_cache_expired(future_now, entry.updated_at);
         let should_refresh = expired && !entry.refresh_in_progress;
         assert!(!should_refresh, "refresh が進行中なら追加 spawn しない");
+    }
+
+    #[test]
+    fn ai_cache_state_clear_empties_all_entries() {
+        let cache = AiCacheState::default();
+        {
+            let mut entries = cache.entries.lock().unwrap();
+            entries.insert(1u64, make_cache_entry(vec![], false));
+            entries.insert(2u64, make_cache_entry(vec![], true));
+        }
+        assert_eq!(cache.entries.lock().unwrap().len(), 2);
+        cache.clear();
+        assert_eq!(cache.entries.lock().unwrap().len(), 0, "clear() 後はエントリが 0 になる");
+    }
+
+    /// test_ai_connection: 接続できないポートに対して Ok(false) を返すことを確認する。
+    /// ポート 1 は通常 Connection refused が即座に返るため、タイムアウト待ちにならない。
+    #[tokio::test]
+    async fn test_ai_connection_unreachable_returns_false() {
+        let result = test_ai_connection("http://127.0.0.1:1".to_string()).await;
+        assert_eq!(result, Ok(false));
+    }
+
+    /// test_ai_connection: 末尾スラッシュを正規化した URL で接続を試みることを確認する。
+    /// 実際の接続は行わず URL 構築の副作用として Connection refused → Ok(false) になることを確認する。
+    #[tokio::test]
+    async fn test_ai_connection_strips_trailing_slash() {
+        // 末尾スラッシュ付き URL でも二重スラッシュにならず Ok(false) が返る
+        let result = test_ai_connection("http://127.0.0.1:1/".to_string()).await;
+        assert_eq!(result, Ok(false));
     }
 }

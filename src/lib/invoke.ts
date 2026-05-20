@@ -53,6 +53,14 @@ export const updateSettings = (args: {
   fetchOnStartup?: boolean;
 }) => tauriInvoke<AppConfig>('update_settings', args);
 
+export const updateAiConfig = (args: {
+  provider?: string;
+  ollamaUrl?: string;
+  model?: string;
+  enabled?: boolean;
+  timeoutSecs?: number;
+}) => tauriInvoke<AppConfig>('update_ai_config', args);
+
 // ─── Repo / git2 ─────────────────────────────────────────────────────────────
 
 export const listRepositories = () =>
@@ -124,6 +132,14 @@ export const sysUpdate = () =>
 /** Returns true if Ollama is running and reachable. Never throws; returns false on failure. */
 export const ollamaAvailable = () =>
   tauriInvoke<boolean>('ollama_available');
+
+/**
+ * Tests connectivity to the given Ollama URL without saving it.
+ * Use this in Settings to validate form input before saving.
+ * Never throws; returns false on failure.
+ */
+export const testAiConnection = (ollamaUrl: string) =>
+  tauriInvoke<boolean>('test_ai_connection', { ollamaUrl });
 
 /** Generates AI insights for the given repositories. Throws on Ollama error — caller should fall back to rule-based engine. */
 export const getAiInsights = (repos: RepoInfo[]) =>
