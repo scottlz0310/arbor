@@ -6,7 +6,8 @@ use commands::{
     ai::{get_ai_insights, get_ai_insights_cached, ollama_available, AiCacheState},
     config_cmd::{
         add_repository, delete_github_pat, detect_github_remote, get_config, has_github_pat,
-        remove_repository, scan_directory, set_github_pat, update_repository_github, update_settings,
+        remove_repository, scan_directory, set_github_pat, update_ai_config, update_repository_github,
+        update_settings,
     },
     dsx::{dsx_check, env_inject, repo_cleanup, repo_cleanup_preview, repo_update, sys_update},
     github::{get_check_runs, get_issues, get_pull_requests},
@@ -30,6 +31,7 @@ pub fn run() {
             detect_github_remote,
             scan_directory,
             update_settings,
+            update_ai_config,
             // GitHub PAT
             set_github_pat,
             has_github_pat,

@@ -33,6 +33,15 @@ impl Default for AiCacheState {
     }
 }
 
+impl AiCacheState {
+    /// AI 設定変更時にキャッシュを全クリアする。
+    pub fn clear(&self) {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.clear();
+        }
+    }
+}
+
 fn hash_repos(repos: &[RepoInfo]) -> u64 {
     let summary = build_state_summary(repos);
     let mut hasher = DefaultHasher::new();

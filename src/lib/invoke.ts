@@ -53,6 +53,14 @@ export const updateSettings = (args: {
   fetchOnStartup?: boolean;
 }) => tauriInvoke<AppConfig>('update_settings', args);
 
+export const updateAiConfig = (args: {
+  provider?: string;
+  ollamaUrl?: string;
+  model?: string;
+  enabled?: boolean;
+  timeoutSecs?: number;
+}) => tauriInvoke<AppConfig>('update_ai_config', args);
+
 // ─── Repo / git2 ─────────────────────────────────────────────────────────────
 
 export const listRepositories = () =>

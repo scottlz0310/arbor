@@ -158,7 +158,7 @@
 - [x] P3-06: `/no_think` + JSON-only 出力プロンプト実装
 - [x] P3-07: Overview「Recommended Actions」パネル
 - [x] P3-08: Cleanup Wizard に AI 理由テキスト表示
-- [ ] P3-09: Settings 画面から provider / model / URL / timeout 変更可能に
+- [x] P3-09: Settings 画面から provider / model / URL / timeout 変更可能に
 
 ---
 
