@@ -502,6 +502,19 @@ mod tests {
         assert!(!should_refresh, "refresh が進行中なら追加 spawn しない");
     }
 
+    #[test]
+    fn ai_cache_state_clear_empties_all_entries() {
+        let cache = AiCacheState::default();
+        {
+            let mut entries = cache.entries.lock().unwrap();
+            entries.insert(1u64, make_cache_entry(vec![], false));
+            entries.insert(2u64, make_cache_entry(vec![], true));
+        }
+        assert_eq!(cache.entries.lock().unwrap().len(), 2);
+        cache.clear();
+        assert_eq!(cache.entries.lock().unwrap().len(), 0, "clear() 後はエントリが 0 になる");
+    }
+
     /// test_ai_connection: 接続できないポートに対して Ok(false) を返すことを確認する。
     /// ポート 1 は通常 Connection refused が即座に返るため、タイムアウト待ちにならない。
     #[tokio::test]
