@@ -115,12 +115,21 @@ pub struct Issue {
     pub labels: Vec<String>,
 }
 
+/// Discriminates the three insight categories the AI (and rule engine) can emit.
+/// Serde rejects any other string, closing the boundary at parse time.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum InsightKind {
+    Explain,
+    Prioritize,
+    Risk,
+}
+
 /// A single AI-generated insight for a repository.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiInsight {
     pub repo_name: String,
-    /// "explain" | "prioritize" | "risk"
-    pub kind: String,
+    pub kind: InsightKind,
     pub message: String,
     /// Priority level: 0 = lowest, 3 = highest urgency.
     pub priority: u8,

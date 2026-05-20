@@ -1,5 +1,5 @@
 use crate::config::load_config;
-use crate::models::{AiInsight, RepoInfo};
+use crate::models::{AiInsight, InsightKind, RepoInfo};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -82,22 +82,42 @@ fn strip_code_fences(s: &str) -> &str {
 
 fn parse_insights(raw: &str) -> Result<Vec<AiInsight>, String> {
     let json_str = strip_code_fences(raw);
-    serde_json::from_str::<Vec<AiInsight>>(json_str)
-        .map_err(|e| format!("AI レスポンスの JSON パースに失敗しました: {e}\nRaw: {raw}"))
+    // `kind` の検証は InsightKind enum の Serde が担う（未知の文字列で即 Err）。
+    let insights: Vec<AiInsight> = serde_json::from_str(json_str)
+        .map_err(|e| format!("AI レスポンスの JSON パースに失敗しました: {e}\nRaw: {raw}"))?;
+    // `priority` は enum で表現できないため境界チェックをコードで閉じる。
+    for insight in &insights {
+        if insight.priority > 3 {
+            return Err(format!(
+                "AI レスポンスに無効な priority {} が含まれています (許容範囲: 0–3)",
+                insight.priority
+            ));
+        }
+    }
+    Ok(insights)
+}
+
+/// Builds a URL by joining `base` and `path`, normalizing any trailing slash in base.
+fn ollama_url(base: &str, path: &str) -> String {
+    format!("{}{}", base.trim_end_matches('/'), path)
 }
 
 // ─── Tauri commands ───────────────────────────────────────────────────────────
 
 /// Returns true if Ollama is running and reachable (P3-01).
-/// Always returns false (not an error) when Ollama is unreachable so the UI
-/// can gracefully fall back to the rule-based engine.
+/// Always returns Ok(false) — never Err — so callers can use this as a
+/// pure availability probe without error handling before the fallback path.
 #[tauri::command]
 pub async fn ollama_available() -> Result<bool, String> {
-    let config = load_config()?;
+    // Treat config-load failure the same as "not reachable": return false, not Err.
+    let config = match load_config() {
+        Ok(c) => c,
+        Err(_) => return Ok(false),
+    };
     if !config.ai.enabled {
         return Ok(false);
     }
-    let url = format!("{}{}", config.ai.ollama_url, TAGS_PATH);
+    let url = ollama_url(&config.ai.ollama_url, TAGS_PATH);
     let client = reqwest::Client::new();
     let reachable = client
         .get(&url)
@@ -124,7 +144,7 @@ pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, Str
     let state_json = build_state_summary(&repos);
     let prompt = build_prompt(&state_json);
 
-    let url = format!("{}{}", ai.ollama_url, GENERATE_PATH);
+    let url = ollama_url(&ai.ollama_url, GENERATE_PATH);
     let client = reqwest::Client::new();
     let req_body = GenerateRequest {
         model: ai.model.clone(),
@@ -157,7 +177,7 @@ pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::RepoInfo;
+    use crate::models::{InsightKind, RepoInfo};
 
     fn make_repo(name: &str, ahead: u32, behind: u32, modified: u32) -> RepoInfo {
         RepoInfo {
@@ -215,7 +235,7 @@ mod tests {
         let insights = parse_insights(raw).unwrap();
         assert_eq!(insights.len(), 1);
         assert_eq!(insights[0].repo_name, "repo1");
-        assert_eq!(insights[0].kind, "risk");
+        assert_eq!(insights[0].kind, InsightKind::Risk);
         assert_eq!(insights[0].priority, 3);
     }
 
@@ -225,11 +245,33 @@ mod tests {
         let insights = parse_insights(raw).unwrap();
         assert_eq!(insights.len(), 1);
         assert_eq!(insights[0].repo_name, "r");
+        assert_eq!(insights[0].kind, InsightKind::Explain);
     }
 
     #[test]
     fn parse_insights_invalid_json_returns_err() {
         let err = parse_insights("not json at all").unwrap_err();
         assert!(err.contains("JSON パース"), "{err}");
+    }
+
+    #[test]
+    fn parse_insights_invalid_kind_returns_err() {
+        // LLM が "warning" など仕様外の kind を返した場合、Serde の enum 検証で弾く。
+        let raw = r#"[{"repo_name":"r","kind":"warning","message":"x","priority":1}]"#;
+        let err = parse_insights(raw).unwrap_err();
+        assert!(err.contains("JSON パース"), "{err}");
+    }
+
+    #[test]
+    fn parse_insights_priority_out_of_range_returns_err() {
+        let raw = r#"[{"repo_name":"r","kind":"risk","message":"x","priority":99}]"#;
+        let err = parse_insights(raw).unwrap_err();
+        assert!(err.contains("priority"), "{err}");
+    }
+
+    #[test]
+    fn ollama_url_trims_trailing_slash() {
+        assert_eq!(ollama_url("http://localhost:11434/", TAGS_PATH), "http://localhost:11434/api/tags");
+        assert_eq!(ollama_url("http://localhost:11434", GENERATE_PATH), "http://localhost:11434/api/generate");
     }
 }
