@@ -3,6 +3,17 @@ use crate::models::{BranchInfo, CommitNode, DeleteResult, FetchResult, RepoInfo}
 use git2::{BranchType, Repository, StatusOptions};
 use std::collections::HashMap;
 
+fn commit_summary(commit: &git2::Commit<'_>) -> String {
+    match commit.summary() {
+        Ok(Some(summary)) => summary.to_string(),
+        Ok(None) => String::new(),
+        Err(_) => commit
+            .summary_bytes()
+            .map(|summary| String::from_utf8_lossy(summary).into_owned())
+            .unwrap_or_default(),
+    }
+}
+
 // ─── apply_repo_cfg ──────────────────────────────────────────────────────────
 
 /// Overlays `github_owner`, `github_repo`, and display `name` from a registered
@@ -114,10 +125,7 @@ pub fn get_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
             ahead,
             behind,
             last_commit_ts: commit.time().seconds(),
-            last_commit_msg: commit
-                .summary()
-                .unwrap_or_default()
-                .to_string(),
+            last_commit_msg: commit_summary(&commit),
             author: author.name().unwrap_or_default().to_string(),
             remote_name: branch
                 .upstream()
@@ -168,7 +176,10 @@ pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
     let remotes = repo.remotes().map_err(|e| e.to_string())?;
     let mut updated_refs = Vec::new();
 
-    for name in remotes.iter().flatten() {
+    for name in remotes.iter() {
+        let Some(name) = name.map_err(|e| e.to_string())? else {
+            continue;
+        };
         let mut remote = repo.find_remote(name).map_err(|e| e.to_string())?;
         let mut fo = git2::FetchOptions::new();
         fo.download_tags(git2::AutotagOption::Unspecified);
@@ -208,11 +219,11 @@ pub fn get_commit_graph(
     let mut ref_map: HashMap<git2::Oid, Vec<String>> = HashMap::new();
     for r in repo.references().map_err(|e| e.to_string())? {
         let r = r.map_err(|e| e.to_string())?;
-        let Some(full_name) = r.name() else { continue };
+        let full_name = r.name().map_err(|e| e.to_string())?;
         if !full_name.starts_with("refs/heads/") && !full_name.starts_with("refs/tags/") {
             continue;
         }
-        let Some(short) = r.shorthand() else { continue };
+        let short = r.shorthand().map_err(|e| e.to_string())?;
         if let Ok(commit) = r.peel_to_commit() {
             ref_map.entry(commit.id()).or_default().push(short.to_string());
         }
@@ -262,7 +273,7 @@ pub fn get_commit_graph(
         nodes.push(CommitNode {
             short_oid: oid_str[..7].to_string(),
             oid: oid_str,
-            summary: commit.summary().unwrap_or_default().to_string(),
+            summary: commit_summary(&commit),
             author_name: commit.author().name().unwrap_or_default().to_string(),
             timestamp: commit.time().seconds(),
             parent_oids: parent_ids.iter().map(|id| id.to_string()).collect(),
@@ -283,7 +294,7 @@ fn repo_info_for_path(path: &str) -> Result<RepoInfo, String> {
     let current_branch = repo
         .head()
         .ok()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .and_then(|h| h.shorthand().ok().map(|s| s.to_string()))
         .unwrap_or_else(|| "HEAD (detached)".to_string());
 
     // Ahead / behind for the current branch vs its upstream.
@@ -417,9 +428,66 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_repo_cfg, assign_lane};
+    use super::{
+        apply_repo_cfg, assign_lane, fetch_all, get_branches, get_commit_graph, repo_info_for_path,
+    };
     use crate::config::RepoConfig;
     use crate::models::RepoInfo;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(prefix: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should be after epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "arbor-{prefix}-{}-{unique}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self { path }
+        }
+
+        fn path_str(&self) -> &str {
+            self.path.to_str().expect("temp path should be utf-8")
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn init_repo_with_commit(message: &str) -> TempDir {
+        let dir = TempDir::new("repo");
+        let mut opts = git2::RepositoryInitOptions::new();
+        opts.initial_head("main");
+        let repo = git2::Repository::init_opts(&dir.path, &opts).expect("init repo");
+        std::fs::write(dir.path.join("README.md"), "hello\n").expect("write file");
+
+        let mut index = repo.index().expect("index");
+        index.add_path(Path::new("README.md")).expect("add path");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("write tree");
+        let signature = git2::Signature::now("Arbor Test", "arbor@example.invalid")
+            .expect("test signature");
+
+        {
+            let tree = repo.find_tree(tree_id).expect("find tree");
+            repo.commit(Some("HEAD"), &signature, &signature, message, &tree, &[])
+                .expect("commit");
+        }
+
+        drop(repo);
+        dir
+    }
 
     // ── apply_repo_cfg ────────────────────────────────────────────────────────
 
@@ -477,6 +545,54 @@ mod tests {
         assert_eq!(info.ahead, 3);
         assert_eq!(info.behind, 1);
         assert_eq!(info.modified_count, 2);
+    }
+
+    #[test]
+    fn repo_info_for_path_reads_current_branch() {
+        let repo = init_repo_with_commit("initial commit");
+
+        let info = repo_info_for_path(repo.path_str()).expect("repo info");
+
+        assert_eq!(info.current_branch, "main");
+    }
+
+    #[test]
+    fn get_commit_graph_includes_summary_and_ref_name() {
+        let repo = init_repo_with_commit("graph summary");
+
+        let graph = get_commit_graph(repo.path_str().to_string(), Some(10)).expect("commit graph");
+
+        assert_eq!(graph.len(), 1);
+        assert_eq!(graph[0].summary, "graph summary");
+        assert!(graph[0].refs.iter().any(|name| name == "main"));
+    }
+
+    #[test]
+    fn get_branches_uses_commit_summary() {
+        let repo = init_repo_with_commit("branch summary");
+
+        let branches = get_branches(repo.path_str().to_string()).expect("branches");
+        let branch = branches
+            .iter()
+            .find(|branch| branch.name == "main")
+            .expect("main branch");
+
+        assert_eq!(branch.last_commit_msg, "branch summary");
+    }
+
+    #[test]
+    fn fetch_all_handles_named_local_remote() {
+        let source = init_repo_with_commit("remote source");
+        let target = TempDir::new("fetch-target");
+        let mut opts = git2::RepositoryInitOptions::new();
+        opts.initial_head("main");
+        let repo = git2::Repository::init_opts(&target.path, &opts).expect("init target");
+        repo.remote("origin", source.path_str()).expect("add origin");
+        drop(repo);
+
+        let result = fetch_all(target.path_str().to_string()).expect("fetch all");
+
+        assert!(result.updated_refs.iter().all(|name| name == "origin"));
     }
 
     fn run(commits: &[(u32, &[u32])]) -> Vec<usize> {
