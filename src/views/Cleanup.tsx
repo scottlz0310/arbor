@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { getBranches, repoCleanupPreview, repoCleanup, deleteBranches } from '../lib/invoke';
-import type { BranchInfo } from '../types';
+import { fetchInsights, convertAiInsights } from '../lib/aiService';
+import type { AiInsight, BranchInfo, Insight } from '../types';
 
 // Composite key: uses null byte as separator (safe on all OS — never appears in paths or branch names)
 const SEP = '\x00';
@@ -18,13 +20,36 @@ export default function Cleanup() {
 
   const [mergedBranches, setMergedBranches]     = useState<(BranchInfo & { _repoName: string; _repoPath: string })[]>([]);
   const [staleBranches, setStaleBranches]       = useState<(BranchInfo & { _repoName: string; _repoPath: string })[]>([]);
+  const [branchesByRepo, setBranchesByRepo]     = useState<Record<string, BranchInfo[]>>({});
   const [selected, setSelected]                 = useState<Set<string>>(new Set());
   const [confirmType, setConfirmType]           = useState<ConfirmType>(null);
   const [previewOut, setPreviewOut]             = useState('');
   const [loading, setLoading]                   = useState(false);
+  const [insights, setInsights]                 = useState<Insight[]>([]);
 
   const staleThreshold = 14 * 86400;
   const nowSec = Math.floor(Date.now() / 1000);
+
+  // AI / ルールベース Insight を取得 (P3-08)
+  // branchesByRepo を渡すことでルールエンジンのステールブランチ検出を有効化。
+  // AI Insight の target は repo_name なので repo 名で照合する。
+  useEffect(() => {
+    if (repos.length === 0) return;
+    fetchInsights(repos, branchesByRepo, 14).then(({ insights: ins }) => setInsights(ins));
+  }, [repos, branchesByRepo]);
+
+  // バックグラウンド更新 (stale-while-revalidate) を Cleanup にも反映 (P3-04)
+  useEffect(() => {
+    const promise = listen<AiInsight[]>('ai_insights_updated', (ev) => {
+      setInsights(convertAiInsights(ev.payload));
+    });
+    return () => { promise.then((f) => f()); };
+  }, []);
+
+  // リポジトリ名で Insight を検索するヘルパー
+  // AI Insight / ルールベース repo-level Insight はいずれも target = repo_name。
+  const findInsightForRepo = (repoName: string): string | undefined =>
+    insights.find((ins) => ins.target === repoName)?.reason;
 
   // Load branches — scoped to selectedRepo if set, otherwise all repos.
   useEffect(() => {
@@ -44,6 +69,12 @@ export default function Cleanup() {
     )
       .then((allBranches) => {
         const flat = allBranches.flat();
+        // branchesByRepo を組み立て: ruleEngine のステールブランチ検出に渡すため
+        const byRepo: Record<string, BranchInfo[]> = {};
+        for (const r of targets) {
+          byRepo[r.path] = flat.filter((b) => b._repoPath === r.path);
+        }
+        setBranchesByRepo(byRepo);
         setMergedBranches(flat.filter((b) => (b.is_merged || b.is_squash_merged) && !b.is_current));
         setStaleBranches(flat.filter(
           (b) => !b.is_merged && !b.is_squash_merged && !b.is_current
@@ -129,6 +160,11 @@ export default function Cleanup() {
           )
         );
         const flat = updated.flat();
+        const updatedByRepo: Record<string, BranchInfo[]> = {};
+        for (const r of targets) {
+          updatedByRepo[r.path] = flat.filter((b) => b._repoPath === r.path);
+        }
+        setBranchesByRepo(updatedByRepo);
         setMergedBranches(flat.filter((b) => (b.is_merged || b.is_squash_merged) && !b.is_current));
         setStaleBranches(flat.filter(
           (b) => !b.is_merged && !b.is_squash_merged && !b.is_current
@@ -187,6 +223,7 @@ export default function Cleanup() {
               checked={selected.has(makeKey(b._repoPath, b.name))}
               onToggle={() => toggleSelect(b._repoPath, b.name)}
               checkAccent="var(--red)"
+              aiReason={findInsightForRepo(b._repoName)}
             />
           ))}
         </CleanupSection>
@@ -208,6 +245,7 @@ export default function Cleanup() {
                 checked={selected.has(makeKey(b._repoPath, b.name))}
                 onToggle={() => toggleSelect(b._repoPath, b.name)}
                 checkAccent="var(--indigo)"
+                aiReason={findInsightForRepo(b._repoName)}
               />
             );
           })}
@@ -301,6 +339,7 @@ function CleanupItem({
   checked,
   onToggle,
   checkAccent,
+  aiReason,
 }: {
   name: string;
   info: string;
@@ -308,28 +347,38 @@ function CleanupItem({
   checked: boolean;
   onToggle: () => void;
   checkAccent: string;
+  aiReason?: string;
 }) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
       padding: '7px 10px', background: 'var(--bg3)',
       border: '1px solid var(--border)', borderRadius: 'var(--r)',
       marginBottom: 4,
     }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        style={{ accentColor: checkAccent, cursor: 'pointer', width: 13, height: 13 }}
-      />
-      <span style={{
-        fontFamily: 'var(--font-mono)', fontSize: 11, flex: 1,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        color: nameColor,
-      }}>
-        {name}
-      </span>
-      <span style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0 }}>{info}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          style={{ accentColor: checkAccent, cursor: 'pointer', width: 13, height: 13, flexShrink: 0 }}
+        />
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: 11, flex: 1,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          color: nameColor,
+        }}>
+          {name}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0 }}>{info}</span>
+      </div>
+      {aiReason && (
+        <div style={{
+          marginTop: 4, paddingLeft: 21,
+          fontSize: 10, color: 'var(--indigo-l)', lineHeight: 1.5,
+        }}>
+          ✦ {aiReason}
+        </div>
+      )}
     </div>
   );
 }

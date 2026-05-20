@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import { fetchAll, repoUpdate } from '../lib/invoke';
-import type { RepoInfo } from '../types';
+import { fetchInsights, convertAiInsights, type InsightSource } from '../lib/aiService';
+import type { AiInsight, Insight, RepoInfo } from '../types';
 
 // pull スキップ行を判定するキーワード（dsx の出力に合わせて調整）
 const SKIP_KEYWORDS = ['skip', 'スキップ', 'SKIP'];
@@ -23,6 +26,31 @@ function statusBadge(repo: RepoInfo) {
 export default function Overview() {
   const { repos, selectedRepo, selectRepo, refreshRepo } = useRepoStore();
   const { addToast, setDsxRunning, dsxProgress, dsxRunning, clearDsxProgress } = useUiStore();
+
+  const [insights, setInsights]           = useState<Insight[]>([]);
+  const [insightSource, setInsightSource] = useState<InsightSource>('rule');
+  const [insightLoading, setInsightLoading] = useState(false);
+
+  // インサイトを取得 — repos が変わるたびに再計算 (branchesByRepo は Overview では省略)
+  useEffect(() => {
+    if (repos.length === 0) { setInsights([]); return; }
+    setInsightLoading(true);
+    fetchInsights(repos, {}, 14)
+      .then(({ insights: ins, source }) => {
+        setInsights(ins);
+        setInsightSource(source);
+      })
+      .finally(() => setInsightLoading(false));
+  }, [repos]);
+
+  // バックグラウンド refresh 完了イベントを受けてインサイトを差し替える (P3-04)
+  useEffect(() => {
+    const promise = listen<AiInsight[]>('ai_insights_updated', (ev) => {
+      setInsights(convertAiInsights(ev.payload));
+      setInsightSource('ai');
+    });
+    return () => { promise.then((f) => f()); };
+  }, []);
 
   const repo = selectedRepo;
 
@@ -143,6 +171,31 @@ export default function Overview() {
           })}
         </div>
 
+        {/* Recommended Actions パネル (P3-07) */}
+        {(insightLoading || insights.length > 0) && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.1em' }}>
+                RECOMMENDED ACTIONS
+              </span>
+              {!insightLoading && (
+                <span style={{
+                  fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 600,
+                  background: insightSource === 'ai' ? 'var(--indigo-bg2)' : 'var(--bg3)',
+                  color:      insightSource === 'ai' ? 'var(--indigo-l)'   : 'var(--text3)',
+                }}>
+                  {insightSource === 'ai' ? '✦ AI' : 'Rules'}
+                </span>
+              )}
+            </div>
+            {insightLoading ? (
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>Analyzing…</div>
+            ) : (
+              insights.slice(0, 5).map((ins, i) => <InsightCard key={i} insight={ins} />)
+            )}
+          </div>
+        )}
+
         {/* dsx 進捗ログ — update 実行後に stdout を表示（pull スキップ行をハイライト） */}
         {(dsxRunning || dsxProgress.length > 0) && (
           <div style={{
@@ -190,6 +243,48 @@ export default function Overview() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+const INSIGHT_STYLE: Record<Insight['type'], { bg: string; border: string; icon: string; color: string }> = {
+  risk:       { bg: 'var(--red-bg)',    border: '#f8717128', icon: '⚠', color: 'var(--red)' },
+  prioritize: { bg: 'var(--amber-bg)', border: '#fbbf2428', icon: '↑', color: 'var(--amber)' },
+  explain:    { bg: 'var(--indigo-bg)', border: '#818cf828', icon: '●', color: 'var(--indigo-l)' },
+};
+
+const PRIORITY_COLOR: Record<Insight['priority'], string> = {
+  high:   'var(--red)',
+  medium: 'var(--amber)',
+  low:    'var(--text3)',
+};
+
+function InsightCard({ insight }: { insight: Insight }) {
+  const s = INSIGHT_STYLE[insight.type];
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 10,
+      padding: '8px 10px', background: s.bg,
+      border: `1px solid ${s.border}`, borderRadius: 'var(--r)',
+      marginBottom: 4,
+    }}>
+      <span style={{ color: s.color, fontSize: 12, lineHeight: 1.5, flexShrink: 0 }}>{s.icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text1)', marginBottom: 2 }}>
+          {insight.target}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text2)', lineHeight: 1.5 }}>
+          {insight.reason}
+        </div>
+      </div>
+      <span style={{
+        fontSize: 9, padding: '2px 6px', borderRadius: 4, flexShrink: 0,
+        background: `${PRIORITY_COLOR[insight.priority]}18`,
+        color: PRIORITY_COLOR[insight.priority],
+        fontWeight: 600,
+      }}>
+        {insight.priority}
+      </span>
     </div>
   );
 }
