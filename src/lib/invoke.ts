@@ -7,6 +7,7 @@
  */
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type {
+  AiInsight,
   AppConfig,
   BranchInfo,
   CheckRun,
@@ -117,3 +118,13 @@ export const envInject = (repoPath: string, cmd: string) =>
 
 export const sysUpdate = () =>
   tauriInvoke<DsxOutput>('sys_update');
+
+// ─── AI / Ollama ─────────────────────────────────────────────────────────────
+
+/** Returns true if Ollama is running and reachable. Never throws; returns false on failure. */
+export const ollamaAvailable = () =>
+  tauriInvoke<boolean>('ollama_available');
+
+/** Generates AI insights for the given repositories. Throws on Ollama error — caller should fall back to rule-based engine. */
+export const getAiInsights = (repos: RepoInfo[]) =>
+  tauriInvoke<AiInsight[]>('get_ai_insights', { repos });

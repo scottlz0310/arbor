@@ -3,6 +3,7 @@ mod config;
 mod models;
 
 use commands::{
+    ai::{get_ai_insights, ollama_available},
     config_cmd::{
         add_repository, delete_github_pat, detect_github_remote, get_config, has_github_pat,
         remove_repository, scan_directory, set_github_pat, update_repository_github, update_settings,
@@ -43,6 +44,9 @@ pub fn run() {
             delete_branches,
             fetch_all,
             get_commit_graph,
+            // AI / Ollama
+            ollama_available,
+            get_ai_insights,
             // dsx
             dsx_check,
             repo_update,

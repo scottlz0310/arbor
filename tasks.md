@@ -150,12 +150,12 @@
 
 ## Phase 3 — AI Insight Engine — Ollama 統合 (week 5)
 
-- [ ] P3-01: `commands/ai.rs` — `ollama_available` (GET /api/tags で起動確認)
-- [ ] P3-02: `commands/ai.rs` — `get_ai_insights` (State Aggregator → qwen prompt → JSON パース)
-- [ ] P3-03: State Aggregator 実装 (git2 + GitHub API → 構造化 JSON)
+- [x] P3-01: `commands/ai.rs` — `ollama_available` (GET /api/tags で起動確認)
+- [x] P3-02: `commands/ai.rs` — `get_ai_insights` (State Aggregator → qwen prompt → JSON パース)
+- [x] P3-03: State Aggregator 実装 (git2 + GitHub API → 構造化 JSON)
 - [ ] P3-04: `hash(repoState)` ベースキャッシュ + バックグラウンド更新 (Tauri emit)
 - [ ] P3-05: Ollama 未起動時 / タイムアウト時のフォールバック (ルールベースのみで継続)
-- [ ] P3-06: `/no_think` + JSON-only 出力プロンプト実装
+- [x] P3-06: `/no_think` + JSON-only 出力プロンプト実装
 - [ ] P3-07: Overview「Recommended Actions」パネル
 - [ ] P3-08: Cleanup Wizard に AI 理由テキスト表示
 - [ ] P3-09: Settings 画面から provider / model / URL / timeout 変更可能に

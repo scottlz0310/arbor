@@ -115,6 +115,17 @@ pub struct Issue {
     pub labels: Vec<String>,
 }
 
+/// A single AI-generated insight for a repository.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiInsight {
+    pub repo_name: String,
+    /// "explain" | "prioritize" | "risk"
+    pub kind: String,
+    pub message: String,
+    /// Priority level: 0 = lowest, 3 = highest urgency.
+    pub priority: u8,
+}
+
 /// A single check run result for a commit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckRun {

@@ -133,6 +133,16 @@ export interface CheckRun {
   completed_at: string | null;
 }
 
+/** Mirror of AiInsight in models.rs — raw response from get_ai_insights. */
+export interface AiInsight {
+  repo_name: string;
+  /** "explain" | "prioritize" | "risk" */
+  kind: InsightType;
+  message: string;
+  /** 0 = lowest priority, 3 = highest urgency */
+  priority: number;
+}
+
 // ─── UI-only types ───────────────────────────────────────────────────────────
 
 export type ViewId = 'overview' | 'branches' | 'graph' | 'prs' | 'cleanup' | 'settings';
