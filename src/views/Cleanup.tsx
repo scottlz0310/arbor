@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { getBranches, repoCleanupPreview, repoCleanup, deleteBranches } from '../lib/invoke';
-import { fetchInsights } from '../lib/aiService';
-import type { BranchInfo, Insight } from '../types';
+import { fetchInsights, convertAiInsights } from '../lib/aiService';
+import type { AiInsight, BranchInfo, Insight } from '../types';
 
 // Composite key: uses null byte as separator (safe on all OS — never appears in paths or branch names)
 const SEP = '\x00';
@@ -19,6 +20,7 @@ export default function Cleanup() {
 
   const [mergedBranches, setMergedBranches]     = useState<(BranchInfo & { _repoName: string; _repoPath: string })[]>([]);
   const [staleBranches, setStaleBranches]       = useState<(BranchInfo & { _repoName: string; _repoPath: string })[]>([]);
+  const [branchesByRepo, setBranchesByRepo]     = useState<Record<string, BranchInfo[]>>({});
   const [selected, setSelected]                 = useState<Set<string>>(new Set());
   const [confirmType, setConfirmType]           = useState<ConfirmType>(null);
   const [previewOut, setPreviewOut]             = useState('');
@@ -29,14 +31,25 @@ export default function Cleanup() {
   const nowSec = Math.floor(Date.now() / 1000);
 
   // AI / ルールベース Insight を取得 (P3-08)
+  // branchesByRepo を渡すことでルールエンジンのステールブランチ検出を有効化。
+  // AI Insight の target は repo_name なので repo 名で照合する。
   useEffect(() => {
     if (repos.length === 0) return;
-    fetchInsights(repos, {}, 14).then(({ insights: ins }) => setInsights(ins));
-  }, [repos]);
+    fetchInsights(repos, branchesByRepo, 14).then(({ insights: ins }) => setInsights(ins));
+  }, [repos, branchesByRepo]);
 
-  // ブランチ名でインサイトを検索するヘルパー
-  const findInsightReason = (branchName: string): string | undefined =>
-    insights.find((ins) => ins.target === branchName)?.reason;
+  // バックグラウンド更新 (stale-while-revalidate) を Cleanup にも反映 (P3-04)
+  useEffect(() => {
+    const promise = listen<AiInsight[]>('ai_insights_updated', (ev) => {
+      setInsights(convertAiInsights(ev.payload));
+    });
+    return () => { promise.then((f) => f()); };
+  }, []);
+
+  // リポジトリ名で Insight を検索するヘルパー
+  // AI Insight / ルールベース repo-level Insight はいずれも target = repo_name。
+  const findInsightForRepo = (repoName: string): string | undefined =>
+    insights.find((ins) => ins.target === repoName)?.reason;
 
   // Load branches — scoped to selectedRepo if set, otherwise all repos.
   useEffect(() => {
@@ -56,6 +69,12 @@ export default function Cleanup() {
     )
       .then((allBranches) => {
         const flat = allBranches.flat();
+        // branchesByRepo を組み立て: ruleEngine のステールブランチ検出に渡すため
+        const byRepo: Record<string, BranchInfo[]> = {};
+        for (const r of targets) {
+          byRepo[r.path] = flat.filter((b) => b._repoPath === r.path);
+        }
+        setBranchesByRepo(byRepo);
         setMergedBranches(flat.filter((b) => (b.is_merged || b.is_squash_merged) && !b.is_current));
         setStaleBranches(flat.filter(
           (b) => !b.is_merged && !b.is_squash_merged && !b.is_current
@@ -141,6 +160,11 @@ export default function Cleanup() {
           )
         );
         const flat = updated.flat();
+        const updatedByRepo: Record<string, BranchInfo[]> = {};
+        for (const r of targets) {
+          updatedByRepo[r.path] = flat.filter((b) => b._repoPath === r.path);
+        }
+        setBranchesByRepo(updatedByRepo);
         setMergedBranches(flat.filter((b) => (b.is_merged || b.is_squash_merged) && !b.is_current));
         setStaleBranches(flat.filter(
           (b) => !b.is_merged && !b.is_squash_merged && !b.is_current
@@ -199,7 +223,7 @@ export default function Cleanup() {
               checked={selected.has(makeKey(b._repoPath, b.name))}
               onToggle={() => toggleSelect(b._repoPath, b.name)}
               checkAccent="var(--red)"
-              aiReason={findInsightReason(b.name)}
+              aiReason={findInsightForRepo(b._repoName)}
             />
           ))}
         </CleanupSection>
@@ -221,7 +245,7 @@ export default function Cleanup() {
                 checked={selected.has(makeKey(b._repoPath, b.name))}
                 onToggle={() => toggleSelect(b._repoPath, b.name)}
                 checkAccent="var(--indigo)"
-                aiReason={findInsightReason(b.name)}
+                aiReason={findInsightForRepo(b._repoName)}
               />
             );
           })}
