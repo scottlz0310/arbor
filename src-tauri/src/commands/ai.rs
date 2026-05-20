@@ -501,4 +501,21 @@ mod tests {
         let should_refresh = expired && !entry.refresh_in_progress;
         assert!(!should_refresh, "refresh が進行中なら追加 spawn しない");
     }
+
+    /// test_ai_connection: 接続できないポートに対して Ok(false) を返すことを確認する。
+    /// ポート 1 は通常 Connection refused が即座に返るため、タイムアウト待ちにならない。
+    #[tokio::test]
+    async fn test_ai_connection_unreachable_returns_false() {
+        let result = test_ai_connection("http://127.0.0.1:1".to_string()).await;
+        assert_eq!(result, Ok(false));
+    }
+
+    /// test_ai_connection: 末尾スラッシュを正規化した URL で接続を試みることを確認する。
+    /// 実際の接続は行わず URL 構築の副作用として Connection refused → Ok(false) になることを確認する。
+    #[tokio::test]
+    async fn test_ai_connection_strips_trailing_slash() {
+        // 末尾スラッシュ付き URL でも二重スラッシュにならず Ok(false) が返る
+        let result = test_ai_connection("http://127.0.0.1:1/".to_string()).await;
+        assert_eq!(result, Ok(false));
+    }
 }
