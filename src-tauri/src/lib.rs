@@ -3,7 +3,7 @@ mod config;
 mod models;
 
 use commands::{
-    ai::{get_ai_insights, get_ai_insights_cached, ollama_available, AiCacheState},
+    ai::{get_ai_insights, get_ai_insights_cached, ollama_available, test_ai_connection, AiCacheState},
     config_cmd::{
         add_repository, delete_github_pat, detect_github_remote, get_config, has_github_pat,
         remove_repository, scan_directory, set_github_pat, update_ai_config, update_repository_github,
@@ -49,6 +49,7 @@ pub fn run() {
             get_commit_graph,
             // AI / Ollama
             ollama_available,
+            test_ai_connection,
             get_ai_insights,
             get_ai_insights_cached,
             // dsx

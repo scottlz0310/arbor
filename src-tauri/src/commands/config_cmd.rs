@@ -445,6 +445,9 @@ pub fn update_ai_config(
     if let Some(v) = ollama_url {
         let t = v.trim().to_string();
         if t.is_empty() { return Err("Ollama URL を入力してください".to_string()); }
+        if !t.starts_with("http://") && !t.starts_with("https://") {
+            return Err("Ollama URL は http:// または https:// で始まる必要があります".to_string());
+        }
         config.ai.ollama_url = t;
     }
     if let Some(v) = model {

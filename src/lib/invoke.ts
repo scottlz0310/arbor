@@ -133,6 +133,14 @@ export const sysUpdate = () =>
 export const ollamaAvailable = () =>
   tauriInvoke<boolean>('ollama_available');
 
+/**
+ * Tests connectivity to the given Ollama URL without saving it.
+ * Use this in Settings to validate form input before saving.
+ * Never throws; returns false on failure.
+ */
+export const testAiConnection = (ollamaUrl: string) =>
+  tauriInvoke<boolean>('test_ai_connection', { ollamaUrl });
+
 /** Generates AI insights for the given repositories. Throws on Ollama error — caller should fall back to rule-based engine. */
 export const getAiInsights = (repos: RepoInfo[]) =>
   tauriInvoke<AiInsight[]>('get_ai_insights', { repos });

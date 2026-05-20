@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, ollamaAvailable } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
@@ -181,6 +181,14 @@ export default function Settings() {
         timeoutSecs: timeoutNum,
       });
       setConfig(updated);
+      // Rust 側で trim() した値が返るので aiForm をサーバー値に再同期して dirty state をリセット
+      setAiForm({
+        provider: updated.ai.provider,
+        ollamaUrl: updated.ai.ollama_url,
+        model: updated.ai.model,
+        enabled: updated.ai.enabled,
+        timeoutSecs: String(updated.ai.timeout_secs),
+      });
       setAiTestResult(null);
       addToast('AI 設定を保存しました', 'success');
     } catch (e) {
@@ -194,7 +202,8 @@ export default function Settings() {
     setAiTesting(true);
     setAiTestResult(null);
     try {
-      const ok = await ollamaAvailable();
+      // 保存済み config ではなく、フォームに入力中の URL で疎通確認する
+      const ok = await testAiConnection(aiForm.ollamaUrl);
       setAiTestResult(ok);
     } catch {
       setAiTestResult(false);
