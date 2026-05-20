@@ -4,16 +4,25 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const TAGS_PATH: &str = "/api/tags";
 const GENERATE_PATH: &str = "/api/generate";
+/// キャッシュの有効期間。TTL 経過後にバックグラウンド refresh が走る。
+const CACHE_TTL_SECS: u64 = 300; // 5 分
 
 // ─── Cache state (P3-04) ──────────────────────────────────────────────────────
 
+struct CacheEntry {
+    insights: Vec<AiInsight>,
+    updated_at: Instant,
+    /// バックグラウンド refresh が進行中なら true。重複 spawn を防ぐ (in-flight dedupe)。
+    refresh_in_progress: bool,
+}
+
 pub struct AiCacheState {
-    entries: Mutex<HashMap<u64, Vec<AiInsight>>>,
+    entries: Mutex<HashMap<u64, CacheEntry>>,
 }
 
 impl Default for AiCacheState {
@@ -196,11 +205,13 @@ pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, Str
     fetch_from_ollama(&repos).await
 }
 
-/// Generates AI insights with stale-while-revalidate caching (P3-04).
+/// Generates AI insights with TTL-based stale-while-revalidate caching (P3-04).
 ///
-/// - Cache hit  → returns the cached value immediately, then spawns a background
-///               refresh that emits `"ai_insights_updated"` when done.
-/// - Cache miss → fetches synchronously, stores the result, and returns it.
+/// - Cache hit, TTL 未満    → stale をそのまま返す（Ollama 再呼び出しなし）
+/// - Cache hit, TTL 経過    → stale を即返却し、バックグラウンド refresh を spawn
+///                           (in-flight dedupe: 既に refresh 中なら追加 spawn しない)
+///                           完了後: cache 更新 → emit("ai_insights_updated")
+/// - Cache miss            → 同期フェッチ → cache 保存 → 返却
 #[tauri::command]
 pub async fn get_ai_insights_cached(
     repos: Vec<RepoInfo>,
@@ -209,32 +220,76 @@ pub async fn get_ai_insights_cached(
 ) -> Result<Vec<AiInsight>, String> {
     let key = hash_repos(&repos);
 
-    let cached = {
+    // キャッシュチェック: stale の有無と refresh が必要かどうかを同時に判定する。
+    let (cached_insights, should_refresh) = {
         let entries = cache.entries.lock().map_err(|e| e.to_string())?;
-        entries.get(&key).cloned()
+        match entries.get(&key) {
+            None => (None, false),
+            Some(entry) => {
+                let expired = entry.updated_at.elapsed().as_secs() >= CACHE_TTL_SECS;
+                // TTL 経過かつ refresh が走っていない場合のみ再計算する。
+                let should = expired && !entry.refresh_in_progress;
+                (Some(entry.insights.clone()), should)
+            }
+        }
     };
 
-    if let Some(stale) = cached {
-        // Return stale immediately, refresh in background.
-        let repos_bg = repos.clone();
-        let app_bg = app.clone();
-        tokio::spawn(async move {
-            if let Ok(fresh) = fetch_from_ollama(&repos_bg).await {
-                let _ = app_bg.emit("ai_insights_updated", &fresh);
-                let cache_bg = app_bg.state::<AiCacheState>();
-                if let Ok(mut entries) = cache_bg.entries.lock() {
-                    entries.insert(key, fresh);
-                };
+    if let Some(stale) = cached_insights {
+        if should_refresh {
+            // in-flight フラグを立ててから spawn（重複 spawn 防止）。
+            {
+                let mut entries = cache.entries.lock().map_err(|e| e.to_string())?;
+                if let Some(entry) = entries.get_mut(&key) {
+                    entry.refresh_in_progress = true;
+                }
             }
-        });
+            let repos_bg = repos.clone();
+            let app_bg = app.clone();
+            tokio::spawn(async move {
+                let cache_bg = app_bg.state::<AiCacheState>();
+                match fetch_from_ollama(&repos_bg).await {
+                    Ok(fresh) => {
+                        // cache を先に更新してから emit する。
+                        // これにより、フロントが emit を受けて即 getAiInsightsCached を
+                        // 呼んでも必ず新しい値が返る。
+                        if let Ok(mut entries) = cache_bg.entries.lock() {
+                            entries.insert(
+                                key,
+                                CacheEntry {
+                                    insights: fresh.clone(),
+                                    updated_at: Instant::now(),
+                                    refresh_in_progress: false,
+                                },
+                            );
+                        };
+                        let _ = app_bg.emit("ai_insights_updated", &fresh);
+                    }
+                    Err(_) => {
+                        // refresh 失敗時はフラグを降ろして次回 TTL 経過後に再試行できるようにする。
+                        if let Ok(mut entries) = cache_bg.entries.lock() {
+                            if let Some(entry) = entries.get_mut(&key) {
+                                entry.refresh_in_progress = false;
+                            }
+                        };
+                    }
+                }
+            });
+        }
         return Ok(stale);
     }
 
-    // Cache miss: fetch synchronously.
+    // Cache miss: 同期フェッチ → 保存 → 返却。
     let insights = fetch_from_ollama(&repos).await?;
     {
         let mut entries = cache.entries.lock().map_err(|e| e.to_string())?;
-        entries.insert(key, insights.clone());
+        entries.insert(
+            key,
+            CacheEntry {
+                insights: insights.clone(),
+                updated_at: Instant::now(),
+                refresh_in_progress: false,
+            },
+        );
     }
     Ok(insights)
 }
@@ -360,6 +415,14 @@ mod tests {
         assert_ne!(hash_repos(&r1), hash_repos(&r2));
     }
 
+    fn make_cache_entry(insights: Vec<AiInsight>, age_secs: u64, in_progress: bool) -> CacheEntry {
+        CacheEntry {
+            insights,
+            updated_at: Instant::now() - Duration::from_secs(age_secs),
+            refresh_in_progress: in_progress,
+        }
+    }
+
     #[test]
     fn ai_cache_state_stores_and_retrieves() {
         let cache = AiCacheState::default();
@@ -371,10 +434,32 @@ mod tests {
         };
         {
             let mut entries = cache.entries.lock().unwrap();
-            entries.insert(42u64, vec![insight.clone()]);
+            entries.insert(42u64, make_cache_entry(vec![insight.clone()], 0, false));
         }
         let entries = cache.entries.lock().unwrap();
         let got = entries.get(&42u64).unwrap();
-        assert_eq!(got[0].repo_name, "r");
+        assert_eq!(got.insights[0].repo_name, "r");
+        assert!(!got.refresh_in_progress);
+    }
+
+    #[test]
+    fn cache_entry_within_ttl_is_not_expired() {
+        let entry = make_cache_entry(vec![], 0, false);
+        assert!(entry.updated_at.elapsed().as_secs() < CACHE_TTL_SECS);
+    }
+
+    #[test]
+    fn cache_entry_beyond_ttl_is_expired() {
+        let entry = make_cache_entry(vec![], CACHE_TTL_SECS + 10, false);
+        assert!(entry.updated_at.elapsed().as_secs() >= CACHE_TTL_SECS);
+    }
+
+    #[test]
+    fn cache_entry_in_progress_suppresses_refresh() {
+        // in-flight dedupe: refresh_in_progress=true のとき should_refresh は false になる。
+        let entry = make_cache_entry(vec![], CACHE_TTL_SECS + 10, true);
+        let expired = entry.updated_at.elapsed().as_secs() >= CACHE_TTL_SECS;
+        let should_refresh = expired && !entry.refresh_in_progress;
+        assert!(!should_refresh, "refresh が進行中なら追加 spawn しない");
     }
 }
