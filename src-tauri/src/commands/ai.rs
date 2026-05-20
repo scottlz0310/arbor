@@ -1,10 +1,35 @@
 use crate::config::load_config;
 use crate::models::{AiInsight, RepoInfo};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Mutex;
 use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const TAGS_PATH: &str = "/api/tags";
 const GENERATE_PATH: &str = "/api/generate";
+
+// ─── Cache state (P3-04) ──────────────────────────────────────────────────────
+
+pub struct AiCacheState {
+    entries: Mutex<HashMap<u64, Vec<AiInsight>>>,
+}
+
+impl Default for AiCacheState {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+fn hash_repos(repos: &[RepoInfo]) -> u64 {
+    let summary = build_state_summary(repos);
+    let mut hasher = DefaultHasher::new();
+    summary.hash(&mut hasher);
+    hasher.finish()
+}
 
 // ─── Ollama API request / response types ─────────────────────────────────────
 
@@ -22,7 +47,6 @@ struct GenerateResponse {
 
 // ─── State Aggregator (P3-03) ─────────────────────────────────────────────────
 
-/// Converts repository states into a compact JSON string for the prompt.
 fn build_state_summary(repos: &[RepoInfo]) -> String {
     #[derive(Serialize)]
     struct RepoSummary<'a> {
@@ -53,7 +77,6 @@ fn build_state_summary(repos: &[RepoInfo]) -> String {
 
 // ─── Prompt builder (P3-06) ───────────────────────────────────────────────────
 
-/// Builds the /no_think JSON-only prompt for Ollama.
 fn build_prompt(state_json: &str) -> String {
     format!(
         "/no_think\n\
@@ -69,7 +92,6 @@ fn build_prompt(state_json: &str) -> String {
 
 // ─── Response parser ──────────────────────────────────────────────────────────
 
-/// Strips optional code fences that some models add despite the prompt.
 fn strip_code_fences(s: &str) -> &str {
     let s = s.trim();
     let stripped = s
@@ -82,10 +104,8 @@ fn strip_code_fences(s: &str) -> &str {
 
 fn parse_insights(raw: &str) -> Result<Vec<AiInsight>, String> {
     let json_str = strip_code_fences(raw);
-    // `kind` の検証は InsightKind enum の Serde が担う（未知の文字列で即 Err）。
     let insights: Vec<AiInsight> = serde_json::from_str(json_str)
         .map_err(|e| format!("AI レスポンスの JSON パースに失敗しました: {e}\nRaw: {raw}"))?;
-    // `priority` は enum で表現できないため境界チェックをコードで閉じる。
     for insight in &insights {
         if insight.priority > 3 {
             return Err(format!(
@@ -97,43 +117,14 @@ fn parse_insights(raw: &str) -> Result<Vec<AiInsight>, String> {
     Ok(insights)
 }
 
-/// Builds a URL by joining `base` and `path`, normalizing any trailing slash in base.
 fn ollama_url(base: &str, path: &str) -> String {
     format!("{}{}", base.trim_end_matches('/'), path)
 }
 
-// ─── Tauri commands ───────────────────────────────────────────────────────────
+// ─── Core fetch (shared by both commands) ────────────────────────────────────
 
-/// Returns true if Ollama is running and reachable (P3-01).
-/// Always returns Ok(false) — never Err — so callers can use this as a
-/// pure availability probe without error handling before the fallback path.
-#[tauri::command]
-pub async fn ollama_available() -> Result<bool, String> {
-    // Treat config-load failure the same as "not reachable": return false, not Err.
-    let config = match load_config() {
-        Ok(c) => c,
-        Err(_) => return Ok(false),
-    };
-    if !config.ai.enabled {
-        return Ok(false);
-    }
-    let url = ollama_url(&config.ai.ollama_url, TAGS_PATH);
-    let client = reqwest::Client::new();
-    let reachable = client
-        .get(&url)
-        .timeout(Duration::from_secs(5))
-        .send()
-        .await
-        .map(|r| r.status().is_success())
-        .unwrap_or(false);
-    Ok(reachable)
-}
-
-/// Generates AI insights for the given repositories via Ollama (P3-02).
-/// Errors propagate to the frontend; the caller should fall back to the
-/// rule-based engine on failure.
-#[tauri::command]
-pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, String> {
+/// Calls Ollama and returns parsed insights. Does not touch the cache.
+async fn fetch_from_ollama(repos: &[RepoInfo]) -> Result<Vec<AiInsight>, String> {
     let config = load_config()?;
     let ai = &config.ai;
 
@@ -141,10 +132,10 @@ pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, Str
         return Err("AI Insight は設定で無効化されています".to_string());
     }
 
-    let state_json = build_state_summary(&repos);
+    let state_json = build_state_summary(repos);
     let prompt = build_prompt(&state_json);
-
     let url = ollama_url(&ai.ollama_url, GENERATE_PATH);
+
     let client = reqwest::Client::new();
     let req_body = GenerateRequest {
         model: ai.model.clone(),
@@ -170,6 +161,82 @@ pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, Str
         .map_err(|e| format!("Ollama レスポンスのパースに失敗しました: {e}"))?;
 
     parse_insights(&gen.response)
+}
+
+// ─── Tauri commands ───────────────────────────────────────────────────────────
+
+/// Returns true if Ollama is running and reachable (P3-01).
+/// Always returns Ok(false) — never Err — so callers can use this as a
+/// pure availability probe without error handling before the fallback path.
+#[tauri::command]
+pub async fn ollama_available() -> Result<bool, String> {
+    let config = match load_config() {
+        Ok(c) => c,
+        Err(_) => return Ok(false),
+    };
+    if !config.ai.enabled {
+        return Ok(false);
+    }
+    let url = ollama_url(&config.ai.ollama_url, TAGS_PATH);
+    let client = reqwest::Client::new();
+    let reachable = client
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+    Ok(reachable)
+}
+
+/// Generates AI insights via Ollama without caching (P3-02).
+/// Errors propagate to the frontend; caller should fall back to the rule-based engine.
+#[tauri::command]
+pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, String> {
+    fetch_from_ollama(&repos).await
+}
+
+/// Generates AI insights with stale-while-revalidate caching (P3-04).
+///
+/// - Cache hit  → returns the cached value immediately, then spawns a background
+///               refresh that emits `"ai_insights_updated"` when done.
+/// - Cache miss → fetches synchronously, stores the result, and returns it.
+#[tauri::command]
+pub async fn get_ai_insights_cached(
+    repos: Vec<RepoInfo>,
+    app: AppHandle,
+    cache: State<'_, AiCacheState>,
+) -> Result<Vec<AiInsight>, String> {
+    let key = hash_repos(&repos);
+
+    let cached = {
+        let entries = cache.entries.lock().map_err(|e| e.to_string())?;
+        entries.get(&key).cloned()
+    };
+
+    if let Some(stale) = cached {
+        // Return stale immediately, refresh in background.
+        let repos_bg = repos.clone();
+        let app_bg = app.clone();
+        tokio::spawn(async move {
+            if let Ok(fresh) = fetch_from_ollama(&repos_bg).await {
+                let _ = app_bg.emit("ai_insights_updated", &fresh);
+                let cache_bg = app_bg.state::<AiCacheState>();
+                if let Ok(mut entries) = cache_bg.entries.lock() {
+                    entries.insert(key, fresh);
+                };
+            }
+        });
+        return Ok(stale);
+    }
+
+    // Cache miss: fetch synchronously.
+    let insights = fetch_from_ollama(&repos).await?;
+    {
+        let mut entries = cache.entries.lock().map_err(|e| e.to_string())?;
+        entries.insert(key, insights.clone());
+    }
+    Ok(insights)
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -256,7 +323,6 @@ mod tests {
 
     #[test]
     fn parse_insights_invalid_kind_returns_err() {
-        // LLM が "warning" など仕様外の kind を返した場合、Serde の enum 検証で弾く。
         let raw = r#"[{"repo_name":"r","kind":"warning","message":"x","priority":1}]"#;
         let err = parse_insights(raw).unwrap_err();
         assert!(err.contains("JSON パース"), "{err}");
@@ -271,7 +337,44 @@ mod tests {
 
     #[test]
     fn ollama_url_trims_trailing_slash() {
-        assert_eq!(ollama_url("http://localhost:11434/", TAGS_PATH), "http://localhost:11434/api/tags");
-        assert_eq!(ollama_url("http://localhost:11434", GENERATE_PATH), "http://localhost:11434/api/generate");
+        assert_eq!(
+            ollama_url("http://localhost:11434/", TAGS_PATH),
+            "http://localhost:11434/api/tags"
+        );
+        assert_eq!(
+            ollama_url("http://localhost:11434", GENERATE_PATH),
+            "http://localhost:11434/api/generate"
+        );
+    }
+
+    #[test]
+    fn hash_repos_same_input_gives_same_hash() {
+        let repos = vec![make_repo("a", 1, 2, 3), make_repo("b", 0, 0, 0)];
+        assert_eq!(hash_repos(&repos), hash_repos(&repos));
+    }
+
+    #[test]
+    fn hash_repos_different_input_gives_different_hash() {
+        let r1 = vec![make_repo("a", 1, 0, 0)];
+        let r2 = vec![make_repo("a", 2, 0, 0)]; // ahead changed
+        assert_ne!(hash_repos(&r1), hash_repos(&r2));
+    }
+
+    #[test]
+    fn ai_cache_state_stores_and_retrieves() {
+        let cache = AiCacheState::default();
+        let insight = AiInsight {
+            repo_name: "r".to_string(),
+            kind: InsightKind::Explain,
+            message: "ok".to_string(),
+            priority: 1,
+        };
+        {
+            let mut entries = cache.entries.lock().unwrap();
+            entries.insert(42u64, vec![insight.clone()]);
+        }
+        let entries = cache.entries.lock().unwrap();
+        let got = entries.get(&42u64).unwrap();
+        assert_eq!(got[0].repo_name, "r");
     }
 }
