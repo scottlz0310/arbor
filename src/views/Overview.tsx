@@ -30,6 +30,8 @@ export default function Overview() {
   const [insights, setInsights]           = useState<Insight[]>([]);
   const [insightSource, setInsightSource] = useState<InsightSource>('rule');
   const [insightLoading, setInsightLoading] = useState(false);
+  // insightLoading とは独立した state。fetchInsights の .finally() に上書きされない。
+  const [aiBgRunning, setAiBgRunning]     = useState(false);
 
   // インサイトを取得 — repos が変わるたびに再計算 (branchesByRepo は Overview では省略)
   useEffect(() => {
@@ -45,11 +47,19 @@ export default function Overview() {
 
   // バックグラウンド refresh 完了イベントを受けてインサイトを差し替える (P3-04)
   useEffect(() => {
-    const promise = listen<AiInsight[]>('ai_insights_updated', (ev) => {
+    const unlistenUpdated = listen<AiInsight[]>('ai_insights_updated', (ev) => {
       setInsights(convertAiInsights(ev.payload));
       setInsightSource('ai');
+      setAiBgRunning(false);
     });
-    return () => { promise.then((f) => f()); };
+    // キャッシュミス時のバックグラウンド開始通知 → "Analyzing..." を表示する
+    const unlistenLoading = listen<void>('ai_insights_loading', () => {
+      setAiBgRunning(true);
+    });
+    return () => {
+      unlistenUpdated.then((f) => f());
+      unlistenLoading.then((f) => f());
+    };
   }, []);
 
   const repo = selectedRepo;
@@ -172,13 +182,13 @@ export default function Overview() {
         </div>
 
         {/* Recommended Actions パネル (P3-07) */}
-        {(insightLoading || insights.length > 0) && (
+        {(insightLoading || aiBgRunning || insights.length > 0) && (
           <div style={{ marginTop: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.1em' }}>
                 RECOMMENDED ACTIONS
               </span>
-              {!insightLoading && (
+              {!(insightLoading || aiBgRunning) && (
                 <span style={{
                   fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 600,
                   background: insightSource === 'ai' ? 'var(--indigo-bg2)' : 'var(--bg3)',
@@ -188,7 +198,7 @@ export default function Overview() {
                 </span>
               )}
             </div>
-            {insightLoading ? (
+            {(insightLoading || aiBgRunning) ? (
               <div style={{ fontSize: 11, color: 'var(--text3)' }}>Analyzing…</div>
             ) : (
               insights.slice(0, 5).map((ins, i) => <InsightCard key={i} insight={ins} />)

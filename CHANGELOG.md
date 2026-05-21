@@ -5,6 +5,20 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ## [Unreleased]
 
+### fix (修正予定)
+
+- **AI Insight — バックグラウンド非同期化 & タイムアウト修正**
+  - `get_ai_insights_cached`: cache miss 時の同期フェッチを廃止し、常にバックグラウンド spawn に変更
+    - 起動直後に UI をブロックしない。Ollama の応答速度に依存しない設計
+    - バックグラウンド開始時に `ai_insights_loading` イベントを emit して "Analyzing..." を表示
+    - 失敗時（タイムアウト含む）に `ai_insights_updated []` を emit して "Analyzing..." を解除
+  - `fetch_from_ollama`: クリーンな repo（全 stat が 0）をフィルタリングしてプロンプトを削減（最大 10 件）
+    - フィルタ後が空の場合は即 `Ok([])` を返す（Ollama 不要）
+  - `AiConfig::default()`: `timeout_secs` を 30 → 120 に変更
+  - `Overview`: `aiBgRunning` state を追加し `insightLoading` との競合を解消
+    - `ai_insights_loading` → `aiBgRunning = true`
+    - `ai_insights_updated` → `aiBgRunning = false`
+
 ### feat (追加予定)
 
 - **Phase 3 — AI 設定 UI** ([#101](https://github.com/scottlz0310/arbor/issues/101))
