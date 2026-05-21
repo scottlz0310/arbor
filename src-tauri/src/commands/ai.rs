@@ -238,7 +238,11 @@ pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, Str
 /// - Cache hit, TTL 経過    → stale を即返却し、バックグラウンド refresh を spawn
 ///                           (in-flight dedupe: 既に refresh 中なら追加 spawn しない)
 ///                           完了後: cache 更新 → emit("ai_insights_updated")
-/// - Cache miss            → 同期フェッチ → cache 保存 → 返却
+/// - Cache miss            → `[]` を即返却し、バックグラウンド spawn で生成
+///                           開始時: emit("ai_insights_loading")
+///                           成功時: cache 保存 → emit("ai_insights_updated")
+///                           失敗時: cache entry 削除 → emit("ai_insights_failed")
+///                           フロントは失敗時にルールベース結果を維持する
 #[tauri::command]
 pub async fn get_ai_insights_cached(
     repos: Vec<RepoInfo>,
