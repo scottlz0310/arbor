@@ -58,9 +58,14 @@ export default function Overview() {
     const unlistenLoading = listen<void>('ai_insights_loading', () => {
       setAiBgRunning(true);
     });
+    // AI 生成失敗時はルール結果を維持したまま loading を解除する。
+    const unlistenFailed = listen<void>('ai_insights_failed', () => {
+      setAiBgRunning(false);
+    });
     return () => {
       unlistenUpdated.then((f) => f());
       unlistenLoading.then((f) => f());
+      unlistenFailed.then((f) => f());
     };
   }, []);
 

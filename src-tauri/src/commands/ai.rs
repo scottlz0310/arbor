@@ -342,8 +342,9 @@ pub async fn get_ai_insights_cached(
                 if let Ok(mut entries) = cache_bg.entries.lock() {
                     entries.remove(&key);
                 }
-                // 失敗時も空配列を emit してフロントの "Analyzing..." を解除する。
-                let _ = app_bg.emit("ai_insights_updated", &Vec::<AiInsight>::new());
+                // 失敗時は ai_insights_failed を emit してフロントのルール表示を維持させる。
+                // ai_insights_updated [] を使うとフロントが空結果で上書きしてしまうため区別する。
+                let _ = app_bg.emit("ai_insights_failed", ());
             }
         }
     });

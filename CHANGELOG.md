@@ -11,13 +11,17 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `get_ai_insights_cached`: cache miss 時の同期フェッチを廃止し、常にバックグラウンド spawn に変更
     - 起動直後に UI をブロックしない。Ollama の応答速度に依存しない設計
     - バックグラウンド開始時に `ai_insights_loading` イベントを emit して "Analyzing..." を表示
-    - 失敗時（タイムアウト含む）に `ai_insights_updated []` を emit して "Analyzing..." を解除
+    - 失敗時（タイムアウト含む）に `ai_insights_failed` を emit し、フロントのルール表示を維持
+      - 成功+空結果（全リポジトリクリーン）は引き続き `ai_insights_updated []` を emit
   - `fetch_from_ollama`: クリーンな repo（全 stat が 0）をフィルタリングしてプロンプトを削減（最大 10 件）
     - フィルタ後が空の場合は即 `Ok([])` を返す（Ollama 不要）
   - `AiConfig::default()`: `timeout_secs` を 30 → 120 に変更
   - `Overview`: `aiBgRunning` state を追加し `insightLoading` との競合を解消
     - `ai_insights_loading` → `aiBgRunning = true`
     - `ai_insights_updated` → `aiBgRunning = false`
+  - `fetchInsights`: `getAiInsightsCached` が `[]` を返した場合（cache miss またはクリーン）にルール結果を placeholder として返す
+    - AI 成功時は `ai_insights_updated` イベントで上書き、失敗時は `ai_insights_failed` でルール維持
+    - `Overview`: `ai_insights_failed` リスナーを追加（`aiBgRunning = false` のみ、insights をクリアしない）
   - Ollama 未起動時に `⚠ Ollama offline` バッジとメッセージを表示 (P3-05 UX 改善)
     - `InsightResult` に `ollamaOffline: boolean` を追加
     - Ollama 到達不能時は `ruleResult(true)` でフラグを立てる

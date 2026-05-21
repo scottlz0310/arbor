@@ -55,6 +55,9 @@ export async function fetchInsights(
     if (!available) return ruleResult(true);
 
     const raw = await getAiInsightsCached(repos);
+    // raw=[] はキャッシュミス（バックグラウンド生成中）か全リポジトリがクリーンな場合。
+    // どちらもルール結果を返す。AI が成功すれば ai_insights_updated イベントで上書きされる。
+    if (raw.length === 0) return ruleResult(false);
     return { insights: convertAiInsights(raw), source: 'ai', ollamaOffline: false };
   } catch {
     return ruleResult(false);

@@ -111,4 +111,13 @@ describe('fetchInsights', () => {
     expect(result.source).toBe('rule');
     expect(result.insights).toEqual(RULE_INSIGHTS);
   });
+
+  it('getAiInsightsCached が [] を返したとき rule フォールバック (cache miss)', async () => {
+    vi.mocked(invoke.ollamaAvailable).mockResolvedValue(true);
+    vi.mocked(invoke.getAiInsightsCached).mockResolvedValue([]);
+    const result = await fetchInsights(REPOS, BRANCHES, 14);
+    expect(result.source).toBe('rule');
+    expect(result.insights).toEqual(RULE_INSIGHTS);
+    expect(result.ollamaOffline).toBe(false);
+  });
 });
