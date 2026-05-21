@@ -49,3 +49,15 @@ button {
   min-width: 0;
   overflow: hidden;
 }
+
+/* ─── AI Insight アニメーション ─────────────────────────── */
+@keyframes arbor-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes arbor-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+.arbor-spin  { display: inline-block; animation: arbor-spin  0.9s linear infinite; }
+.arbor-pulse { display: inline-block; animation: arbor-pulse 1.2s ease-in-out infinite; }
