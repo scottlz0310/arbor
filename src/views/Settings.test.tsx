@@ -1,7 +1,11 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
+
+// @tauri-apps/plugin-dialog の open をファイルレベルでモックする
+const mockOpen = vi.hoisted(() => vi.fn());
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mockOpen }));
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Settings from './Settings';
 import ToastContainer from '../components/Toast';
@@ -16,6 +20,8 @@ const mockSysUpdate = vi.spyOn(invoke, 'sysUpdate');
 const mockDetectGithubRemote = vi.spyOn(invoke, 'detectGithubRemote');
 const mockUpdateRepositoryGithub = vi.spyOn(invoke, 'updateRepositoryGithub');
 const mockScanMissingRepositories = vi.spyOn(invoke, 'scanMissingRepositories');
+const mockRemoveRepository = vi.spyOn(invoke, 'removeRepository');
+const mockScanDirectory = vi.spyOn(invoke, 'scanDirectory');
 
 const availableDsxStatus = { available: true, version: 'v0.2.3', path: '/usr/local/bin/dsx' };
 const unavailableDsxStatus = { available: false, version: null, path: null };
@@ -55,6 +61,12 @@ beforeEach(() => {
   mockDetectGithubRemote.mockResolvedValue([null, null] as never);
   mockUpdateRepositoryGithub.mockResolvedValue(mockConfig as never);
   mockScanMissingRepositories.mockResolvedValue([] as never);
+  mockRemoveRepository.mockResolvedValue(mockConfig as never);
+  mockScanDirectory.mockResolvedValue([] as never);
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
 });
 
 describe('Settings — Repositories section', () => {
@@ -171,5 +183,93 @@ describe('Settings — RepoCard', () => {
     const btn = await screen.findByRole('button', { name: 'Detect' });
     await userEvent.click(btn);
     expect(mockDetectGithubRemote).toHaveBeenCalledWith('/repo/arbor');
+  });
+});
+
+const missingRepo = { path: '/missing/repo', name: 'missing-repo', github_owner: null, github_repo: null };
+
+describe('Settings — 削除済みリポジトリ検出 (#117)', () => {
+  it('missing repo がある場合に警告バナーを表示する', async () => {
+    mockScanMissingRepositories.mockResolvedValue([missingRepo] as never);
+    renderSettings();
+    await screen.findByText(/1 件の無効なリポジトリを検出/);
+  });
+
+  it('missing repo がない場合はバナーを表示しない', async () => {
+    mockScanMissingRepositories.mockResolvedValue([] as never);
+    renderSettings();
+    // バナーが出ないことを確認するため、他の要素が描画されるまで待つ
+    await screen.findByText('REPOSITORIES');
+    expect(screen.queryByText(/無効なリポジトリを検出/)).not.toBeInTheDocument();
+  });
+
+  it('バナークリックでパネルが開き、repo 名とパスが表示される', async () => {
+    mockScanMissingRepositories.mockResolvedValue([missingRepo] as never);
+    renderSettings();
+    const banner = await screen.findByText(/1 件の無効なリポジトリを検出/);
+    await userEvent.click(banner);
+    expect(screen.getByText('missing-repo')).toBeInTheDocument();
+    expect(screen.getByText('/missing/repo')).toBeInTheDocument();
+  });
+
+  it('全選択で「N件を登録解除」ボタンが有効になる', async () => {
+    mockScanMissingRepositories.mockResolvedValue([missingRepo] as never);
+    renderSettings();
+    const banner = await screen.findByText(/1 件の無効なリポジトリを検出/);
+    await userEvent.click(banner);
+    // repo name でチェックボックスを特定（AI Engine の checkbox と区別）
+    const checkbox = screen.getByRole('checkbox', { name: /missing-repo/ });
+    expect(checkbox).not.toBeChecked();
+    await userEvent.click(screen.getByText('全選択'));
+    expect(checkbox).toBeChecked();
+    expect(screen.getByRole('button', { name: /1 件を登録解除/ })).not.toBeDisabled();
+  });
+
+  it('全解除でチェックが外れ「N件を登録解除」ボタンが disabled になる', async () => {
+    mockScanMissingRepositories.mockResolvedValue([missingRepo] as never);
+    renderSettings();
+    const banner = await screen.findByText(/1 件の無効なリポジトリを検出/);
+    await userEvent.click(banner);
+    await userEvent.click(screen.getByText('全選択'));
+    await userEvent.click(screen.getByText('全解除'));
+    const checkbox = screen.getByRole('checkbox', { name: /missing-repo/ });
+    expect(checkbox).not.toBeChecked();
+    expect(screen.getByRole('button', { name: /0 件を登録解除/ })).toBeDisabled();
+  });
+
+  it('登録解除確認後に removeRepository が呼ばれ loadRepos が呼ばれる', async () => {
+    const mockLoadRepos = vi.fn();
+    const { useRepoStore } = await import('../stores/repoStore');
+    vi.spyOn(useRepoStore, 'getState').mockReturnValue({ loadRepos: mockLoadRepos } as never);
+
+    mockScanMissingRepositories.mockResolvedValue([missingRepo] as never);
+    renderSettings(true);
+    const banner = await screen.findByText(/1 件の無効なリポジトリを検出/);
+    await userEvent.click(banner);
+    await userEvent.click(screen.getByText('全選択'));
+    await userEvent.click(screen.getByRole('button', { name: /1 件を登録解除/ }));
+    // ConfirmDialog が開く
+    const confirmBtn = await screen.findByRole('button', { name: '登録解除' });
+    await userEvent.click(confirmBtn);
+    await waitFor(() => {
+      expect(mockRemoveRepository).toHaveBeenCalledWith('/missing/repo');
+    });
+  });
+
+  it('Scan Folder で新規 repo が 0 件でも scanMissingRepositories が呼ばれる', async () => {
+    mockOpen.mockResolvedValue('/some/folder');
+    mockScanDirectory.mockResolvedValue([] as never);
+    mockGetConfig.mockResolvedValue(mockConfig as never);
+
+    renderSettings();
+    await screen.findByText('REPOSITORIES');
+
+    const scanBtn = screen.getByRole('button', { name: /Scan Folder/ });
+    await userEvent.click(scanBtn);
+
+    await waitFor(() => {
+      // mount 時 1 回 + Scan Folder 後 1 回 = 計 2 回
+      expect(mockScanMissingRepositories).toHaveBeenCalledTimes(2);
+    });
   });
 });

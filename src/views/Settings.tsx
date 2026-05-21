@@ -89,14 +89,14 @@ export default function Settings() {
       // 既登録パスを除外する
       const registered = new Set(config?.repositories.map((r) => r.path) ?? []);
       const newPaths = found.filter((p) => !registered.has(p));
+      // Scan Folder 後は新規 repo 件数に関わらず必ず missing repo を再確認する
+      scanMissingRepositories().then(setMissingRepos).catch(() => {});
       if (newPaths.length === 0) {
         addToast('新しいリポジトリは見つかりませんでした', 'success');
         return;
       }
       setScanResults(newPaths);
       setScanSelected(new Set(newPaths));
-      // Scan Folder 後に削除済みリポジトリも再確認する
-      scanMissingRepositories().then(setMissingRepos).catch(() => {});
     } catch (e) {
       addToast(String(e), 'error');
     } finally {
@@ -238,26 +238,28 @@ export default function Settings() {
   };
 
   const handleBulkDeregister = async () => {
+    if (deregistering) return;
     setDeregistering(true);
     const paths = [...missingSelected];
-    let count = 0;
+    const removedPaths = new Set<string>();
     let lastConfig: AppConfig | null = null;
     for (const path of paths) {
       try {
         lastConfig = await removeRepository(path);
-        count++;
+        removedPaths.add(path);
       } catch (e) {
         addToast(String(e), 'error');
       }
     }
     if (lastConfig) setConfig(lastConfig);
-    setMissingRepos((prev) => prev.filter((r) => !missingSelected.has(r.path)));
+    // 成功した path のみ missingRepos から除外する（失敗分は残す）
+    setMissingRepos((prev) => prev.filter((r) => !removedPaths.has(r.path)));
     setMissingSelected(new Set());
     setMissingPanelOpen(false);
     setConfirmDeregister(false);
     setDeregistering(false);
     await loadRepos();
-    if (count > 0) addToast(`${count} 件のリポジトリを登録解除しました`, 'success');
+    if (removedPaths.size > 0) addToast(`${removedPaths.size} 件のリポジトリを登録解除しました`, 'success');
   };
 
   const aiDirty = config !== null && (
