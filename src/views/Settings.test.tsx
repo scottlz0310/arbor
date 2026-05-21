@@ -15,6 +15,7 @@ const mockHasGithubPat = vi.spyOn(invoke, 'hasGithubPat');
 const mockSysUpdate = vi.spyOn(invoke, 'sysUpdate');
 const mockDetectGithubRemote = vi.spyOn(invoke, 'detectGithubRemote');
 const mockUpdateRepositoryGithub = vi.spyOn(invoke, 'updateRepositoryGithub');
+const mockScanMissingRepositories = vi.spyOn(invoke, 'scanMissingRepositories');
 
 const availableDsxStatus = { available: true, version: 'v0.2.3', path: '/usr/local/bin/dsx' };
 const unavailableDsxStatus = { available: false, version: null, path: null };
@@ -53,6 +54,7 @@ beforeEach(() => {
   mockSysUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 } as never);
   mockDetectGithubRemote.mockResolvedValue([null, null] as never);
   mockUpdateRepositoryGithub.mockResolvedValue(mockConfig as never);
+  mockScanMissingRepositories.mockResolvedValue([] as never);
 });
 
 describe('Settings — Repositories section', () => {
