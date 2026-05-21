@@ -52,7 +52,7 @@ impl Default for AiConfig {
             ollama_url: "http://localhost:11434".to_string(),
             model: "qwen3.5:latest".to_string(),
             enabled: true,
-            timeout_secs: 30,
+            timeout_secs: 120,
         }
     }
 }
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(ai.ollama_url, "http://localhost:11434");
         assert_eq!(ai.model, "qwen3.5:latest");
         assert!(ai.enabled);
-        assert_eq!(ai.timeout_secs, 30);
+        assert_eq!(ai.timeout_secs, 120);
     }
 
     #[test]

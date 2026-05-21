@@ -30,26 +30,43 @@ export default function Overview() {
   const [insights, setInsights]           = useState<Insight[]>([]);
   const [insightSource, setInsightSource] = useState<InsightSource>('rule');
   const [insightLoading, setInsightLoading] = useState(false);
+  // insightLoading とは独立した state。fetchInsights の .finally() に上書きされない。
+  const [aiBgRunning, setAiBgRunning]     = useState(false);
+  const [ollamaOffline, setOllamaOffline] = useState(false);
 
   // インサイトを取得 — repos が変わるたびに再計算 (branchesByRepo は Overview では省略)
   useEffect(() => {
-    if (repos.length === 0) { setInsights([]); return; }
+    if (repos.length === 0) { setInsights([]); setOllamaOffline(false); return; }
     setInsightLoading(true);
     fetchInsights(repos, {}, 14)
-      .then(({ insights: ins, source }) => {
+      .then(({ insights: ins, source, ollamaOffline: offline }) => {
         setInsights(ins);
         setInsightSource(source);
+        setOllamaOffline(offline);
       })
       .finally(() => setInsightLoading(false));
   }, [repos]);
 
   // バックグラウンド refresh 完了イベントを受けてインサイトを差し替える (P3-04)
   useEffect(() => {
-    const promise = listen<AiInsight[]>('ai_insights_updated', (ev) => {
+    const unlistenUpdated = listen<AiInsight[]>('ai_insights_updated', (ev) => {
       setInsights(convertAiInsights(ev.payload));
       setInsightSource('ai');
+      setAiBgRunning(false);
     });
-    return () => { promise.then((f) => f()); };
+    // キャッシュミス時のバックグラウンド開始通知 → "Analyzing..." を表示する
+    const unlistenLoading = listen<void>('ai_insights_loading', () => {
+      setAiBgRunning(true);
+    });
+    // AI 生成失敗時はルール結果を維持したまま loading を解除する。
+    const unlistenFailed = listen<void>('ai_insights_failed', () => {
+      setAiBgRunning(false);
+    });
+    return () => {
+      unlistenUpdated.then((f) => f());
+      unlistenLoading.then((f) => f());
+      unlistenFailed.then((f) => f());
+    };
   }, []);
 
   const repo = selectedRepo;
@@ -172,13 +189,13 @@ export default function Overview() {
         </div>
 
         {/* Recommended Actions パネル (P3-07) */}
-        {(insightLoading || insights.length > 0) && (
+        {(insightLoading || aiBgRunning || ollamaOffline || insights.length > 0) && (
           <div style={{ marginTop: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.1em' }}>
                 RECOMMENDED ACTIONS
               </span>
-              {!insightLoading && (
+              {!(insightLoading || aiBgRunning) && !ollamaOffline && (
                 <span style={{
                   fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 600,
                   background: insightSource === 'ai' ? 'var(--indigo-bg2)' : 'var(--bg3)',
@@ -187,11 +204,24 @@ export default function Overview() {
                   {insightSource === 'ai' ? '✦ AI' : 'Rules'}
                 </span>
               )}
+              {ollamaOffline && (
+                <span style={{
+                  fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 600,
+                  background: 'var(--amber-bg, rgba(245,158,11,.15))',
+                  color: 'var(--amber)',
+                }}>
+                  ⚠ Ollama offline
+                </span>
+              )}
             </div>
-            {insightLoading ? (
+            {(insightLoading || aiBgRunning) ? (
               <div style={{ fontSize: 11, color: 'var(--text3)' }}>Analyzing…</div>
-            ) : (
+            ) : insights.length > 0 ? (
               insights.slice(0, 5).map((ins, i) => <InsightCard key={i} insight={ins} />)
+            ) : (
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                {ollamaOffline ? 'Ollama が起動していないため AI 分析を実行できません。' : 'All repositories are healthy.'}
+              </div>
             )}
           </div>
         )}

@@ -155,7 +155,20 @@ async fn fetch_from_ollama(repos: &[RepoInfo]) -> Result<Vec<AiInsight>, String>
         return Err("AI Insight は設定で無効化されています".to_string());
     }
 
-    let state_json = build_state_summary(repos);
+    // クリーンな repo を除外してプロンプトサイズとレイテンシを削減する。
+    // behind/ahead/modified/untracked/stash が全て 0 の repo は AI が分析する情報がない。
+    let interesting: Vec<&RepoInfo> = repos
+        .iter()
+        .filter(|r| r.behind > 0 || r.ahead > 0 || r.modified_count > 0 || r.untracked_count > 0 || r.stash_count > 0)
+        .collect();
+
+    if interesting.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // プロンプトサイズの上限として最大 10 repos に絞る。
+    let interesting_owned: Vec<RepoInfo> = interesting.into_iter().take(10).cloned().collect();
+    let state_json = build_state_summary(&interesting_owned);
     let prompt = build_prompt(&state_json);
     let url = ollama_url(&ai.ollama_url, GENERATE_PATH);
 
@@ -225,7 +238,11 @@ pub async fn get_ai_insights(repos: Vec<RepoInfo>) -> Result<Vec<AiInsight>, Str
 /// - Cache hit, TTL 経過    → stale を即返却し、バックグラウンド refresh を spawn
 ///                           (in-flight dedupe: 既に refresh 中なら追加 spawn しない)
 ///                           完了後: cache 更新 → emit("ai_insights_updated")
-/// - Cache miss            → 同期フェッチ → cache 保存 → 返却
+/// - Cache miss            → `[]` を即返却し、バックグラウンド spawn で生成
+///                           開始時: emit("ai_insights_loading")
+///                           成功時: cache 保存 → emit("ai_insights_updated")
+///                           失敗時: cache entry 削除 → emit("ai_insights_failed")
+///                           フロントは失敗時にルールベース結果を維持する
 #[tauri::command]
 pub async fn get_ai_insights_cached(
     repos: Vec<RepoInfo>,
@@ -292,20 +309,50 @@ pub async fn get_ai_insights_cached(
         return Ok(stale);
     }
 
-    // Cache miss: 同期フェッチ → 保存 → 返却。
-    let insights = fetch_from_ollama(&repos).await?;
+    // Cache miss: 同期フェッチをせずバックグラウンドで生成し、完了後に emit する。
+    // これにより UI スレッドをブロックせず、Ollama の応答速度に関わらず即座に返る。
     {
         let mut entries = cache.entries.lock().map_err(|e| e.to_string())?;
         entries.insert(
             key,
             CacheEntry {
-                insights: insights.clone(),
+                insights: vec![],
                 updated_at: Instant::now(),
-                refresh_in_progress: false,
+                refresh_in_progress: true,
             },
         );
     }
-    Ok(insights)
+    let repos_bg = repos.clone();
+    let app_bg = app.clone();
+    // バックグラウンド処理開始をフロントに通知して "Analyzing..." を表示させる。
+    let _ = app.emit("ai_insights_loading", ());
+    tokio::spawn(async move {
+        let cache_bg = app_bg.state::<AiCacheState>();
+        match fetch_from_ollama(&repos_bg).await {
+            Ok(fresh) => {
+                if let Ok(mut entries) = cache_bg.entries.lock() {
+                    entries.insert(
+                        key,
+                        CacheEntry {
+                            insights: fresh.clone(),
+                            updated_at: Instant::now(),
+                            refresh_in_progress: false,
+                        },
+                    );
+                }
+                let _ = app_bg.emit("ai_insights_updated", &fresh);
+            }
+            Err(_) => {
+                if let Ok(mut entries) = cache_bg.entries.lock() {
+                    entries.remove(&key);
+                }
+                // 失敗時は ai_insights_failed を emit してフロントのルール表示を維持させる。
+                // ai_insights_updated [] を使うとフロントが空結果で上書きしてしまうため区別する。
+                let _ = app_bg.emit("ai_insights_failed", ());
+            }
+        }
+    });
+    Ok(vec![])
 }
 
 /// 指定した Ollama URL に接続できるかテストする（未保存フォーム値の確認用）。

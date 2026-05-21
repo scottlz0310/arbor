@@ -13,6 +13,7 @@ export type InsightSource = 'ai' | 'rule';
 export interface InsightResult {
   insights: Insight[];
   source: InsightSource;
+  ollamaOffline: boolean;
 }
 
 // priority 0-3 → Insight['priority'] のマッピング
@@ -43,18 +44,22 @@ export async function fetchInsights(
   branchesByRepo: Record<string, BranchInfo[]>,
   staleDays: number,
 ): Promise<InsightResult> {
-  const ruleResult = (): InsightResult => ({
+  const ruleResult = (ollamaOffline = false): InsightResult => ({
     insights: generateInsights(repos, branchesByRepo, staleDays),
     source: 'rule',
+    ollamaOffline,
   });
 
   try {
     const available = await ollamaAvailable();
-    if (!available) return ruleResult();
+    if (!available) return ruleResult(true);
 
     const raw = await getAiInsightsCached(repos);
-    return { insights: convertAiInsights(raw), source: 'ai' };
+    // raw=[] はキャッシュミス（バックグラウンド生成中）か全リポジトリがクリーンな場合。
+    // どちらもルール結果を返す。AI が成功すれば ai_insights_updated イベントで上書きされる。
+    if (raw.length === 0) return ruleResult(false);
+    return { insights: convertAiInsights(raw), source: 'ai', ollamaOffline: false };
   } catch {
-    return ruleResult();
+    return ruleResult(false);
   }
 }
