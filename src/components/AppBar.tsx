@@ -57,7 +57,8 @@ export function AppBtn({ variant = 'default', children, style, ...rest }: AppBtn
         borderRadius: 'var(--r)',
         background: 'none',
         color,
-        cursor: 'pointer',
+        cursor: rest.disabled ? 'not-allowed' : 'pointer',
+        opacity: rest.disabled ? 0.4 : 1,
         whiteSpace: 'nowrap',
         ...style,
       }}

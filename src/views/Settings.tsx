@@ -3,7 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, scanMissingRepositories, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
@@ -20,6 +21,13 @@ export default function Settings() {
   const [scanResults, setScanResults] = useState<string[] | null>(null);
   const [scanSelected, setScanSelected] = useState<Set<string>>(new Set());
   const [scanning, setScanning] = useState(false);
+
+  // 削除済みリポジトリ検出
+  const [missingRepos, setMissingRepos] = useState<RepoConfig[]>([]);
+  const [missingSelected, setMissingSelected] = useState<Set<string>>(new Set());
+  const [missingPanelOpen, setMissingPanelOpen] = useState(false);
+  const [confirmDeregister, setConfirmDeregister] = useState(false);
+  const [deregistering, setDeregistering] = useState(false);
 
   // AI 設定フォームのローカルステート
   const [aiForm, setAiForm] = useState({
@@ -50,6 +58,9 @@ export default function Settings() {
     hasGithubPat()
       .then((v) => { if (!cancelled) setPatStored(v); })
       .catch(() => { if (!cancelled) setPatStored(false); });
+    scanMissingRepositories()
+      .then((missing) => { if (!cancelled) setMissingRepos(missing); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -78,6 +89,8 @@ export default function Settings() {
       // 既登録パスを除外する
       const registered = new Set(config?.repositories.map((r) => r.path) ?? []);
       const newPaths = found.filter((p) => !registered.has(p));
+      // Scan Folder 後は新規 repo 件数に関わらず必ず missing repo を再確認する
+      scanMissingRepositories().then(setMissingRepos).catch(() => {});
       if (newPaths.length === 0) {
         addToast('新しいリポジトリは見つかりませんでした', 'success');
         return;
@@ -216,11 +229,37 @@ export default function Settings() {
     try {
       const updated = await removeRepository(path);
       setConfig(updated);
+      setMissingRepos((prev) => prev.filter((r) => r.path !== path));
       await loadRepos();
       addToast('Repository removed', 'success');
     } catch (e) {
       addToast(String(e), 'error');
     }
+  };
+
+  const handleBulkDeregister = async () => {
+    if (deregistering) return;
+    setDeregistering(true);
+    const paths = [...missingSelected];
+    const removedPaths = new Set<string>();
+    let lastConfig: AppConfig | null = null;
+    for (const path of paths) {
+      try {
+        lastConfig = await removeRepository(path);
+        removedPaths.add(path);
+      } catch (e) {
+        addToast(String(e), 'error');
+      }
+    }
+    if (lastConfig) setConfig(lastConfig);
+    // 成功した path のみ missingRepos から除外する（失敗分は残す）
+    setMissingRepos((prev) => prev.filter((r) => !removedPaths.has(r.path)));
+    setMissingSelected(new Set());
+    setMissingPanelOpen(false);
+    setConfirmDeregister(false);
+    setDeregistering(false);
+    await loadRepos();
+    if (removedPaths.size > 0) addToast(`${removedPaths.size} 件のリポジトリを登録解除しました`, 'success');
   };
 
   const aiDirty = config !== null && (
@@ -353,6 +392,103 @@ export default function Settings() {
             </AppBtn>
             <AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>
           </div>
+
+          {/* 削除済みリポジトリ検出バナー (#117) */}
+          {missingRepos.length > 0 && (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setMissingPanelOpen((v) => !v)}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setMissingPanelOpen((v) => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 14px',
+                background: 'var(--amber-bg)',
+                border: '1px solid #fbbf2425',
+                borderRadius: 'var(--r)',
+                marginBottom: 10,
+                cursor: 'pointer',
+              }}
+            >
+              <span style={{ fontSize: 12, color: 'var(--amber)', flex: 1 }}>
+                ⚠ {missingRepos.length} 件の無効なリポジトリを検出
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                {missingPanelOpen ? '▲' : '▼'}
+              </span>
+            </div>
+          )}
+
+          {/* 削除済みリポジトリ選択パネル */}
+          {missingPanelOpen && missingRepos.length > 0 && (
+            <div style={{
+              background: 'var(--bg3)',
+              border: '1px solid var(--border2)',
+              borderRadius: 'var(--r2)',
+              padding: '14px 16px',
+              marginBottom: 12,
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)', marginBottom: 4 }}>
+                ディスク上に存在しないリポジトリ
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 10 }}>
+                config から削除するリポジトリを選択してください。ディスク上のファイルは削除されません。
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
+                <button
+                  style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  onClick={() => setMissingSelected(new Set(missingRepos.map((r) => r.path)))}
+                >
+                  全選択
+                </button>
+                <button
+                  style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  onClick={() => setMissingSelected(new Set())}
+                >
+                  全解除
+                </button>
+              </div>
+              <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 10 }}>
+                {missingRepos.map((r) => {
+                  const checked = missingSelected.has(r.path);
+                  return (
+                    <label
+                      key={r.path}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px', cursor: 'pointer', fontSize: 12 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setMissingSelected((prev) => {
+                            const next = new Set(prev);
+                            checked ? next.delete(r.path) : next.add(r.path);
+                            return next;
+                          });
+                        }}
+                      />
+                      <span style={{ color: 'var(--text1)', fontWeight: 600 }}>{r.name}</span>
+                      <span style={{ flex: 1, minWidth: 0, color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.path}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <AppBtn onClick={() => { setMissingPanelOpen(false); setMissingSelected(new Set()); }}>
+                  Close
+                </AppBtn>
+                <AppBtn
+                  variant="danger"
+                  onClick={() => setConfirmDeregister(true)}
+                  disabled={missingSelected.size === 0}
+                >
+                  {missingSelected.size} 件を登録解除
+                </AppBtn>
+              </div>
+            </div>
+          )}
 
           {/* スキャン結果確認 UI (#43) */}
           {scanResults && (
@@ -526,6 +662,16 @@ export default function Settings() {
         </section>
 
       </div>
+
+      {confirmDeregister && (
+        <ConfirmDialog
+          title="リポジトリの登録解除"
+          message={`以下の ${missingSelected.size} 件のリポジトリを config から削除します。\nディスク上のファイルは削除されません。\n\n${[...missingSelected].map((p) => missingRepos.find((r) => r.path === p)?.name ?? p).join('\n')}`}
+          confirmLabel={deregistering ? '削除中…' : '登録解除'}
+          onConfirm={handleBulkDeregister}
+          onCancel={() => setConfirmDeregister(false)}
+        />
+      )}
     </div>
   );
 }

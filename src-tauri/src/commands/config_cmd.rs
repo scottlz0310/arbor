@@ -373,7 +373,22 @@ pub fn delete_github_pat() -> Result<(), String> {
     Ok(())
 }
 
-// ─── scan_directory ───────────────────────────────────────────────────────────
+// ─── scan_directory / scan_missing_repositories ──────────────────────────────
+
+/// Filters `repos` to those whose path does not exist on disk.
+fn filter_missing_repos(repos: Vec<RepoConfig>) -> Vec<RepoConfig> {
+    repos
+        .into_iter()
+        .filter(|r| !std::path::Path::new(&r.path).exists())
+        .collect()
+}
+
+/// Returns repositories registered in config whose path no longer exists on disk.
+#[tauri::command]
+pub fn scan_missing_repositories() -> Result<Vec<RepoConfig>, String> {
+    let config = load_config()?;
+    Ok(filter_missing_repos(config.repositories))
+}
 
 #[tauri::command]
 pub fn scan_directory(root: String) -> Result<Vec<String>, String> {
@@ -474,7 +489,8 @@ pub fn update_ai_config(
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_from_git, parse_github_url};
+    use super::{detect_from_git, filter_missing_repos, parse_github_url};
+    use crate::config::RepoConfig;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -639,5 +655,39 @@ mod tests {
         assert_ne!(encrypted, PAT, "encrypted blob should differ from plaintext");
         let decrypted = super::pat_decrypt(&encrypted).expect("DPAPI decrypt");
         assert_eq!(decrypted, PAT, "decrypted value should match original");
+    }
+
+    fn make_repo(path: &str) -> RepoConfig {
+        RepoConfig { path: path.into(), name: path.split('/').last().unwrap_or(path).into(), github_owner: None, github_repo: None }
+    }
+
+    #[test]
+    fn filter_missing_repos_returns_only_nonexistent_paths() {
+        let existing = TempDir::new("filter-existing");
+        let repos = vec![
+            make_repo(existing.path_str()),
+            make_repo("/nonexistent/__arbor_test_missing__"),
+        ];
+        let missing = filter_missing_repos(repos);
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].name, "__arbor_test_missing__");
+    }
+
+    #[test]
+    fn filter_missing_repos_empty_when_all_exist() {
+        let existing = TempDir::new("filter-all-exist");
+        let repos = vec![make_repo(existing.path_str())];
+        let missing = filter_missing_repos(repos);
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn filter_missing_repos_all_missing() {
+        let repos = vec![
+            make_repo("/nonexistent/__arbor_a__"),
+            make_repo("/nonexistent/__arbor_b__"),
+        ];
+        let missing = filter_missing_repos(repos);
+        assert_eq!(missing.len(), 2);
     }
 }

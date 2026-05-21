@@ -18,6 +18,7 @@ import type {
   FetchResult,
   Issue,
   PullRequest,
+  RepoConfig,
   RepoInfo,
 } from '../types';
 
@@ -47,6 +48,9 @@ export const detectGithubRemote = (path: string) =>
 
 export const scanDirectory = (root: string) =>
   tauriInvoke<string[]>('scan_directory', { root });
+
+export const scanMissingRepositories = () =>
+  tauriInvoke<RepoConfig[]>('scan_missing_repositories');
 
 export const updateSettings = (args: {
   staleThresholdDays?: number;
