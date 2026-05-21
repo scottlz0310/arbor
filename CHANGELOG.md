@@ -18,6 +18,10 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `Overview`: `aiBgRunning` state を追加し `insightLoading` との競合を解消
     - `ai_insights_loading` → `aiBgRunning = true`
     - `ai_insights_updated` → `aiBgRunning = false`
+  - Ollama 未起動時に `⚠ Ollama offline` バッジとメッセージを表示 (P3-05 UX 改善)
+    - `InsightResult` に `ollamaOffline: boolean` を追加
+    - Ollama 到達不能時は `ruleResult(true)` でフラグを立てる
+    - Overview: `ollamaOffline` state を追加しパネル常時表示 + バッジ・メッセージ表示
 
 ### feat (追加予定)
 
