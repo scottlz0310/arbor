@@ -5,6 +5,17 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ## [Unreleased]
 
+### feat (追加予定)
+
+- **AI Insight フェーズバッジ＆ローディングアニメーション** (#121)
+  - ルール計算中: `⟳ Rules…`（スピンアニメーション）
+  - AI 分析中: `✦ AI 分析中…`（パルスアニメーション）
+  - AI 失敗: `✗ AI 失敗`（アンバーバッジ）— 従来はサイレントだった
+  - Ollama オフライン: `⚠ Offline`（アンバーバッジ）
+  - 完了: `✦ AI` or `Rules`（静的バッジ）
+  - 健全状態の空メッセージを `✓ すべてのリポジトリは健全です`（緑）に変更
+  - `global.css` に `arbor-spin` / `arbor-pulse` キーフレームを追加
+
 ### fix (修正予定)
 
 - **AI Insight — バックグラウンド非同期化 & タイムアウト修正**
