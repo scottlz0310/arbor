@@ -373,7 +373,19 @@ pub fn delete_github_pat() -> Result<(), String> {
     Ok(())
 }
 
-// ─── scan_directory ───────────────────────────────────────────────────────────
+// ─── scan_directory / scan_missing_repositories ──────────────────────────────
+
+/// Returns repositories registered in config whose path no longer exists on disk.
+#[tauri::command]
+pub fn scan_missing_repositories() -> Result<Vec<RepoConfig>, String> {
+    let config = load_config()?;
+    let missing = config
+        .repositories
+        .into_iter()
+        .filter(|r| !std::path::Path::new(&r.path).exists())
+        .collect();
+    Ok(missing)
+}
 
 #[tauri::command]
 pub fn scan_directory(root: String) -> Result<Vec<String>, String> {

@@ -29,6 +29,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ### feat (追加予定)
 
+- **削除済みリポジトリの一括登録解除 UI** ([#117](https://github.com/scottlz0310/arbor/issues/117)) (P4-12)
+  - `scan_missing_repositories` Rust コマンドを追加 — config 登録済みパスを走査し存在しないものを返す
+  - Settings 画面の REPOSITORIES セクションに警告バナーを追加 — 起動時 / Scan Folder 後に自動検出
+  - バナークリックで選択パネルを展開 — チェックボックスで個別選択、全選択 / 全解除ボタン
+  - 「N件を登録解除」ボタン → ConfirmDialog 確認後に一括 `remove_repository` → サイドバー即反映
+  - ディスク上のファイルは削除しない（config からの除外のみ）
+
 - **Phase 3 — AI 設定 UI** ([#101](https://github.com/scottlz0310/arbor/issues/101))
   - Settings 画面の AI Engine セクションを編集可能フォームに刷新 (P3-09)
     - provider / model / Ollama URL / timeout_secs を個別に編集・保存可能

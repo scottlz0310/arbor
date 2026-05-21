@@ -176,7 +176,7 @@
 - [ ] P4-10: アクセシビリティ確認 (キーボードナビゲーション / フォーカス管理)
 - [ ] P4-11: `PullRequest` モデルに `head_sha` を追加し、CI check-runs のキーと API ref を SHA ベースに統一
        (現在は `pr.number` をキャッシュキーに使用。fork PR で同名ブランチが重複する場合の完全な解決策として Phase 4 で対応)
-- [ ] P4-12: 削除済みリポジトリの一括登録解除 UI ([#117](https://github.com/scottlz0310/arbor/issues/117))
+- [x] P4-12: 削除済みリポジトリの一括登録解除 UI ([#117](https://github.com/scottlz0310/arbor/issues/117))
        - `scan_missing_repositories` コマンド追加（`Path::exists()` で存在チェック）
        - Settings に「N件の無効なリポジトリ」バナー + チェックボックス一覧ダイアログ
        - ConfirmDialog 必須。config 削除のみ、ディスク削除なし
