@@ -37,7 +37,13 @@ export default function Overview() {
 
   // インサイトを取得 — repos が変わるたびに再計算 (branchesByRepo は Overview では省略)
   useEffect(() => {
-    if (repos.length === 0) { setInsights([]); setOllamaOffline(false); return; }
+    if (repos.length === 0) {
+      setInsights([]);
+      setOllamaOffline(false);
+      setAiBgRunning(false);
+      setAiFailed(false);
+      return;
+    }
     setInsightLoading(true);
     setAiFailed(false);
     fetchInsights(repos, {}, 14)
@@ -55,10 +61,12 @@ export default function Overview() {
       setInsights(convertAiInsights(ev.payload));
       setInsightSource('ai');
       setAiBgRunning(false);
+      setAiFailed(false);
     });
-    // キャッシュミス時のバックグラウンド開始通知 → "Analyzing..." を表示する
+    // キャッシュミス時のバックグラウンド開始通知 → 再試行中なので失敗フラグもリセット
     const unlistenLoading = listen<void>('ai_insights_loading', () => {
       setAiBgRunning(true);
+      setAiFailed(false);
     });
     // AI 生成失敗時はルール結果を維持したまま loading を解除し失敗フラグを立てる。
     const unlistenFailed = listen<void>('ai_insights_failed', () => {
