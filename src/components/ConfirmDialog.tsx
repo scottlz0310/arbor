@@ -19,11 +19,16 @@ export default function ConfirmDialog({
 }: ConfirmDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const onCancelRef = useRef(onCancel);
+
+  // 最新の onCancel を ref に同期（deps なし → 毎レンダー後に実行）
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  });
 
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
 
-    // マウント時に最初のフォーカス可能要素（Cancel）へフォーカス
     const getFocusable = () =>
       Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(
@@ -34,7 +39,7 @@ export default function ConfirmDialog({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onCancel();
+        onCancelRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -58,10 +63,11 @@ export default function ConfirmDialog({
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      // アンマウント時に呼び出し元へフォーカスを復帰
+      // アンマウント時のみ呼び出し元へフォーカスを復帰
       previousFocus?.focus();
     };
-  }, [onCancel]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
