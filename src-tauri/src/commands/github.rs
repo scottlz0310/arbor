@@ -146,6 +146,7 @@ struct RawUser {
 struct RawRef {
     #[serde(rename = "ref")]
     ref_name: String,
+    sha: String,
 }
 
 /// Returns pull requests for the given repository (all pages).
@@ -176,6 +177,7 @@ pub async fn get_pull_requests(
             draft: r.draft,
             merged_at: r.merged_at,
             head_ref: r.head.ref_name,
+            head_sha: r.head.sha,
             base_ref: r.base.ref_name,
         })
         .collect())
@@ -399,5 +401,27 @@ mod tests {
             r#"<https://api.github.com/repos/o/r/pulls?page=1>; rel="last""#,
         );
         assert!(parse_next_link(&headers).is_none());
+    }
+
+    /// GitHub PR API レスポンスから head.sha が正しくデシリアライズされることを検証する。
+    #[test]
+    fn raw_pull_request_deserializes_head_sha() {
+        let json = r#"{
+            "number": 42,
+            "title": "feat: add thing",
+            "state": "open",
+            "html_url": "https://github.com/o/r/pull/42",
+            "user": { "login": "alice" },
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-02T00:00:00Z",
+            "draft": false,
+            "merged_at": null,
+            "head": { "ref": "feat/thing", "sha": "abc1234def5678" },
+            "base": { "ref": "main", "sha": "deadbeef" }
+        }"#;
+        let pr: RawPullRequest = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(pr.head.sha, "abc1234def5678");
+        assert_eq!(pr.head.ref_name, "feat/thing");
+        assert_eq!(pr.base.ref_name, "main");
     }
 }

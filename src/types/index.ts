@@ -104,6 +104,8 @@ export interface PullRequest {
   merged_at: string | null;
   /** Source branch name */
   head_ref: string;
+  /** HEAD commit SHA of the source branch */
+  head_sha: string;
   /** Target branch name */
   base_ref: string;
 }

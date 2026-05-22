@@ -96,6 +96,8 @@ pub struct PullRequest {
     pub merged_at: Option<String>,
     /// Source branch name.
     pub head_ref: String,
+    /// HEAD commit SHA of the source branch.
+    pub head_sha: String,
     /// Target branch name.
     pub base_ref: String,
 }

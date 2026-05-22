@@ -14,6 +14,14 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `uiStore` に `commandPaletteOpen` / `openCommandPalette` / `closeCommandPalette` を追加
   - フロントエンドテスト 16 件追加
 
+- **CI check-runs を head_sha ベースに統一** (P4-11)
+  - `PullRequest` モデル（Rust / TS）に `head_sha` フィールドを追加
+  - `RawRef` に `sha` を追加し GitHub API レスポンスから取得
+  - check-runs の queryKey / queryFn / checkMap を `head_sha` ベースに変更
+  - fork PR で同名ブランチが重複するケースの誤った CI ドット表示を解消
+  - force-push 後にキャッシュが自動無効化されるようになった
+  - Rust ユニットテスト 1 件 + フロントエンドテスト 2 件追加
+
 - **dsx バージョン管理 UI** (P4-04)
   - Settings の dsx CLI セクションに「バージョン確認」ボタンを追加
   - クリックで GitHub Releases API から最新タグを取得し現行バージョンと比較
