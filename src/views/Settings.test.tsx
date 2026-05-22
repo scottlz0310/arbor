@@ -93,8 +93,8 @@ describe('Settings — dsx CLI section', () => {
 
   it('dsx が利用可能な場合に Update ボタンを表示する', async () => {
     renderSettings();
-    await screen.findByRole('button', { name: 'Update' });
-    expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Sys Update' });
+    expect(screen.getByRole('button', { name: 'Sys Update' })).toBeInTheDocument();
   });
 
   it('dsx が利用不可の場合に Update ボタンを表示しない', async () => {
@@ -102,20 +102,38 @@ describe('Settings — dsx CLI section', () => {
     renderSettings();
     // インストール案内テキストが出るまで待つ
     await screen.findByText(/dsx が見つかりません/);
-    expect(screen.queryByRole('button', { name: 'Update' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sys Update' })).not.toBeInTheDocument();
   });
 
-  it('Update ボタンをクリックすると sysUpdate が呼ばれる', async () => {
+  it('Update ボタンをクリックすると確認ダイアログが表示される', async () => {
     renderSettings();
-    const btn = await screen.findByRole('button', { name: 'Update' });
+    const btn = await screen.findByRole('button', { name: 'Sys Update' });
     await userEvent.click(btn);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(mockSysUpdate).not.toHaveBeenCalled();
+  });
+
+  it('確認ダイアログで「実行」をクリックすると sysUpdate が呼ばれる', async () => {
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'Sys Update' });
+    await userEvent.click(btn);
+    await userEvent.click(screen.getByRole('button', { name: '実行' }));
     expect(mockSysUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('確認ダイアログでキャンセルすると sysUpdate が呼ばれない', async () => {
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'Sys Update' });
+    await userEvent.click(btn);
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(mockSysUpdate).not.toHaveBeenCalled();
   });
 
   it('sysUpdate 完了後に dsxCheck を再呼び出しする', async () => {
     renderSettings();
-    const btn = await screen.findByRole('button', { name: 'Update' });
+    const btn = await screen.findByRole('button', { name: 'Sys Update' });
     await userEvent.click(btn);
+    await userEvent.click(screen.getByRole('button', { name: '実行' }));
     await waitFor(() => {
       // 初回 mount + update 後の再チェックで計 2 回呼ばれる
       expect(mockDsxCheck).toHaveBeenCalledTimes(2);
@@ -125,8 +143,9 @@ describe('Settings — dsx CLI section', () => {
   it('sysUpdate が失敗した場合にエラートーストを表示する', async () => {
     mockSysUpdate.mockRejectedValue(new Error('network error') as never);
     renderSettings(true);
-    const btn = await screen.findByRole('button', { name: 'Update' });
+    const btn = await screen.findByRole('button', { name: 'Sys Update' });
     await userEvent.click(btn);
+    await userEvent.click(screen.getByRole('button', { name: '実行' }));
     // Toast に error メッセージが表示される（String(Error) → "Error: network error"）
     await screen.findByText('Error: network error');
   });

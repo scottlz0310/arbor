@@ -18,6 +18,7 @@ export default function Settings() {
   const [patInput, setPatInput]   = useState('');
   const [patLoading, setPatLoading] = useState(false);
   const [sysUpdating, setSysUpdating] = useState(false);
+  const [showSysUpdateConfirm, setShowSysUpdateConfirm] = useState(false);
   const [dsxUpdateState, setDsxUpdateState] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
   const [latestDsxVersion, setLatestDsxVersion] = useState<string | null>(null);
   const [scanResults, setScanResults] = useState<string[] | null>(null);
@@ -326,10 +327,11 @@ export default function Settings() {
                     {dsxUpdateState === 'checking' ? '確認中…' : 'バージョン確認'}
                   </AppBtn>
                   <AppBtn
-                    onClick={handleSysUpdate}
+                    onClick={() => setShowSysUpdateConfirm(true)}
                     disabled={sysUpdating}
+                    title="dsx sys update — dsx が管理するツール群を一括更新"
                   >
-                    {sysUpdating ? 'Updating…' : 'Update'}
+                    {sysUpdating ? 'Updating…' : 'Sys Update'}
                   </AppBtn>
                 </div>
                 {dsxUpdateState === 'done' && (
@@ -694,6 +696,16 @@ export default function Settings() {
         </section>
 
       </div>
+
+      {showSysUpdateConfirm && (
+        <ConfirmDialog
+          title="dsx sys update — システム全体の更新"
+          message={'dsx が管理するすべてのツールを最新版に更新します（dsx CLI 自体の更新ではありません）。\n完了まで数分かかることがあります。'}
+          confirmLabel="実行"
+          onConfirm={() => { setShowSysUpdateConfirm(false); handleSysUpdate(); }}
+          onCancel={() => setShowSysUpdateConfirm(false)}
+        />
+      )}
 
       {confirmDeregister && (
         <ConfirmDialog

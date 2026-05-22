@@ -34,6 +34,11 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `dsx_latest_version` Rust コマンド追加（reqwest, 8s タイムアウト、エラー時は null）
   - フロントエンドテスト 5 件追加
 
+- **dsx sys update に確認ダイアログを追加** (P4-04 追加修正)
+  - Settings の「Update」ボタンクリック時に ConfirmDialog を表示し、誤実行を防止
+  - `dsx sys update --no-tui`（重い処理）を確認後のみ実行するよう変更
+  - Settings テスト 2 件追加（ダイアログ表示確認・キャンセル確認）
+
 - **アクセシビリティ改善** (P4-10)
   - `ConfirmDialog`: `role="dialog"` / `aria-modal="true"` / `aria-labelledby` 追加、フォーカストラップ、Escape キー対応、マウント時自動フォーカス、アンマウント時フォーカス復帰
   - `Sidebar`: リポジトリ一覧に `role="region"` + `aria-label="リポジトリ一覧"`、リポジトリボタンに `aria-pressed`、nav に `aria-label="ナビゲーション"`、nav ボタンに `aria-current="page"` と `aria-label` 追加
