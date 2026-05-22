@@ -147,6 +147,16 @@ pub async fn sys_update(app: AppHandle) -> Result<DsxOutput, String> {
     run_dsx_with_events(&app, ".", &["sys", "update", "--no-tui"]).await
 }
 
+// ─── dsx_self_update ──────────────────────────────────────────────────────────
+
+/// Runs `dsx self-update` to upgrade the dsx CLI binary itself.
+///
+/// Progress lines are streamed via `dsx_progress` events.
+#[tauri::command]
+pub async fn dsx_self_update(app: AppHandle) -> Result<DsxOutput, String> {
+    run_dsx_with_events(&app, ".", &["self-update"]).await
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Runs a dsx command, streaming stdout lines as `dsx_progress` events to the
@@ -293,6 +303,19 @@ mod tests {
         let path = which_dsx();
         assert!(path.is_some(), "which_dsx should return a path");
         assert!(!path.unwrap().is_empty());
+    }
+
+    /// dsx が利用可能な場合に `self-update` サブコマンドが認識されることを確認する。
+    /// `--help` を渡すことで実際の更新は行わず、サブコマンドの存在とヘルプ出力のみ検証する。
+    #[test]
+    fn dsx_self_update_subcommand_is_recognized() {
+        if !dsx_check().available {
+            return;
+        }
+        let result = run_dsx_sync(".", &["self-update", "--help"]);
+        let output = result.expect("dsx self-update --help should not error");
+        let has_output = !output.stdout.is_empty() || !output.stderr.is_empty();
+        assert!(has_output, "dsx self-update --help should produce some output");
     }
 
     /// `env_inject` に渡すコマンド文字列が空白で正しく分割されることを確認する。

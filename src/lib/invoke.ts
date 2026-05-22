@@ -144,6 +144,9 @@ export const envInject = (repoPath: string, cmd: string) =>
 export const sysUpdate = () =>
   tauriInvoke<DsxOutput>('sys_update');
 
+export const dsxSelfUpdate = () =>
+  tauriInvoke<DsxOutput>('dsx_self_update');
+
 // ─── AI / Ollama ─────────────────────────────────────────────────────────────
 
 /** Returns true if Ollama is running and reachable. Never throws; returns false on failure. */

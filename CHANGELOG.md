@@ -34,6 +34,18 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `dsx_latest_version` Rust コマンド追加（reqwest, 8s タイムアウト、エラー時は null）
   - フロントエンドテスト 5 件追加
 
+- **dsx Self Update ボタン追加・Sys Update に確認ダイアログ** (P4-04 追加修正)
+  - バージョン確認で新版が見つかった場合に「Self Update」ボタンを表示し、ConfirmDialog 経由で `dsx self-update` を実行可能に
+  - `dsx_self_update` Tauri コマンド追加（`dsx self-update` を実行）
+  - 既存「Update」ボタンを「Sys Update」に改名 + tooltip 追加（dsx 管理ツール一括更新であることを明示）
+  - 「Sys Update」クリック時に ConfirmDialog を追加し誤実行を防止
+  - Settings テスト 5 件追加
+
+- **アクセシビリティ改善** (P4-10)
+  - `ConfirmDialog`: `role="dialog"` / `aria-modal="true"` / `aria-labelledby` 追加、フォーカストラップ、Escape キー対応、マウント時自動フォーカス、アンマウント時フォーカス復帰
+  - `Sidebar`: リポジトリ一覧に `role="region"` + `aria-label="リポジトリ一覧"`、リポジトリボタンに `aria-pressed`、nav に `aria-label="ナビゲーション"`、nav ボタンに `aria-current="page"` と `aria-label` 追加
+  - フロントエンドテスト 14 件追加（ConfirmDialog a11y 7件、Sidebar a11y 7件）
+
 - **Stash Manager** (P4-02/03) (#103)
   - `list_stashes` / `apply_stash` / `drop_stash` Rust コマンドを追加（git2 直接実装）
   - `StashInfo` 型を `models.rs` / `types/index.ts` に追加
