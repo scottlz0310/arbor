@@ -2,6 +2,7 @@ interface ConfirmDialogProps {
   title: string;
   message: string;
   confirmLabel?: string;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -10,6 +11,7 @@ export default function ConfirmDialog({
   title,
   message,
   confirmLabel = 'Confirm',
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -45,10 +47,13 @@ export default function ConfirmDialog({
           </button>
           <button
             onClick={onConfirm}
+            disabled={confirmDisabled}
             style={{
               padding: '6px 14px', fontSize: 12,
               background: 'var(--red-bg)', border: '1px solid #f8717140',
-              borderRadius: 'var(--r)', color: 'var(--red)', cursor: 'pointer',
+              borderRadius: 'var(--r)', color: 'var(--red)',
+              cursor: confirmDisabled ? 'not-allowed' : 'pointer',
+              opacity: confirmDisabled ? 0.5 : 1,
             }}
           >
             {confirmLabel}

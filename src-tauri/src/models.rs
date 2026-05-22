@@ -135,6 +135,17 @@ pub struct AiInsight {
     pub priority: u8,
 }
 
+/// A single git stash entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StashInfo {
+    /// Zero-based stash index (stash@{index}).
+    pub index: usize,
+    /// Stash reflog message (e.g. "WIP on main: abc1234 message").
+    pub message: String,
+    /// Full commit OID of the stash entry.
+    pub commit_id: String,
+}
+
 /// A single check run result for a commit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckRun {

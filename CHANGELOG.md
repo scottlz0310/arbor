@@ -5,6 +5,19 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ## [Unreleased]
 
+### feat — Phase 4
+
+- **Stash Manager** (P4-02/03) (#103)
+  - `list_stashes` / `apply_stash` / `drop_stash` Rust コマンドを追加（git2 直接実装）
+  - `StashInfo` 型を `models.rs` / `types/index.ts` に追加
+  - `src/views/Stash.tsx` — stash 一覧テーブル + Apply / Drop 操作
+  - Drop は `ConfirmDialog` 必須。操作後に `stash_count` バッジを更新
+  - Drop の in-flight guard（`dropping` state）で二重実行・別 stash 誤削除を防止
+  - Apply 中は全ボタンを disabled（`applyingIndex` state）
+  - `useEffect` に cancelled flag を追加し repo 切り替え race を解消
+  - `ConfirmDialog` に `confirmDisabled` prop を追加
+  - Rust ユニットテスト 4 件 + フロントエンドテスト 10 件追加
+
 ### chore
 
 - アプリアイコンをカスタムデザインに差し替え（全サイズ再生成） (#124)

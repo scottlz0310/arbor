@@ -20,6 +20,7 @@ import type {
   PullRequest,
   RepoConfig,
   RepoInfo,
+  StashInfo,
 } from '../types';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -84,6 +85,15 @@ export const fetchAll = (repoPath: string) =>
 
 export const getCommitGraph = (repoPath: string, limit?: number) =>
   tauriInvoke<CommitNode[]>('get_commit_graph', { repoPath, limit });
+
+export const listStashes = (repoPath: string) =>
+  tauriInvoke<StashInfo[]>('list_stashes', { repoPath });
+
+export const applyStash = (repoPath: string, index: number) =>
+  tauriInvoke<void>('apply_stash', { repoPath, index });
+
+export const dropStash = (repoPath: string, index: number) =>
+  tauriInvoke<void>('drop_stash', { repoPath, index });
 
 // ─── GitHub PAT ──────────────────────────────────────────────────────────────
 
