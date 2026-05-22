@@ -168,6 +168,24 @@ describe('Settings — dsx CLI section', () => {
     await userEvent.click(btn);
     await screen.findByText(/取得できませんでした/);
   });
+
+  it('v0.2.10 は v0.2.9 より新しいので「最新版です」を表示する', async () => {
+    mockDsxCheck.mockResolvedValue({ available: true, version: 'v0.2.10', path: '/usr/local/bin/dsx' } as never);
+    mockDsxLatestVersion.mockResolvedValue('v0.2.9' as never);
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
+    await userEvent.click(btn);
+    await screen.findByText(/最新版です/);
+  });
+
+  it('v0.2.5 は v0.2.50 より古いので「利用可能」を表示する', async () => {
+    mockDsxCheck.mockResolvedValue({ available: true, version: 'v0.2.5', path: '/usr/local/bin/dsx' } as never);
+    mockDsxLatestVersion.mockResolvedValue('v0.2.50' as never);
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
+    await userEvent.click(btn);
+    await screen.findByText(/v0\.2\.50 が利用可能/);
+  });
 });
 
 describe('Settings — GitHub PAT section', () => {

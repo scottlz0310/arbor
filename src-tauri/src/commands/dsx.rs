@@ -67,6 +67,10 @@ pub async fn dsx_latest_version() -> Option<String> {
         return None;
     }
     let json: serde_json::Value = resp.json().await.ok()?;
+    extract_tag_name(&json)
+}
+
+fn extract_tag_name(json: &serde_json::Value) -> Option<String> {
     json["tag_name"].as_str().map(|s| s.to_string())
 }
 
@@ -222,6 +226,27 @@ fn run_dsx_sync(cwd: &str, args: &[&str]) -> Result<DsxOutput, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `extract_tag_name` が "tag_name" フィールドを正しく取り出すことを検証する。
+    #[test]
+    fn extract_tag_name_returns_tag() {
+        let json = serde_json::json!({ "tag_name": "v0.3.0", "other": "ignored" });
+        assert_eq!(super::extract_tag_name(&json), Some("v0.3.0".to_string()));
+    }
+
+    /// "tag_name" フィールドがない場合は None を返すことを検証する。
+    #[test]
+    fn extract_tag_name_missing_field_returns_none() {
+        let json = serde_json::json!({ "name": "release" });
+        assert_eq!(super::extract_tag_name(&json), None);
+    }
+
+    /// "tag_name" が null の場合は None を返すことを検証する。
+    #[test]
+    fn extract_tag_name_null_field_returns_none() {
+        let json = serde_json::json!({ "tag_name": null });
+        assert_eq!(super::extract_tag_name(&json), None);
+    }
 
     /// `available` と `version` の整合性を検証する。
     /// `path` は `which`/`where` の挙動に依存するため検証しない。

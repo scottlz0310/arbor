@@ -181,9 +181,11 @@ export default function Settings() {
     try {
       await sysUpdate();
       addToast('dsx sys update 完了', 'success');
-      // バージョンを再取得して表示を更新する
+      // バージョンを再取得して表示を更新し、古い確認結果をリセットする
       const status = await dsxCheck();
       setDsxStatus(status);
+      setDsxUpdateState('idle');
+      setLatestDsxVersion(null);
     } catch (e) {
       addToast(String(e), 'error');
     } finally {
@@ -799,19 +801,42 @@ function RepoCard({
   );
 }
 
+// "dsx v0.2.10" や "v0.3.0" から [major, minor, patch] を抽出する。
+// 解析できない場合は null を返す。
+function parseSemverLike(value: string): [number, number, number] | null {
+  const m = value.match(/v?(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+// a >= b なら正数または 0、a < b なら負数、比較不能なら null を返す。
+export function compareSemverLike(a: string, b: string): number | null {
+  const av = parseSemverLike(a);
+  const bv = parseSemverLike(b);
+  if (!av || !bv) return null;
+  for (let i = 0; i < 3; i++) {
+    if (av[i] !== bv[i]) return av[i] - bv[i];
+  }
+  return 0;
+}
+
 function DsxUpdateResult({ current, latest }: { current: string; latest: string | null }) {
   if (!latest) {
     return (
       <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-        リリース情報が見つかりませんでした
+        取得できませんでした。ネットワークまたは GitHub API を確認してください。
       </div>
     );
   }
-  // latest は "v0.3.0" 形式。current は "dsx v0.2.5" 等の可能性があるため
-  // 末尾の数字部分で比較する。
-  const latestNum = latest.replace(/^v/, '');
-  const isUpToDate = current.includes(latestNum);
-  return isUpToDate ? (
+  const cmp = compareSemverLike(current, latest);
+  if (cmp === null) {
+    return (
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+        バージョンを比較できませんでした（current: {current}, latest: {latest}）
+      </div>
+    );
+  }
+  return cmp >= 0 ? (
     <div style={{ fontSize: 11, color: 'var(--green)' }}>
       ✓ 最新版です（{latest}）
     </div>
