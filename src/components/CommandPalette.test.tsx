@@ -9,6 +9,8 @@ import * as invoke from '../lib/invoke';
 
 const mockNavigate            = vi.fn();
 const mockSelectRepo          = vi.fn();
+const mockRefreshRepo         = vi.fn();
+const mockLoadRepos           = vi.fn();
 const mockCloseCommandPalette = vi.fn();
 const mockAddToast            = vi.fn();
 const mockFetchAll            = vi.spyOn(invoke, 'fetchAll');
@@ -28,8 +30,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFetchAll.mockResolvedValue({ updated_refs: [] });
   mockRepoUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 });
+  mockRefreshRepo.mockResolvedValue(undefined);
+  mockLoadRepos.mockResolvedValue(undefined);
   act(() => {
-    useRepoStore.setState({ repos: [], selectedRepo: null, selectRepo: mockSelectRepo });
+    useRepoStore.setState({
+      repos: [], selectedRepo: null,
+      selectRepo: mockSelectRepo, refreshRepo: mockRefreshRepo, loadRepos: mockLoadRepos,
+    });
     useUiStore.setState({
       navigate: mockNavigate,
       closeCommandPalette: mockCloseCommandPalette,
@@ -200,18 +207,20 @@ describe('CommandPalette — アクションコマンド', () => {
     expect(screen.getByText('dsx Update: my-repo')).toBeTruthy();
   });
 
-  it('Fetch コマンドクリックで fetchAll が呼ばれる', async () => {
+  it('Fetch コマンドクリックで fetchAll と refreshRepo が呼ばれる', async () => {
     renderPalette();
     await userEvent.click(screen.getByText('Fetch: my-repo'));
     expect(mockCloseCommandPalette).toHaveBeenCalled();
     expect(mockFetchAll).toHaveBeenCalledWith('/repo/a');
+    expect(mockRefreshRepo).toHaveBeenCalledWith('/repo/a');
   });
 
-  it('dsx Update コマンドクリックで repoUpdate が呼ばれる', async () => {
+  it('dsx Update コマンドクリックで repoUpdate と loadRepos が呼ばれる', async () => {
     renderPalette();
     await userEvent.click(screen.getByText('dsx Update: my-repo'));
     expect(mockCloseCommandPalette).toHaveBeenCalled();
     expect(mockRepoUpdate).toHaveBeenCalledWith('/repo/a');
+    expect(mockLoadRepos).toHaveBeenCalled();
   });
 
   it('selectedRepo がないとき Fetch/Update コマンドは表示されない', () => {

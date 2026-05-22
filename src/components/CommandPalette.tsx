@@ -23,7 +23,7 @@ const VIEW_COMMANDS: { id: ViewId; icon: string; label: string }[] = [
 ];
 
 export default function CommandPalette() {
-  const { repos, selectedRepo, selectRepo } = useRepoStore();
+  const { repos, selectedRepo, selectRepo, refreshRepo, loadRepos } = useRepoStore();
   const { navigate, closeCommandPalette, addToast } = useUiStore();
 
   const [query, setQuery] = useState('');
@@ -54,7 +54,10 @@ export default function CommandPalette() {
         action: () => {
           closeCommandPalette();
           fetchAll(selectedRepo.path)
-            .then(() => addToast(`${selectedRepo.name}: fetch 完了`, 'success'))
+            .then(() => {
+              addToast(`${selectedRepo.name}: fetch 完了`, 'success');
+              refreshRepo(selectedRepo.path);
+            })
             .catch((e) => addToast(String(e), 'error'));
         },
       },
@@ -66,7 +69,10 @@ export default function CommandPalette() {
         action: () => {
           closeCommandPalette();
           repoUpdate(selectedRepo.path)
-            .then(() => addToast(`${selectedRepo.name}: update 完了`, 'success'))
+            .then(() => {
+              addToast(`${selectedRepo.name}: update 完了`, 'success');
+              loadRepos();
+            })
             .catch((e) => addToast(String(e), 'error'));
         },
       },
