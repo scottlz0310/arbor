@@ -26,6 +26,9 @@ src-tauri/gen/
 .playwright-mcp/
 *.png
 
+# Claude Code
+.claude/
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
