@@ -42,22 +42,22 @@ export default function PullRequests() {
     refetchInterval: STALE_MS,
   });
 
-  // CI status for each open PR — keyed by PR number to avoid cache collisions
-  // (e.g. forks with identically-named branches). head_ref is used as the API ref.
+  // CI status for each open PR — keyed by head_sha to avoid collisions when
+  // fork PRs share the same branch name. Cache also auto-invalidates on force-push.
   const checkResults = useQueries({
     queries: prs.map((pr) => ({
-      queryKey: ['checks', owner, repo, pr.number],
-      queryFn: () => getCheckRuns(owner!, repo!, pr.head_ref),
+      queryKey: ['checks', owner, repo, pr.head_sha],
+      queryFn: () => getCheckRuns(owner!, repo!, pr.head_sha),
       enabled: apiEnabled && tab === 'prs',
       staleTime: STALE_MS,
       refetchInterval: STALE_MS,
     })),
   });
 
-  const checkMap = new Map<number, CiStatus>();
+  const checkMap = new Map<string, CiStatus>();
   prs.forEach((pr, i) => {
     const runs: CheckRun[] = checkResults[i]?.data ?? [];
-    checkMap.set(pr.number, deriveCheckStatus(runs));
+    checkMap.set(pr.head_sha, deriveCheckStatus(runs));
   });
 
   // ─── Guards ────────────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ function PrTable({
   checkMap,
 }: {
   prs: PullRequest[];
-  checkMap: Map<number, CiStatus>;
+  checkMap: Map<string, CiStatus>;
 }) {
   if (prs.length === 0) {
     return (
@@ -227,7 +227,7 @@ function PrTable({
           <PrRow
             key={pr.number}
             pr={pr}
-            ciStatus={checkMap.get(pr.number) ?? null}
+            ciStatus={checkMap.get(pr.head_sha) ?? null}
           />
         ))}
       </tbody>
