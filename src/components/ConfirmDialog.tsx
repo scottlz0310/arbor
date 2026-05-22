@@ -19,6 +19,7 @@ export default function ConfirmDialog({
 }: ConfirmDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const messageId = useId();
   const onCancelRef = useRef(onCancel);
 
   // 最新の onCancel を ref に同期（deps なし → 毎レンダー後に実行）
@@ -83,6 +84,7 @@ export default function ConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={messageId}
         style={{
           background: 'var(--bg2)',
           border: '1px solid var(--border2)',
@@ -93,7 +95,7 @@ export default function ConfirmDialog({
         }}
       >
         <h2 id={titleId} style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{title}</h2>
-        <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.65, marginBottom: 20, whiteSpace: 'pre-wrap' }}>
+        <p id={messageId} style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.65, marginBottom: 20, whiteSpace: 'pre-wrap' }}>
           {message}
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>

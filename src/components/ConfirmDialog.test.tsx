@@ -69,6 +69,15 @@ describe('ConfirmDialog — アクセシビリティ', () => {
     expect(titleEl?.textContent).toBe('Test Title');
   });
 
+  it('aria-describedby がメッセージ要素を参照している', () => {
+    renderDialog({ message: 'Test message body' });
+    const dialog = screen.getByRole('dialog');
+    const descId = dialog.getAttribute('aria-describedby');
+    expect(descId).toBeTruthy();
+    const msgEl = document.getElementById(descId!);
+    expect(msgEl?.textContent).toBe('Test message body');
+  });
+
   it('マウント時に最初のボタン（Cancel）へフォーカスが当たる', () => {
     renderDialog();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
