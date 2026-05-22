@@ -172,12 +172,33 @@ describe('Settings — dsx CLI section', () => {
     await screen.findByText(/最新版です/);
   });
 
-  it('新バージョンがあるとき「利用可能」を表示する', async () => {
+  it('新バージョンがあるとき「利用可能」と「Self Update」ボタンを表示する', async () => {
     mockDsxLatestVersion.mockResolvedValue('v0.9.9' as never);
     renderSettings();
     const btn = await screen.findByRole('button', { name: 'バージョン確認' });
     await userEvent.click(btn);
     await screen.findByText(/v0\.9\.9 が利用可能/);
+    expect(screen.getByRole('button', { name: 'Self Update' })).toBeInTheDocument();
+  });
+
+  it('「Self Update」クリックで確認ダイアログが表示される', async () => {
+    const mockDsxSelfUpdate = vi.spyOn(invoke, 'dsxSelfUpdate').mockResolvedValue({} as never);
+    mockDsxLatestVersion.mockResolvedValue('v0.9.9' as never);
+    renderSettings();
+    await userEvent.click(await screen.findByRole('button', { name: 'バージョン確認' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Self Update' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(mockDsxSelfUpdate).not.toHaveBeenCalled();
+  });
+
+  it('「Self Update」確認後に dsxSelfUpdate が呼ばれる', async () => {
+    const mockDsxSelfUpdate = vi.spyOn(invoke, 'dsxSelfUpdate').mockResolvedValue({} as never);
+    mockDsxLatestVersion.mockResolvedValue('v0.9.9' as never);
+    renderSettings();
+    await userEvent.click(await screen.findByRole('button', { name: 'バージョン確認' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Self Update' }));
+    await userEvent.click(screen.getByRole('button', { name: '実行' }));
+    expect(mockDsxSelfUpdate).toHaveBeenCalledTimes(1);
   });
 
   it('取得失敗のとき「取得できませんでした」を表示する', async () => {

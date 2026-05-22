@@ -34,10 +34,12 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `dsx_latest_version` Rust コマンド追加（reqwest, 8s タイムアウト、エラー時は null）
   - フロントエンドテスト 5 件追加
 
-- **dsx sys update に確認ダイアログを追加** (P4-04 追加修正)
-  - Settings の「Update」ボタンクリック時に ConfirmDialog を表示し、誤実行を防止
-  - `dsx sys update --no-tui`（重い処理）を確認後のみ実行するよう変更
-  - Settings テスト 2 件追加（ダイアログ表示確認・キャンセル確認）
+- **dsx Self Update ボタン追加・Sys Update に確認ダイアログ** (P4-04 追加修正)
+  - バージョン確認で新版が見つかった場合に「Self Update」ボタンを表示し、ConfirmDialog 経由で `dsx self-update` を実行可能に
+  - `dsx_self_update` Tauri コマンド追加（`dsx self-update` を実行）
+  - 既存「Update」ボタンを「Sys Update」に改名 + tooltip 追加（dsx 管理ツール一括更新であることを明示）
+  - 「Sys Update」クリック時に ConfirmDialog を追加し誤実行を防止
+  - Settings テスト 5 件追加
 
 - **アクセシビリティ改善** (P4-10)
   - `ConfirmDialog`: `role="dialog"` / `aria-modal="true"` / `aria-labelledby` 追加、フォーカストラップ、Escape キー対応、マウント時自動フォーカス、アンマウント時フォーカス復帰

@@ -147,6 +147,16 @@ pub async fn sys_update(app: AppHandle) -> Result<DsxOutput, String> {
     run_dsx_with_events(&app, ".", &["sys", "update", "--no-tui"]).await
 }
 
+// ─── dsx_self_update ──────────────────────────────────────────────────────────
+
+/// Runs `dsx self-update` to upgrade the dsx CLI binary itself.
+///
+/// Progress lines are streamed via `dsx_progress` events.
+#[tauri::command]
+pub async fn dsx_self_update(app: AppHandle) -> Result<DsxOutput, String> {
+    run_dsx_with_events(&app, ".", &["self-update"]).await
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Runs a dsx command, streaming stdout lines as `dsx_progress` events to the

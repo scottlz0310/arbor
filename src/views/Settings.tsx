@@ -4,7 +4,7 @@ import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, scanMissingRepositories, dsxCheck, dsxLatestVersion, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, scanMissingRepositories, dsxCheck, dsxLatestVersion, dsxSelfUpdate, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
@@ -19,6 +19,8 @@ export default function Settings() {
   const [patLoading, setPatLoading] = useState(false);
   const [sysUpdating, setSysUpdating] = useState(false);
   const [showSysUpdateConfirm, setShowSysUpdateConfirm] = useState(false);
+  const [selfUpdating, setSelfUpdating] = useState(false);
+  const [showSelfUpdateConfirm, setShowSelfUpdateConfirm] = useState(false);
   const [dsxUpdateState, setDsxUpdateState] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
   const [latestDsxVersion, setLatestDsxVersion] = useState<string | null>(null);
   const [scanResults, setScanResults] = useState<string[] | null>(null);
@@ -195,6 +197,24 @@ export default function Settings() {
     }
   };
 
+  const handleDsxSelfUpdate = async () => {
+    setSelfUpdating(true);
+    setDsxRunning(true);
+    try {
+      await dsxSelfUpdate();
+      addToast('dsx self-update 完了', 'success');
+      const status = await dsxCheck();
+      setDsxStatus(status);
+      setDsxUpdateState('idle');
+      setLatestDsxVersion(null);
+    } catch (e) {
+      addToast(String(e), 'error');
+    } finally {
+      setSelfUpdating(false);
+      setDsxRunning(false);
+    }
+  };
+
   const handleSaveAiConfig = async () => {
     const timeoutNum = parseInt(aiForm.timeoutSecs, 10);
     if (isNaN(timeoutNum) || timeoutNum < 1 || timeoutNum > 300) {
@@ -335,7 +355,12 @@ export default function Settings() {
                   </AppBtn>
                 </div>
                 {dsxUpdateState === 'done' && (
-                  <DsxUpdateResult current={dsxStatus.version ?? ''} latest={latestDsxVersion} />
+                  <DsxUpdateResult
+                    current={dsxStatus.version ?? ''}
+                    latest={latestDsxVersion}
+                    selfUpdating={selfUpdating}
+                    onSelfUpdate={() => setShowSelfUpdateConfirm(true)}
+                  />
                 )}
                 {dsxUpdateState === 'error' && (
                   <div style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -697,6 +722,16 @@ export default function Settings() {
 
       </div>
 
+      {showSelfUpdateConfirm && (
+        <ConfirmDialog
+          title="dsx self-update を実行しますか？"
+          message={'dsx CLI 自体を最新版に更新します。\n完了まで少し時間がかかることがあります。'}
+          confirmLabel="実行"
+          onConfirm={() => { setShowSelfUpdateConfirm(false); handleDsxSelfUpdate(); }}
+          onCancel={() => setShowSelfUpdateConfirm(false)}
+        />
+      )}
+
       {showSysUpdateConfirm && (
         <ConfirmDialog
           title="dsx sys update — システム全体の更新"
@@ -832,7 +867,17 @@ export function compareSemverLike(a: string, b: string): number | null {
   return 0;
 }
 
-function DsxUpdateResult({ current, latest }: { current: string; latest: string | null }) {
+function DsxUpdateResult({
+  current,
+  latest,
+  selfUpdating,
+  onSelfUpdate,
+}: {
+  current: string;
+  latest: string | null;
+  selfUpdating: boolean;
+  onSelfUpdate: () => void;
+}) {
   if (!latest) {
     return (
       <div style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -853,11 +898,13 @@ function DsxUpdateResult({ current, latest }: { current: string; latest: string 
       ✓ 最新版です（{latest}）
     </div>
   ) : (
-    <div style={{ fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
-      ↑ {latest} が利用可能です。以下のコマンドで更新してください:<br />
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--indigo-l)' }}>
-        go install github.com/scottlz0310/dsx@latest
-      </span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+        ↑ {latest} が利用可能です
+      </div>
+      <AppBtn onClick={onSelfUpdate} disabled={selfUpdating}>
+        {selfUpdating ? 'Updating…' : 'Self Update'}
+      </AppBtn>
     </div>
   );
 }
