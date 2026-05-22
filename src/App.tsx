@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
+import CommandPalette from './components/CommandPalette';
 import Overview from './views/Overview';
 import Branches from './views/Branches';
 import Graph from './views/Graph';
@@ -16,13 +17,12 @@ import { dsxCheck } from './lib/invoke';
 
 export default function App() {
   const { loadRepos } = useRepoStore();
-  const { activeView, navigate, appendDsxLine, addToast } = useUiStore();
+  const { activeView, navigate, appendDsxLine, addToast, commandPaletteOpen, openCommandPalette, closeCommandPalette } = useUiStore();
 
+  // 起動時の初期化（一度だけ実行）
   useEffect(() => {
     loadRepos();
 
-    // StrictMode では mount→unmount→mount と2回走るため、
-    // unmount 後の Promise 完了は無視するようにクリーンアップフラグで制御する。
     let cancelled = false;
 
     dsxCheck().then((status) => {
@@ -37,7 +37,6 @@ export default function App() {
       addToast('dsx CLI の確認に失敗しました。Settings を確認してください。', 'error');
     });
 
-    // dsx 進捗イベントを購読する。
     const unlisten = listen<string>('dsx_progress', (e) => {
       appendDsxLine(e.payload);
     });
@@ -47,6 +46,18 @@ export default function App() {
       unlisten.then((fn) => fn());
     };
   }, []);
+
+  // Ctrl/Cmd+K でコマンドパレットを開閉する
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        commandPaletteOpen ? closeCommandPalette() : openCommandPalette();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [commandPaletteOpen, openCommandPalette, closeCommandPalette]);
 
   // リポジトリが未登録なら Settings へ遷移する。
   const { repos } = useRepoStore();
@@ -83,6 +94,7 @@ export default function App() {
         )}
       </main>
       <ToastContainer />
+      {commandPaletteOpen && <CommandPalette />}
     </div>
   );
 }

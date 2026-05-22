@@ -6,6 +6,7 @@ interface UiStore {
   toasts: Toast[];
   dsxProgress: string[];
   dsxRunning: boolean;
+  commandPaletteOpen: boolean;
 
   navigate: (view: ViewId) => void;
   addToast: (message: string, kind?: Toast['kind']) => void;
@@ -13,6 +14,8 @@ interface UiStore {
   appendDsxLine: (line: string) => void;
   clearDsxProgress: () => void;
   setDsxRunning: (v: boolean) => void;
+  openCommandPalette: () => void;
+  closeCommandPalette: () => void;
 }
 
 let toastSeq = 0;
@@ -22,6 +25,7 @@ export const useUiStore = create<UiStore>((set) => ({
   toasts: [],
   dsxProgress: [],
   dsxRunning: false,
+  commandPaletteOpen: false,
 
   navigate: (view) => set({ activeView: view }),
 
@@ -43,4 +47,7 @@ export const useUiStore = create<UiStore>((set) => ({
   clearDsxProgress: () => set({ dsxProgress: [] }),
 
   setDsxRunning: (v) => set({ dsxRunning: v }),
+
+  openCommandPalette: () => set({ commandPaletteOpen: true }),
+  closeCommandPalette: () => set({ commandPaletteOpen: false }),
 }));
