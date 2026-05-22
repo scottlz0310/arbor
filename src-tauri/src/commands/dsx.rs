@@ -46,6 +46,34 @@ fn which_dsx() -> Option<String> {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
+// ─── dsx_latest_version ──────────────────────────────────────────────────────
+
+/// Queries the GitHub Releases API and returns the latest dsx tag name (e.g. "v0.3.0").
+/// Returns `None` on network error, non-2xx response, or missing field — the UI
+/// handles `null` gracefully so this command never returns `Err`.
+#[tauri::command]
+pub async fn dsx_latest_version() -> Option<String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .ok()?;
+    let resp = client
+        .get("https://api.github.com/repos/scottlz0310/dsx/releases/latest")
+        .header("User-Agent", "arbor-app/1.0")
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let json: serde_json::Value = resp.json().await.ok()?;
+    extract_tag_name(&json)
+}
+
+fn extract_tag_name(json: &serde_json::Value) -> Option<String> {
+    json["tag_name"].as_str().map(|s| s.to_string())
+}
+
 // ─── repo_update ─────────────────────────────────────────────────────────────
 
 /// Runs `dsx repo update --no-tui -j 4` in the given repository directory.
@@ -198,6 +226,27 @@ fn run_dsx_sync(cwd: &str, args: &[&str]) -> Result<DsxOutput, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `extract_tag_name` が "tag_name" フィールドを正しく取り出すことを検証する。
+    #[test]
+    fn extract_tag_name_returns_tag() {
+        let json = serde_json::json!({ "tag_name": "v0.3.0", "other": "ignored" });
+        assert_eq!(super::extract_tag_name(&json), Some("v0.3.0".to_string()));
+    }
+
+    /// "tag_name" フィールドがない場合は None を返すことを検証する。
+    #[test]
+    fn extract_tag_name_missing_field_returns_none() {
+        let json = serde_json::json!({ "name": "release" });
+        assert_eq!(super::extract_tag_name(&json), None);
+    }
+
+    /// "tag_name" が null の場合は None を返すことを検証する。
+    #[test]
+    fn extract_tag_name_null_field_returns_none() {
+        let json = serde_json::json!({ "tag_name": null });
+        assert_eq!(super::extract_tag_name(&json), None);
+    }
 
     /// `available` と `version` の整合性を検証する。
     /// `path` は `which`/`where` の挙動に依存するため検証しない。

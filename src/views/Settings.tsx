@@ -4,7 +4,7 @@ import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, scanMissingRepositories, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, scanMissingRepositories, dsxCheck, dsxLatestVersion, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
@@ -18,6 +18,8 @@ export default function Settings() {
   const [patInput, setPatInput]   = useState('');
   const [patLoading, setPatLoading] = useState(false);
   const [sysUpdating, setSysUpdating] = useState(false);
+  const [dsxUpdateState, setDsxUpdateState] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
+  const [latestDsxVersion, setLatestDsxVersion] = useState<string | null>(null);
   const [scanResults, setScanResults] = useState<string[] | null>(null);
   const [scanSelected, setScanSelected] = useState<Set<string>>(new Set());
   const [scanning, setScanning] = useState(false);
@@ -161,15 +163,29 @@ export default function Settings() {
     }
   };
 
+  const handleCheckDsxUpdate = async () => {
+    setDsxUpdateState('checking');
+    setLatestDsxVersion(null);
+    try {
+      const latest = await dsxLatestVersion();
+      setLatestDsxVersion(latest);
+      setDsxUpdateState('done');
+    } catch {
+      setDsxUpdateState('error');
+    }
+  };
+
   const handleSysUpdate = async () => {
     setSysUpdating(true);
     setDsxRunning(true);
     try {
       await sysUpdate();
       addToast('dsx sys update 完了', 'success');
-      // バージョンを再取得して表示を更新する
+      // バージョンを再取得して表示を更新し、古い確認結果をリセットする
       const status = await dsxCheck();
       setDsxStatus(status);
+      setDsxUpdateState('idle');
+      setLatestDsxVersion(null);
     } catch (e) {
       addToast(String(e), 'error');
     } finally {
@@ -295,19 +311,35 @@ export default function Settings() {
           <SectionTitle>dsx CLI</SectionTitle>
           {dsxStatus ? (
             dsxStatus.available ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontSize: 12, color: 'var(--green)', flex: 1 }}>
-                  ✓ dsx {dsxStatus.version} &nbsp;·&nbsp;
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
-                    {dsxStatus.path}
-                  </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ fontSize: 12, color: 'var(--green)', flex: 1 }}>
+                    ✓ dsx {dsxStatus.version} &nbsp;·&nbsp;
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
+                      {dsxStatus.path}
+                    </span>
+                  </div>
+                  <AppBtn
+                    onClick={handleCheckDsxUpdate}
+                    disabled={dsxUpdateState === 'checking'}
+                  >
+                    {dsxUpdateState === 'checking' ? '確認中…' : 'バージョン確認'}
+                  </AppBtn>
+                  <AppBtn
+                    onClick={handleSysUpdate}
+                    disabled={sysUpdating}
+                  >
+                    {sysUpdating ? 'Updating…' : 'Update'}
+                  </AppBtn>
                 </div>
-                <AppBtn
-                  onClick={handleSysUpdate}
-                  disabled={sysUpdating}
-                >
-                  {sysUpdating ? 'Updating…' : 'Update'}
-                </AppBtn>
+                {dsxUpdateState === 'done' && (
+                  <DsxUpdateResult current={dsxStatus.version ?? ''} latest={latestDsxVersion} />
+                )}
+                {dsxUpdateState === 'error' && (
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    バージョン情報を取得できませんでした
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{
@@ -765,6 +797,55 @@ function RepoCard({
           owner と repo は両方設定するか、両方空にしてください
         </div>
       )}
+    </div>
+  );
+}
+
+// "dsx v0.2.10" や "v0.3.0" から [major, minor, patch] を抽出する。
+// 解析できない場合は null を返す。
+function parseSemverLike(value: string): [number, number, number] | null {
+  const m = value.match(/v?(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+// a >= b なら正数または 0、a < b なら負数、比較不能なら null を返す。
+export function compareSemverLike(a: string, b: string): number | null {
+  const av = parseSemverLike(a);
+  const bv = parseSemverLike(b);
+  if (!av || !bv) return null;
+  for (let i = 0; i < 3; i++) {
+    if (av[i] !== bv[i]) return av[i] - bv[i];
+  }
+  return 0;
+}
+
+function DsxUpdateResult({ current, latest }: { current: string; latest: string | null }) {
+  if (!latest) {
+    return (
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+        取得できませんでした。ネットワークまたは GitHub API を確認してください。
+      </div>
+    );
+  }
+  const cmp = compareSemverLike(current, latest);
+  if (cmp === null) {
+    return (
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+        バージョンを比較できませんでした（current: {current}, latest: {latest}）
+      </div>
+    );
+  }
+  return cmp >= 0 ? (
+    <div style={{ fontSize: 11, color: 'var(--green)' }}>
+      ✓ 最新版です（{latest}）
+    </div>
+  ) : (
+    <div style={{ fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
+      ↑ {latest} が利用可能です。以下のコマンドで更新してください:<br />
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--indigo-l)' }}>
+        go install github.com/scottlz0310/dsx@latest
+      </span>
     </div>
   );
 }

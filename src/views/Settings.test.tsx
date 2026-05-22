@@ -14,6 +14,7 @@ import { useUiStore } from '../stores/uiStore';
 
 // デフォルトの invoke モックを設定する
 const mockDsxCheck = vi.spyOn(invoke, 'dsxCheck');
+const mockDsxLatestVersion = vi.spyOn(invoke, 'dsxLatestVersion');
 const mockGetConfig = vi.spyOn(invoke, 'getConfig');
 const mockHasGithubPat = vi.spyOn(invoke, 'hasGithubPat');
 const mockSysUpdate = vi.spyOn(invoke, 'sysUpdate');
@@ -57,6 +58,7 @@ beforeEach(() => {
   mockGetConfig.mockResolvedValue(mockConfig as never);
   mockHasGithubPat.mockResolvedValue(false as never);
   mockDsxCheck.mockResolvedValue(availableDsxStatus as never);
+  mockDsxLatestVersion.mockResolvedValue(null as never);
   mockSysUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 } as never);
   mockDetectGithubRemote.mockResolvedValue([null, null] as never);
   mockUpdateRepositoryGithub.mockResolvedValue(mockConfig as never);
@@ -127,6 +129,62 @@ describe('Settings — dsx CLI section', () => {
     await userEvent.click(btn);
     // Toast に error メッセージが表示される（String(Error) → "Error: network error"）
     await screen.findByText('Error: network error');
+  });
+
+  it('「バージョン確認」ボタンが表示される', async () => {
+    renderSettings();
+    await screen.findByRole('button', { name: 'バージョン確認' });
+    expect(screen.getByRole('button', { name: 'バージョン確認' })).toBeInTheDocument();
+  });
+
+  it('「バージョン確認」クリックで dsxLatestVersion が呼ばれる', async () => {
+    mockDsxLatestVersion.mockResolvedValue('v0.2.3' as never);
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
+    await userEvent.click(btn);
+    expect(mockDsxLatestVersion).toHaveBeenCalledOnce();
+  });
+
+  it('最新版のとき「最新版です」を表示する', async () => {
+    mockDsxLatestVersion.mockResolvedValue('v0.2.3' as never);
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
+    await userEvent.click(btn);
+    await screen.findByText(/最新版です/);
+  });
+
+  it('新バージョンがあるとき「利用可能」を表示する', async () => {
+    mockDsxLatestVersion.mockResolvedValue('v0.9.9' as never);
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
+    await userEvent.click(btn);
+    await screen.findByText(/v0\.9\.9 が利用可能/);
+  });
+
+  it('取得失敗のとき「取得できませんでした」を表示する', async () => {
+    mockDsxLatestVersion.mockRejectedValue(new Error('network') as never);
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
+    await userEvent.click(btn);
+    await screen.findByText(/取得できませんでした/);
+  });
+
+  it('v0.2.10 は v0.2.9 より新しいので「最新版です」を表示する', async () => {
+    mockDsxCheck.mockResolvedValue({ available: true, version: 'v0.2.10', path: '/usr/local/bin/dsx' } as never);
+    mockDsxLatestVersion.mockResolvedValue('v0.2.9' as never);
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
+    await userEvent.click(btn);
+    await screen.findByText(/最新版です/);
+  });
+
+  it('v0.2.5 は v0.2.50 より古いので「利用可能」を表示する', async () => {
+    mockDsxCheck.mockResolvedValue({ available: true, version: 'v0.2.5', path: '/usr/local/bin/dsx' } as never);
+    mockDsxLatestVersion.mockResolvedValue('v0.2.50' as never);
+    renderSettings();
+    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
+    await userEvent.click(btn);
+    await screen.findByText(/v0\.2\.50 が利用可能/);
   });
 });
 

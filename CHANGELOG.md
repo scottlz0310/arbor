@@ -14,6 +14,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `uiStore` に `commandPaletteOpen` / `openCommandPalette` / `closeCommandPalette` を追加
   - フロントエンドテスト 16 件追加
 
+- **dsx バージョン管理 UI** (P4-04)
+  - Settings の dsx CLI セクションに「バージョン確認」ボタンを追加
+  - クリックで GitHub Releases API から最新タグを取得し現行バージョンと比較
+  - 最新版なら ✓ 表示、新バージョンがあれば `go install` コマンドを案内
+  - `dsx_latest_version` Rust コマンド追加（reqwest, 8s タイムアウト、エラー時は null）
+  - フロントエンドテスト 5 件追加
+
 - **Stash Manager** (P4-02/03) (#103)
   - `list_stashes` / `apply_stash` / `drop_stash` Rust コマンドを追加（git2 直接実装）
   - `StashInfo` 型を `models.rs` / `types/index.ts` に追加
