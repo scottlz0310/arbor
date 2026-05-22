@@ -7,6 +7,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ### feat — Phase 4
 
+- **コマンドパレット** (P4-01) (#102)
+  - `Ctrl/Cmd+K` でパレットを開閉
+  - ビュー遷移（7 件）・リポジトリ切替をインクリメンタル検索
+  - `↑↓` でナビゲーション、`Enter` で実行、`Esc` で閉じる
+  - `uiStore` に `commandPaletteOpen` / `openCommandPalette` / `closeCommandPalette` を追加
+  - フロントエンドテスト 16 件追加
+
 - **Stash Manager** (P4-02/03) (#103)
   - `list_stashes` / `apply_stash` / `drop_stash` Rust コマンドを追加（git2 直接実装）
   - `StashInfo` 型を `models.rs` / `types/index.ts` に追加
