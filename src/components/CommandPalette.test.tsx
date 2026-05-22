@@ -5,10 +5,14 @@ import { act } from 'react';
 import CommandPalette from './CommandPalette';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
+import * as invoke from '../lib/invoke';
 
-const mockNavigate       = vi.fn();
-const mockSelectRepo     = vi.fn();
+const mockNavigate            = vi.fn();
+const mockSelectRepo          = vi.fn();
 const mockCloseCommandPalette = vi.fn();
+const mockAddToast            = vi.fn();
+const mockFetchAll            = vi.spyOn(invoke, 'fetchAll');
+const mockRepoUpdate          = vi.spyOn(invoke, 'repoUpdate');
 
 function makeRepo(path: string, name: string) {
   return {
@@ -22,11 +26,14 @@ function makeRepo(path: string, name: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockFetchAll.mockResolvedValue({ updated_refs: [] });
+  mockRepoUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 });
   act(() => {
     useRepoStore.setState({ repos: [], selectedRepo: null, selectRepo: mockSelectRepo });
     useUiStore.setState({
       navigate: mockNavigate,
       closeCommandPalette: mockCloseCommandPalette,
+      addToast: mockAddToast,
       commandPaletteOpen: true,
     });
   });
@@ -166,4 +173,52 @@ describe('CommandPalette — 境界ケース', () => {
     await userEvent.keyboard('{Enter}');
     expect(mockNavigate).toHaveBeenCalledWith('cleanup');
   });
+
+  it('結果 0 件のとき ArrowDown/Enter は何もしない', async () => {
+    renderPalette();
+    await userEvent.type(screen.getByRole('combobox'), 'xyznotexist');
+    await userEvent.keyboard('{ArrowDown}{Enter}');
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockCloseCommandPalette).not.toHaveBeenCalled();
+  });
 });
+
+describe('CommandPalette — アクションコマンド', () => {
+  const repo = makeRepo('/repo/a', 'my-repo');
+
+  beforeEach(() => {
+    act(() => { useRepoStore.setState({ repos: [repo], selectedRepo: repo }); });
+  });
+
+  it('selectedRepo があるとき Fetch コマンドが表示される', () => {
+    renderPalette();
+    expect(screen.getByText('Fetch: my-repo')).toBeTruthy();
+  });
+
+  it('selectedRepo があるとき dsx Update コマンドが表示される', () => {
+    renderPalette();
+    expect(screen.getByText('dsx Update: my-repo')).toBeTruthy();
+  });
+
+  it('Fetch コマンドクリックで fetchAll が呼ばれる', async () => {
+    renderPalette();
+    await userEvent.click(screen.getByText('Fetch: my-repo'));
+    expect(mockCloseCommandPalette).toHaveBeenCalled();
+    expect(mockFetchAll).toHaveBeenCalledWith('/repo/a');
+  });
+
+  it('dsx Update コマンドクリックで repoUpdate が呼ばれる', async () => {
+    renderPalette();
+    await userEvent.click(screen.getByText('dsx Update: my-repo'));
+    expect(mockCloseCommandPalette).toHaveBeenCalled();
+    expect(mockRepoUpdate).toHaveBeenCalledWith('/repo/a');
+  });
+
+  it('selectedRepo がないとき Fetch/Update コマンドは表示されない', () => {
+    act(() => { useRepoStore.setState({ selectedRepo: null }); });
+    renderPalette();
+    expect(screen.queryByText(/Fetch:/)).toBeNull();
+    expect(screen.queryByText(/dsx Update:/)).toBeNull();
+  });
+});
+

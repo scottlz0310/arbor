@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
+import { fetchAll, repoUpdate } from '../lib/invoke';
 import type { ViewId } from '../types';
 
 interface Command {
@@ -22,8 +23,8 @@ const VIEW_COMMANDS: { id: ViewId; icon: string; label: string }[] = [
 ];
 
 export default function CommandPalette() {
-  const { repos, selectRepo } = useRepoStore();
-  const { navigate, closeCommandPalette } = useUiStore();
+  const { repos, selectedRepo, selectRepo } = useRepoStore();
+  const { navigate, closeCommandPalette, addToast } = useUiStore();
 
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -43,6 +44,33 @@ export default function CommandPalette() {
       description: 'ビュー',
       action: () => { navigate(v.id); closeCommandPalette(); },
     })),
+    // 選択リポジトリへのアクション
+    ...(selectedRepo ? [
+      {
+        id: 'action:fetch',
+        icon: '↓',
+        label: `Fetch: ${selectedRepo.name}`,
+        description: 'アクション',
+        action: () => {
+          closeCommandPalette();
+          fetchAll(selectedRepo.path)
+            .then(() => addToast(`${selectedRepo.name}: fetch 完了`, 'success'))
+            .catch((e) => addToast(String(e), 'error'));
+        },
+      },
+      {
+        id: 'action:update',
+        icon: '⟳',
+        label: `dsx Update: ${selectedRepo.name}`,
+        description: 'アクション',
+        action: () => {
+          closeCommandPalette();
+          repoUpdate(selectedRepo.path)
+            .then(() => addToast(`${selectedRepo.name}: update 完了`, 'success'))
+            .catch((e) => addToast(String(e), 'error'));
+        },
+      },
+    ] : []),
     ...repos.map((r) => ({
       id: `repo:${r.path}`,
       icon: '⬡',
@@ -72,13 +100,13 @@ export default function CommandPalette() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
+      if (filtered.length > 0) setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setActiveIndex((i) => Math.max(i - 1, 0));
+      if (filtered.length > 0) setActiveIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      filtered[activeIndex]?.action();
+      if (filtered.length > 0) filtered[activeIndex]?.action();
     } else if (e.key === 'Escape') {
       closeCommandPalette();
     }

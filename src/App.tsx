@@ -50,7 +50,9 @@ export default function App() {
   // Ctrl/Cmd+K でコマンドパレットを開閉する
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
+      // e.code は物理キーに対応するため IME / 非 QWERTY レイアウトでも動作する。
+      // フォーム入力中を含む全コンテキストで優先して開く（一般的なコマンドパレット挙動）。
+      if (e.code === 'KeyK' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         commandPaletteOpen ? closeCommandPalette() : openCommandPalette();
       }
