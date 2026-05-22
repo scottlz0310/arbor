@@ -5,91 +5,87 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ## [Unreleased]
 
-### feat (追加予定)
+### chore
 
-- **AI Insight フェーズバッジ＆ローディングアニメーション** (#121)
-  - ルール計算中: `⟳ Rules…`（スピンアニメーション）
-  - AI 分析中: `✦ AI 分析中…`（パルスアニメーション）
-  - AI 失敗: `✗ AI 失敗`（アンバーバッジ）— 従来はサイレントだった
-  - Ollama オフライン: `⚠ Offline`（アンバーバッジ）
-  - 完了: `✦ AI` or `Rules`（静的バッジ）
+- アプリアイコンをカスタムデザインに差し替え（全サイズ再生成） (#124)
+- `.gitattributes` 追加 — 改行コード LF 統一、Cargo.toml の dirty 化を解消 (#124)
+- `.gitignore` に `.claude/` を追加 (#124)
+
+---
+
+## [0.1.0-dev] — Phase 1–4 開発中
+
+### feat — Phase 4
+
+- **削除済みリポジトリの一括登録解除 UI** (P4-12) (#119)
+  - `scan_missing_repositories` Rust コマンドを追加（`Path::exists()` で存在チェック）
+  - Settings に「N件の無効なリポジトリ」バナー + チェックボックス一覧ダイアログ
+  - ConfirmDialog 必須。config 削除のみ、ディスク削除なし
+
+### feat — Phase 3 AI Insight
+
+- **AI Insight フェーズバッジ & ローディングアニメーション** (#122)
+  - ルール計算中 `⟳ Rules…`、AI 分析中 `✦ AI 分析中…`（パルスアニメーション）
+  - AI 失敗 `✗ AI 失敗`（アンバー）、Ollama オフライン `⚠ Offline`（アンバー）
   - 健全状態の空メッセージを `✓ すべてのリポジトリは健全です`（緑）に変更
-  - `global.css` に `arbor-spin` / `arbor-pulse` キーフレームを追加
+  - `arbor-spin` / `arbor-pulse` キーフレームを `global.css` に追加
 
-### fix (修正予定)
+- **AI Insight — バックグラウンド非同期化 & タイムアウト修正** (#116)
+  - cache miss 時の同期フェッチを廃止し、常にバックグラウンド spawn に変更
+  - `timeout_secs` デフォルトを 30 → 120 に変更
+  - Ollama 未起動時に `⚠ Ollama offline` バッジを表示
 
-- **AI Insight — バックグラウンド非同期化 & タイムアウト修正**
-  - `get_ai_insights_cached`: cache miss 時の同期フェッチを廃止し、常にバックグラウンド spawn に変更
-    - 起動直後に UI をブロックしない。Ollama の応答速度に依存しない設計
-    - バックグラウンド開始時に `ai_insights_loading` イベントを emit して "Analyzing..." を表示
-    - 失敗時（タイムアウト含む）に `ai_insights_failed` を emit し、フロントのルール表示を維持
-      - 成功+空結果（全リポジトリクリーン）は引き続き `ai_insights_updated []` を emit
-  - `fetch_from_ollama`: クリーンな repo（全 stat が 0）をフィルタリングしてプロンプトを削減（最大 10 件）
-    - フィルタ後が空の場合は即 `Ok([])` を返す（Ollama 不要）
-  - `AiConfig::default()`: `timeout_secs` を 30 → 120 に変更
-  - `Overview`: `aiBgRunning` state を追加し `insightLoading` との競合を解消
-    - `ai_insights_loading` → `aiBgRunning = true`
-    - `ai_insights_updated` → `aiBgRunning = false`
-  - `fetchInsights`: `getAiInsightsCached` が `[]` を返した場合（cache miss またはクリーン）にルール結果を placeholder として返す
-    - AI 成功時は `ai_insights_updated` イベントで上書き、失敗時は `ai_insights_failed` でルール維持
-    - `Overview`: `ai_insights_failed` リスナーを追加（`aiBgRunning = false` のみ、insights をクリアしない）
-  - Ollama 未起動時に `⚠ Ollama offline` バッジとメッセージを表示 (P3-05 UX 改善)
-    - `InsightResult` に `ollamaOffline: boolean` を追加
-    - Ollama 到達不能時は `ruleResult(true)` でフラグを立てる
-    - Overview: `ollamaOffline` state を追加しパネル常時表示 + バッジ・メッセージ表示
+- **AI 設定 UI** (P3-09) — Settings 画面の AI Engine セクションを編集可能フォームに刷新
+  - provider / model / Ollama URL / timeout_secs を個別編集・保存
+  - 「Test Connection」ボタンで Ollama 疎通確認
+  - `update_ai_config` Rust コマンドを追加、保存後にキャッシュを即時無効化
 
-### feat (追加予定)
+- **AI Insight UI 統合** (P3-07/08)
+  - Overview に「RECOMMENDED ACTIONS」パネルを追加
+  - Cleanup Wizard に AI 理由テキスト表示（`✦ {aiReason}`）
 
-- **削除済みリポジトリの一括登録解除 UI** ([#117](https://github.com/scottlz0310/arbor/issues/117)) (P4-12)
-  - `scan_missing_repositories` Rust コマンドを追加 — config 登録済みパスを走査し存在しないものを返す
-  - Settings 画面の REPOSITORIES セクションに警告バナーを追加 — 起動時 / Scan Folder 後に自動検出
-  - バナークリックで選択パネルを展開 — チェックボックスで個別選択、全選択 / 全解除ボタン
-  - 「N件を登録解除」ボタン → ConfirmDialog 確認後に一括 `remove_repository` → サイドバー即反映
-  - ディスク上のファイルは削除しない（config からの除外のみ）
+- **AI Insight キャッシュ & フォールバック耐障害性** (P3-04/05)
+  - `AiCacheState` による `hash(repoState)` ベースのキャッシュ
+  - stale-while-revalidate — キャッシュヒット時は即返却 + バックグラウンド再計算
+  - Ollama 不可時にルールベース Insight へフォールバック
 
-- **Phase 3 — AI 設定 UI** ([#101](https://github.com/scottlz0310/arbor/issues/101))
-  - Settings 画面の AI Engine セクションを編集可能フォームに刷新 (P3-09)
-    - provider / model / Ollama URL / timeout_secs を個別に編集・保存可能
-    - AI Insight の enabled トグル
-    - 「Test Connection」ボタンで Ollama 疎通確認 (✓/✗ インライン表示)
-    - dirty state 管理: 変更がある場合のみ「Save」が有効になる
-  - Rust: `update_ai_config` コマンドを `config_cmd.rs` に追加
-    - 全フィールドを optional に受け取り、変更分のみ `config.toml` に書き込む
-    - バリデーション: URL/model/provider 空文字 Err、timeout_secs 範囲 (1–300) Err
-    - 保存後に `AiCacheState::clear()` でキャッシュを即時無効化
-  - `AiCacheState::clear()` メソッドを `ai.rs` に追加
-
-- **Phase 3 — AI Insight UI 統合** ([#100](https://github.com/scottlz0310/arbor/issues/100))
-  - Overview に「RECOMMENDED ACTIONS」パネルを追加 (P3-07)
-    - `fetchInsights()` でルールベース / AI Insight を取得し、最大 5 件の `InsightCard` を表示
-    - `insightSource` バッジで AI / Rules を区別表示
-    - `listen('ai_insights_updated', ...)` でバックグラウンド更新をリアルタイム反映
-  - Cleanup Wizard に AI 理由テキストを表示 (P3-08)
-    - マージ済み / ステールブランチ行の下に `✦ {aiReason}` を表示
-    - `findInsightReason(branchName)` で Insight を branch 名で引き当て
-
-- **Phase 3 — AI Insight キャッシュ & フォールバック耐障害性** ([#99](https://github.com/scottlz0310/arbor/issues/99))
-  - `AiCacheState` (Tauri State) による `hash(repoState)` ベースのキャッシュ
-  - `get_ai_insights_cached` コマンド: stale-while-revalidate — キャッシュヒット時は即返却 + バックグラウンド再計算 → `emit("ai_insights_updated", ...)`
-  - `src/lib/aiService.ts` 新規作成: `fetchInsights()` でOllama不可・エラー時に `generateInsights()` へフォールバック
-  - `convertAiInsights()`: `AiInsight[]` → `Insight[]` の変換（priority 0-3 → low/medium/high）
-  - `getAiInsightsCached` を `lib/invoke.ts` に追加
-  - テスト追加: Rust 3件（hash一貫性・差分・キャッシュ読み書き）、Frontend 10件（変換・フォールバック全パス）
-
-### feat
-
-- **Phase 3 — Ollama バックエンド基盤** (`src-tauri/src/commands/ai.rs`)
-  - `ollama_available` — Ollama の起動確認 (GET /api/tags)
-  - `get_ai_insights` — リポジトリ状態から AI Insight を生成 (POST /api/generate)
-  - State Aggregator — `RepoInfo[]` から Ollama プロンプト用の構造化 JSON を生成
+- **Ollama バックエンド基盤** (P3-01/02/03/06)
+  - `ollama_available` — 起動確認 (GET /api/tags)
+  - `get_ai_insights` — リポジトリ状態から Insight 生成 (POST /api/generate)
   - `/no_think` + JSON-only プロンプトでモデル出力を安定化
-  - コードフェンスの自動除去パーサー
-  - `AiInsight` 型を `models.rs` / `types/index.ts` に追加
-  - `ollamaAvailable` / `getAiInsights` を `lib/invoke.ts` に追加
-  - 関連: [#98](https://github.com/scottlz0310/arbor/issues/98)
-- **レビュー対応** (PR #110 フィードバック)
-  - `InsightKind` enum を `models.rs` に追加し、`AiInsight.kind` の型を `String` → `InsightKind` に変更。Serde が未知の kind 文字列を即 Err にするため LLM 出力の境界を型で閉じた
-  - `parse_insights` に `priority > 3` のガード追加
-  - `ollama_available` の `load_config()` 失敗を `Ok(false)` に変更（エラー伝播しない可用性プローブに統一）
-  - `ollama_url()` ヘルパーで末尾スラッシュを正規化（`//api/generate` 防止）
-  - テスト追加: `parse_insights_invalid_kind_returns_err` / `parse_insights_priority_out_of_range_returns_err` / `ollama_url_trims_trailing_slash`
+  - `InsightKind` enum で LLM 出力の境界を型で閉じる
+
+### feat — Phase 2 GitHub 連携 & コミットグラフ
+
+- GitHub PAT を OS キーチェーン（keyring クレート）に保存 (P2-01)
+- `get_pull_requests` / `get_issues` / `get_check_runs` Rust コマンド (P2-02/03/04)
+- `PullRequests.tsx` — PR / Issue 一覧 + CI ステータスドット (P2-05)
+- TanStack Query 導入 — GitHub API キャッシュ + 5分間隔自動リフレッシュ (P2-06)
+- `get_commit_graph` — d3 向け CommitNode 配列 + lane 計算 (P2-07)
+- `Graph.tsx` — SVG コミットグラフ (d3 lane 計算 + 素 SVG 描画) (P2-08)
+- `env_inject` / `sys_update` dsx コマンドラッパー (P2-09/10)
+- PAT 未設定時の GitHub API エラーを graceful に処理 (P2-12)
+
+### feat — Phase 1 コア
+
+- Tauri v2 + React 19 + TypeScript + Vite 6 プロジェクト初期化 (P1-02)
+- git2 による `list_repositories` / `get_repo_status` / `get_branches` (P1-12/13/14)
+- `delete_branches` / `fetch_all` (P1-15/16)
+- dsx ラッパー: `repo_update` (ストリーミング) / `repo_cleanup_preview` / `repo_cleanup` (P1-17〜20)
+- Overview / Branches / Cleanup / Settings / PullRequests / Graph ビュー (P1-30〜33, P2-05/08)
+- ルールベース Insight Engine (P1-35): diverged / stale / behind / merged 検出
+- React ErrorBoundary + Toast + ConfirmDialog (P1-37/28/29)
+- `AppConfig` の TOML 読み書き、OS ごとのパス解決 (P1-09/10)
+
+### chore
+
+- Renovate による依存自動更新を設定
+- keyring v3 → keyring-core v1 移行 (#75)
+- macOS / Linux の Rust CI チェックを追加 (#77)
+- pnpm v11 へアップグレード (#85)
+
+### ci
+
+- `.github/workflows/ci.yml` — Rust (check / clippy / test + llvm-cov) + Frontend (typecheck / build / vitest) (#T-06)
+- Codecov フラグ別カバレッジ管理（frontend / rust） (#T-08)
+- lefthook pre-commit (typecheck + cargo check) / pre-push (clippy + test) (#T-07)
