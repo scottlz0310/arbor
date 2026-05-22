@@ -592,6 +592,138 @@ mod tests {
     }
 
     #[test]
+    fn repo_info_for_path_modified_count() {
+        let dir = init_repo_with_commit("init");
+        // 追跡済みファイルを変更する
+        std::fs::write(dir.path.join("README.md"), "modified content\n").expect("write");
+
+        let info = repo_info_for_path(dir.path_str()).expect("repo info");
+
+        assert_eq!(info.modified_count, 1, "modified_count should be 1 after editing a tracked file");
+        assert_eq!(info.untracked_count, 0);
+    }
+
+    #[test]
+    fn repo_info_for_path_untracked_count() {
+        let dir = init_repo_with_commit("init");
+        // 追跡されていない新規ファイルを作成する
+        std::fs::write(dir.path.join("new_file.txt"), "new\n").expect("write");
+
+        let info = repo_info_for_path(dir.path_str()).expect("repo info");
+
+        assert_eq!(info.untracked_count, 1, "untracked_count should be 1 for a new untracked file");
+        assert_eq!(info.modified_count, 0);
+    }
+
+    #[test]
+    fn repo_info_for_path_deleted_file_counts_as_modified() {
+        let dir = init_repo_with_commit("init");
+        // 追跡済みファイルを削除する (WT_DELETED は modified 扱い)
+        std::fs::remove_file(dir.path.join("README.md")).expect("remove");
+
+        let info = repo_info_for_path(dir.path_str()).expect("repo info");
+
+        assert_eq!(info.modified_count, 1, "deleted tracked file should count as modified");
+    }
+
+    #[test]
+    fn repo_info_for_path_stash_count() {
+        let dir = init_repo_with_commit("init");
+        let mut repo = git2::Repository::open(dir.path_str()).expect("open");
+        create_stash(&mut repo, "stashed work");
+        drop(repo);
+
+        let info = repo_info_for_path(dir.path_str()).expect("repo info");
+
+        assert_eq!(info.stash_count, 1, "stash_count should reflect the number of stash entries");
+        assert_eq!(info.modified_count, 0, "working tree should be clean after stash");
+    }
+
+    #[test]
+    fn repo_info_for_path_multiple_stashes() {
+        let dir = init_repo_with_commit("init");
+        let mut repo = git2::Repository::open(dir.path_str()).expect("open");
+        create_stash(&mut repo, "stash 1");
+        // stash_save を再び呼ぶため working tree を再度汚す
+        let path = repo.workdir().expect("workdir").join("README.md");
+        std::fs::write(&path, "second change\n").expect("write");
+        let sig = git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("sig");
+        repo.stash_save(&sig, "stash 2", None).expect("stash 2");
+        drop(repo);
+
+        let info = repo_info_for_path(dir.path_str()).expect("repo info");
+
+        assert_eq!(info.stash_count, 2);
+    }
+
+    #[test]
+    fn repo_info_for_path_ahead_count() {
+        // ローカルの「リモート」リポジトリを作成し、クローン後にローカルコミットを追加する
+        let source = init_repo_with_commit("origin commit");
+        let clone_dir = TempDir::new("clone-ahead");
+        let clone = git2::Repository::clone(source.path_str(), &clone_dir.path)
+            .expect("clone");
+
+        // クローン先でファイルを変更してコミットする
+        let readme = clone_dir.path.join("README.md");
+        std::fs::write(&readme, "local change\n").expect("write");
+        {
+            let sig = git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("sig");
+            let mut index = clone.index().expect("index");
+            index.add_path(std::path::Path::new("README.md")).expect("add");
+            index.write().expect("write index");
+            let tree_id = index.write_tree().expect("write tree");
+            let tree = clone.find_tree(tree_id).expect("find tree");
+            let parent = clone.head().expect("head").peel_to_commit().expect("commit");
+            clone.commit(Some("HEAD"), &sig, &sig, "local only", &tree, &[&parent])
+                .expect("commit");
+        }
+        drop(clone);
+
+        let info = repo_info_for_path(clone_dir.path_str()).expect("repo info");
+
+        assert_eq!(info.ahead, 1, "should be 1 commit ahead of origin/main");
+        assert_eq!(info.behind, 0);
+    }
+
+    #[test]
+    fn repo_info_for_path_behind_count() {
+        // ローカルの「リモート」リポジトリを作成してクローンし、
+        // クローン元にコミットを追加後 fetch してから behind を確認する
+        use git2::Repository as Repo;
+
+        let source = init_repo_with_commit("origin commit");
+        let clone_dir = TempDir::new("clone-behind");
+        git2::Repository::clone(source.path_str(), &clone_dir.path).expect("clone");
+
+        // クローン元に追加コミットを作成する
+        {
+            let source_repo = Repo::open(source.path_str()).expect("open source");
+            std::fs::write(source.path.join("README.md"), "upstream change\n").expect("write");
+            let sig = git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("sig");
+            let mut idx = source_repo.index().expect("index");
+            idx.add_path(std::path::Path::new("README.md")).expect("add");
+            idx.write().expect("write idx");
+            let tree_id = idx.write_tree().expect("write tree");
+            let tree = source_repo.find_tree(tree_id).expect("tree");
+            let parent = source_repo.head().expect("head").peel_to_commit().expect("commit");
+            source_repo.commit(Some("HEAD"), &sig, &sig, "upstream only", &tree, &[&parent])
+                .expect("commit");
+        }
+
+        // clone 側で fetch して origin/main を更新する
+        let clone_repo = Repo::open(clone_dir.path_str()).expect("open clone");
+        clone_repo.find_remote("origin").expect("remote")
+            .fetch(&["main"], None, None).expect("fetch");
+        drop(clone_repo);
+
+        let info = repo_info_for_path(clone_dir.path_str()).expect("repo info");
+
+        assert_eq!(info.behind, 1, "should be 1 commit behind origin/main");
+        assert_eq!(info.ahead, 0);
+    }
+
+    #[test]
     fn get_commit_graph_includes_summary_and_ref_name() {
         let repo = init_repo_with_commit("graph summary");
 
