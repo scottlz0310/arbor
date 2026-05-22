@@ -1,5 +1,5 @@
 use crate::config::{load_config, RepoConfig};
-use crate::models::{BranchInfo, CommitNode, DeleteResult, FetchResult, RepoInfo};
+use crate::models::{BranchInfo, CommitNode, DeleteResult, FetchResult, RepoInfo, StashInfo};
 use git2::{BranchType, Repository, StatusOptions};
 use std::collections::HashMap;
 
@@ -196,6 +196,40 @@ pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
     }
 
     Ok(FetchResult { updated_refs })
+}
+
+// ─── list_stashes ─────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn list_stashes(repo_path: String) -> Result<Vec<StashInfo>, String> {
+    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let mut stashes = Vec::new();
+    repo.stash_foreach(|index, message, oid| {
+        stashes.push(StashInfo {
+            index,
+            message: message.to_string(),
+            commit_id: oid.to_string(),
+        });
+        true
+    })
+    .map_err(|e| e.to_string())?;
+    Ok(stashes)
+}
+
+// ─── apply_stash ──────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn apply_stash(repo_path: String, index: usize) -> Result<(), String> {
+    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    repo.stash_apply(index, None).map_err(|e| e.to_string())
+}
+
+// ─── drop_stash ───────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn drop_stash(repo_path: String, index: usize) -> Result<(), String> {
+    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    repo.stash_drop(index).map_err(|e| e.to_string())
 }
 
 // ─── get_commit_graph ─────────────────────────────────────────────────────────
@@ -429,7 +463,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_repo_cfg, assign_lane, fetch_all, get_branches, get_commit_graph, repo_info_for_path,
+        apply_repo_cfg, apply_stash, assign_lane, drop_stash, fetch_all, get_branches,
+        get_commit_graph, list_stashes, repo_info_for_path,
     };
     use crate::config::RepoConfig;
     use crate::models::RepoInfo;
@@ -593,6 +628,67 @@ mod tests {
         let result = fetch_all(target.path_str().to_string()).expect("fetch all");
 
         assert!(result.updated_refs.iter().all(|name| name == "origin"));
+    }
+
+    // ── stash helpers ─────────────────────────────────────────────────────────
+
+    fn create_stash(repo: &mut git2::Repository, message: &str) -> git2::Oid {
+        // Modify a tracked file so there is something to stash.
+        let path = repo.workdir().expect("workdir").join("README.md");
+        std::fs::write(&path, format!("stash content: {message}\n")).expect("write");
+        let sig =
+            git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("signature");
+        repo.stash_save(&sig, message, None).expect("stash save")
+    }
+
+    #[test]
+    fn list_stashes_empty_repo() {
+        let dir = init_repo_with_commit("init");
+        let stashes = list_stashes(dir.path_str().to_string()).expect("list stashes");
+        assert!(stashes.is_empty());
+    }
+
+    #[test]
+    fn list_stashes_returns_entry() {
+        let dir = init_repo_with_commit("init");
+        let mut repo = git2::Repository::open(dir.path_str()).expect("open");
+        create_stash(&mut repo, "my stash");
+        drop(repo);
+
+        let stashes = list_stashes(dir.path_str().to_string()).expect("list stashes");
+        assert_eq!(stashes.len(), 1);
+        assert_eq!(stashes[0].index, 0);
+        assert!(stashes[0].message.contains("my stash"));
+    }
+
+    #[test]
+    fn drop_stash_removes_entry() {
+        let dir = init_repo_with_commit("init");
+        let mut repo = git2::Repository::open(dir.path_str()).expect("open");
+        create_stash(&mut repo, "to drop");
+        drop(repo);
+
+        drop_stash(dir.path_str().to_string(), 0).expect("drop stash");
+
+        let stashes = list_stashes(dir.path_str().to_string()).expect("list stashes");
+        assert!(stashes.is_empty());
+    }
+
+    #[test]
+    fn apply_stash_restores_changes() {
+        let dir = init_repo_with_commit("init");
+        let mut repo = git2::Repository::open(dir.path_str()).expect("open");
+        create_stash(&mut repo, "to apply");
+        drop(repo);
+
+        apply_stash(dir.path_str().to_string(), 0).expect("apply stash");
+
+        // After apply the file has the stashed content, stash entry still exists.
+        let stashes = list_stashes(dir.path_str().to_string()).expect("list stashes");
+        assert_eq!(stashes.len(), 1, "apply keeps the stash entry");
+        let content =
+            std::fs::read_to_string(dir.path.join("README.md")).expect("read README");
+        assert!(content.contains("to apply"));
     }
 
     fn run(commits: &[(u32, &[u32])]) -> Vec<usize> {

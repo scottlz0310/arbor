@@ -8,6 +8,7 @@ import Branches from './views/Branches';
 import Graph from './views/Graph';
 import PullRequests from './views/PullRequests';
 import Cleanup from './views/Cleanup';
+import Stash from './views/Stash';
 import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
 import { useUiStore } from './stores/uiStore';
@@ -73,6 +74,9 @@ export default function App() {
         )}
         {activeView === 'cleanup' && (
           <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
+        )}
+        {activeView === 'stash' && (
+          <ErrorBoundary key="stash" viewName="Stash Manager"><Stash /></ErrorBoundary>
         )}
         {activeView === 'settings' && (
           <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>

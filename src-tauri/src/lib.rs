@@ -12,8 +12,8 @@ use commands::{
     dsx::{dsx_check, env_inject, repo_cleanup, repo_cleanup_preview, repo_update, sys_update},
     github::{get_check_runs, get_issues, get_pull_requests},
     repo::{
-        delete_branches, fetch_all, get_branches, get_commit_graph, get_repo_status,
-        list_repositories,
+        apply_stash, delete_branches, drop_stash, fetch_all, get_branches, get_commit_graph,
+        get_repo_status, list_repositories, list_stashes,
     },
 };
 
@@ -48,6 +48,9 @@ pub fn run() {
             delete_branches,
             fetch_all,
             get_commit_graph,
+            list_stashes,
+            apply_stash,
+            drop_stash,
             // AI / Ollama
             ollama_available,
             test_ai_connection,

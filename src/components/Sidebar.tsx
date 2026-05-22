@@ -8,6 +8,7 @@ const NAV_ITEMS: { id: ViewId; icon: string; label: string }[] = [
   { id: 'graph',     icon: '⧖', label: 'Graph' },
   { id: 'prs',       icon: '⇄', label: 'PR / Issues' },
   { id: 'cleanup',   icon: '✦', label: 'Cleanup' },
+  { id: 'stash',     icon: '⊟', label: 'Stash' },
   { id: 'settings',  icon: '⚙', label: 'Settings' },
 ];
 

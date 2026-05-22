@@ -145,7 +145,13 @@ export interface AiInsight {
 
 // ─── UI-only types ───────────────────────────────────────────────────────────
 
-export type ViewId = 'overview' | 'branches' | 'graph' | 'prs' | 'cleanup' | 'settings';
+export interface StashInfo {
+  index: number;
+  message: string;
+  commit_id: string;
+}
+
+export type ViewId = 'overview' | 'branches' | 'graph' | 'prs' | 'cleanup' | 'stash' | 'settings';
 
 export type InsightType = 'explain' | 'prioritize' | 'risk';
 export type InsightSource = 'rule' | 'ai';
