@@ -14,6 +14,11 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `uiStore` に `commandPaletteOpen` / `openCommandPalette` / `closeCommandPalette` を追加
   - フロントエンドテスト 16 件追加
 
+- **repo.rs インテグレーションテスト** (T-05)
+  - `repo_info_for_path` の `modified_count` / `untracked_count` / `stash_count` / `ahead` / `behind` を一時 git リポジトリで検証
+  - 追加テスト 7 件: modified_count, untracked_count, deleted_file_counts_as_modified, stash_count, multiple_stashes, ahead_count, behind_count
+  - `ahead` / `behind` は git2 ローカルクローン + fetch で設定
+
 - **CI check-runs を head_sha ベースに統一** (P4-11)
   - `PullRequest` モデル（Rust / TS）に `head_sha` フィールドを追加
   - `RawRef` に `sha` を追加し GitHub API レスポンスから取得
