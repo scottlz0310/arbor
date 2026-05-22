@@ -34,6 +34,11 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `dsx_latest_version` Rust コマンド追加（reqwest, 8s タイムアウト、エラー時は null）
   - フロントエンドテスト 5 件追加
 
+- **アクセシビリティ改善** (P4-10)
+  - `ConfirmDialog`: `role="dialog"` / `aria-modal="true"` / `aria-labelledby` 追加、フォーカストラップ、Escape キー対応、マウント時自動フォーカス、アンマウント時フォーカス復帰
+  - `Sidebar`: リポジトリ一覧に `role="region"` + `aria-label="リポジトリ一覧"`、リポジトリボタンに `aria-pressed`、nav に `aria-label="ナビゲーション"`、nav ボタンに `aria-current="page"` と `aria-label` 追加
+  - フロントエンドテスト 14 件追加（ConfirmDialog a11y 7件、Sidebar a11y 7件）
+
 - **Stash Manager** (P4-02/03) (#103)
   - `list_stashes` / `apply_stash` / `drop_stash` Rust コマンドを追加（git2 直接実装）
   - `StashInfo` 型を `models.rs` / `types/index.ts` に追加
