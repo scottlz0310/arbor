@@ -12,7 +12,11 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - `StashInfo` 型を `models.rs` / `types/index.ts` に追加
   - `src/views/Stash.tsx` — stash 一覧テーブル + Apply / Drop 操作
   - Drop は `ConfirmDialog` 必須。操作後に `stash_count` バッジを更新
-  - Rust ユニットテスト 4 件追加（list/apply/drop の正常系）
+  - Drop の in-flight guard（`dropping` state）で二重実行・別 stash 誤削除を防止
+  - Apply 中は全ボタンを disabled（`applyingIndex` state）
+  - `useEffect` に cancelled flag を追加し repo 切り替え race を解消
+  - `ConfirmDialog` に `confirmDisabled` prop を追加
+  - Rust ユニットテスト 4 件 + フロントエンドテスト 10 件追加
 
 ### chore
 

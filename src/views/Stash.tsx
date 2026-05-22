@@ -13,44 +13,59 @@ export default function Stash() {
   const [stashes, setStashes] = useState<StashInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [dropTarget, setDropTarget] = useState<StashInfo | null>(null);
+  const [dropping, setDropping] = useState(false);
+  const [applyingIndex, setApplyingIndex] = useState<number | null>(null);
 
-  const load = async () => {
-    if (!selectedRepo) return;
-    setLoading(true);
-    try {
-      setStashes(await listStashes(selectedRepo.path));
-    } catch (e) {
-      addToast(String(e), 'error');
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!selectedRepo) {
+      setStashes([]);
+      return;
     }
-  };
-
-  useEffect(() => { load(); }, [selectedRepo]);
+    let cancelled = false;
+    const repoPath = selectedRepo.path;
+    setLoading(true);
+    listStashes(repoPath)
+      .then((items) => { if (!cancelled) setStashes(items); })
+      .catch((e) => { if (!cancelled) addToast(String(e), 'error'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedRepo?.path]);
 
   const handleApply = async (stash: StashInfo) => {
-    if (!selectedRepo) return;
+    if (!selectedRepo || applyingIndex !== null) return;
+    setApplyingIndex(stash.index);
     try {
       await applyStash(selectedRepo.path, stash.index);
       addToast(`stash@{${stash.index}} を適用しました`, 'success');
-      await load();
-      await loadRepos();
+      const [items] = await Promise.all([
+        listStashes(selectedRepo.path),
+        loadRepos(),
+      ]);
+      setStashes(items);
     } catch (e) {
       addToast(String(e), 'error');
+    } finally {
+      setApplyingIndex(null);
     }
   };
 
   const handleDrop = async () => {
-    if (!selectedRepo || !dropTarget) return;
+    if (!selectedRepo || !dropTarget || dropping) return;
+    setDropping(true);
     const target = dropTarget;
-    setDropTarget(null);
     try {
       await dropStash(selectedRepo.path, target.index);
       addToast(`stash@{${target.index}} を削除しました`, 'success');
-      await load();
-      await loadRepos();
+      const [items] = await Promise.all([
+        listStashes(selectedRepo.path),
+        loadRepos(),
+      ]);
+      setStashes(items);
     } catch (e) {
       addToast(String(e), 'error');
+    } finally {
+      setDropping(false);
+      setDropTarget(null);
     }
   };
 
@@ -92,6 +107,8 @@ export default function Stash() {
                 <StashRow
                   key={s.index}
                   stash={s}
+                  applying={applyingIndex === s.index}
+                  anyApplying={applyingIndex !== null}
                   onApply={handleApply}
                   onDrop={setDropTarget}
                 />
@@ -106,8 +123,9 @@ export default function Stash() {
           title="スタッシュを削除しますか？"
           message={`stash@{${dropTarget.index}}: ${dropTarget.message}\n\nこの操作は取り消せません。`}
           confirmLabel="削除"
+          confirmDisabled={dropping}
           onConfirm={handleDrop}
-          onCancel={() => setDropTarget(null)}
+          onCancel={() => !dropping && setDropTarget(null)}
         />
       )}
     </div>
@@ -116,21 +134,21 @@ export default function Stash() {
 
 function StashRow({
   stash,
+  applying,
+  anyApplying,
   onApply,
   onDrop,
 }: {
   stash: StashInfo;
+  applying: boolean;
+  anyApplying: boolean;
   onApply: (s: StashInfo) => void;
   onDrop: (s: StashInfo) => void;
 }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}>
       <td style={{ padding: '8px', width: 60 }}>
-        <span style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          color: 'var(--text3)',
-        }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
           stash@{'{'}{ stash.index}{'}'}
         </span>
       </td>
@@ -139,31 +157,33 @@ function StashRow({
         {stash.message}
       </td>
       <td style={{ padding: '8px' }}>
-        <span style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 10,
-          color: 'var(--text3)',
-        }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text3)' }}>
           {stash.commit_id.slice(0, 7)}
         </span>
       </td>
       <td style={{ padding: '8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
         <button
           onClick={() => onApply(stash)}
+          disabled={anyApplying}
           style={{
-            fontSize: 10, padding: '3px 10px', borderRadius: 4, cursor: 'pointer',
+            fontSize: 10, padding: '3px 10px', borderRadius: 4,
+            cursor: anyApplying ? 'not-allowed' : 'pointer',
             background: 'var(--green-bg)', color: 'var(--green)',
             border: '1px solid var(--green)', marginRight: 6,
+            opacity: anyApplying ? 0.5 : 1,
           }}
         >
-          Apply
+          {applying ? '…' : 'Apply'}
         </button>
         <button
           onClick={() => onDrop(stash)}
+          disabled={anyApplying}
           style={{
-            fontSize: 10, padding: '3px 10px', borderRadius: 4, cursor: 'pointer',
+            fontSize: 10, padding: '3px 10px', borderRadius: 4,
+            cursor: anyApplying ? 'not-allowed' : 'pointer',
             background: 'var(--red-bg)', color: 'var(--red)',
             border: '1px solid var(--red)',
+            opacity: anyApplying ? 0.5 : 1,
           }}
         >
           Drop
