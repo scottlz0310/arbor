@@ -4,7 +4,7 @@ import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, scanMissingRepositories, dsxCheck, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, scanMissingRepositories, dsxCheck, dsxLatestVersion, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
@@ -18,6 +18,8 @@ export default function Settings() {
   const [patInput, setPatInput]   = useState('');
   const [patLoading, setPatLoading] = useState(false);
   const [sysUpdating, setSysUpdating] = useState(false);
+  const [dsxUpdateState, setDsxUpdateState] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
+  const [latestDsxVersion, setLatestDsxVersion] = useState<string | null>(null);
   const [scanResults, setScanResults] = useState<string[] | null>(null);
   const [scanSelected, setScanSelected] = useState<Set<string>>(new Set());
   const [scanning, setScanning] = useState(false);
@@ -161,6 +163,18 @@ export default function Settings() {
     }
   };
 
+  const handleCheckDsxUpdate = async () => {
+    setDsxUpdateState('checking');
+    setLatestDsxVersion(null);
+    try {
+      const latest = await dsxLatestVersion();
+      setLatestDsxVersion(latest);
+      setDsxUpdateState('done');
+    } catch {
+      setDsxUpdateState('error');
+    }
+  };
+
   const handleSysUpdate = async () => {
     setSysUpdating(true);
     setDsxRunning(true);
@@ -295,19 +309,35 @@ export default function Settings() {
           <SectionTitle>dsx CLI</SectionTitle>
           {dsxStatus ? (
             dsxStatus.available ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontSize: 12, color: 'var(--green)', flex: 1 }}>
-                  ✓ dsx {dsxStatus.version} &nbsp;·&nbsp;
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
-                    {dsxStatus.path}
-                  </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ fontSize: 12, color: 'var(--green)', flex: 1 }}>
+                    ✓ dsx {dsxStatus.version} &nbsp;·&nbsp;
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
+                      {dsxStatus.path}
+                    </span>
+                  </div>
+                  <AppBtn
+                    onClick={handleCheckDsxUpdate}
+                    disabled={dsxUpdateState === 'checking'}
+                  >
+                    {dsxUpdateState === 'checking' ? '確認中…' : 'バージョン確認'}
+                  </AppBtn>
+                  <AppBtn
+                    onClick={handleSysUpdate}
+                    disabled={sysUpdating}
+                  >
+                    {sysUpdating ? 'Updating…' : 'Update'}
+                  </AppBtn>
                 </div>
-                <AppBtn
-                  onClick={handleSysUpdate}
-                  disabled={sysUpdating}
-                >
-                  {sysUpdating ? 'Updating…' : 'Update'}
-                </AppBtn>
+                {dsxUpdateState === 'done' && (
+                  <DsxUpdateResult current={dsxStatus.version ?? ''} latest={latestDsxVersion} />
+                )}
+                {dsxUpdateState === 'error' && (
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    バージョン情報を取得できませんでした
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{
@@ -765,6 +795,32 @@ function RepoCard({
           owner と repo は両方設定するか、両方空にしてください
         </div>
       )}
+    </div>
+  );
+}
+
+function DsxUpdateResult({ current, latest }: { current: string; latest: string | null }) {
+  if (!latest) {
+    return (
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+        リリース情報が見つかりませんでした
+      </div>
+    );
+  }
+  // latest は "v0.3.0" 形式。current は "dsx v0.2.5" 等の可能性があるため
+  // 末尾の数字部分で比較する。
+  const latestNum = latest.replace(/^v/, '');
+  const isUpToDate = current.includes(latestNum);
+  return isUpToDate ? (
+    <div style={{ fontSize: 11, color: 'var(--green)' }}>
+      ✓ 最新版です（{latest}）
+    </div>
+  ) : (
+    <div style={{ fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
+      ↑ {latest} が利用可能です。以下のコマンドで更新してください:<br />
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--indigo-l)' }}>
+        go install github.com/scottlz0310/dsx@latest
+      </span>
     </div>
   );
 }

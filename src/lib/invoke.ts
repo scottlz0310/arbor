@@ -126,6 +126,9 @@ export const getCheckRuns = (owner: string, repo: string, gitRef: string) =>
 export const dsxCheck = () =>
   tauriInvoke<DsxStatus>('dsx_check');
 
+export const dsxLatestVersion = () =>
+  tauriInvoke<string | null>('dsx_latest_version');
+
 export const repoUpdate = (repoPath: string) =>
   tauriInvoke<DsxOutput>('repo_update', { repoPath });
 

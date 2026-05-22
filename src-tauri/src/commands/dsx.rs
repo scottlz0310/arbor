@@ -46,6 +46,30 @@ fn which_dsx() -> Option<String> {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
+// ─── dsx_latest_version ──────────────────────────────────────────────────────
+
+/// Queries the GitHub Releases API and returns the latest dsx tag name (e.g. "v0.3.0").
+/// Returns `None` on network error, non-2xx response, or missing field — the UI
+/// handles `null` gracefully so this command never returns `Err`.
+#[tauri::command]
+pub async fn dsx_latest_version() -> Option<String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .ok()?;
+    let resp = client
+        .get("https://api.github.com/repos/scottlz0310/dsx/releases/latest")
+        .header("User-Agent", "arbor-app/1.0")
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let json: serde_json::Value = resp.json().await.ok()?;
+    json["tag_name"].as_str().map(|s| s.to_string())
+}
+
 // ─── repo_update ─────────────────────────────────────────────────────────────
 
 /// Runs `dsx repo update --no-tui -j 4` in the given repository directory.
