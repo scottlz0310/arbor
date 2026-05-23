@@ -153,7 +153,7 @@ export interface StashInfo {
   commit_id: string;
 }
 
-export type ViewId = 'overview' | 'branches' | 'graph' | 'prs' | 'cleanup' | 'stash' | 'settings';
+export type ViewId = 'overview' | 'branches' | 'graph' | 'prs' | 'cleanup' | 'stash' | 'ai' | 'settings';
 
 export type InsightType = 'explain' | 'prioritize' | 'risk';
 export type InsightSource = 'rule' | 'ai';

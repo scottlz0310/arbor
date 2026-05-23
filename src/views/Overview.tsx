@@ -25,7 +25,7 @@ function statusBadge(repo: RepoInfo) {
 
 export default function Overview() {
   const { repos, selectedRepo, selectRepo, refreshRepo } = useRepoStore();
-  const { addToast, setDsxRunning, dsxProgress, dsxRunning, clearDsxProgress } = useUiStore();
+  const { addToast, setDsxRunning, dsxProgress, dsxRunning, clearDsxProgress, navigate } = useUiStore();
 
   const [insights, setInsights]           = useState<Insight[]>([]);
   const [insightSource, setInsightSource] = useState<InsightSource>('rule');
@@ -206,6 +206,17 @@ export default function Overview() {
               <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.1em', flex: 1 }}>
                 RECOMMENDED ACTIONS
               </span>
+              <button
+                onClick={() => navigate('ai')}
+                style={{
+                  fontSize: 10, color: 'var(--indigo-l)',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: 0, marginRight: 8,
+                }}
+                title="AI Assistant タブで詳細を表示"
+              >
+                詳細 →
+              </button>
               {/* フェーズバッジ — 状態の優先順位: loading > aiBg > failed > offline > done */}
               {insightLoading && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--text3)', fontWeight: 600 }}>
