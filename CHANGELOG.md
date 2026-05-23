@@ -7,10 +7,20 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ### feat — Phase 4
 
+- **クロスプラットフォームリリース workflow** (P4-05/06/07) (#140)
+  - `.github/workflows/release.yml` 新規作成（`v*` タグ push / `workflow_dispatch` で発火）
+  - Job 1: draft release 作成（`gh release create --generate-notes`）
+  - Job 2: matrix ビルド（windows-latest / macos-latest / ubuntu-latest）
+    - Windows: `.msi` + `.msi.zip` + 署名 (x86_64-pc-windows-msvc)
+    - macOS: `.dmg` + `.dmg.tar.gz` + 署名 (aarch64-apple-darwin)
+    - Linux: `.AppImage` + `.deb` + 署名 (x86_64-unknown-linux-gnu)
+    - `TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD` を Secrets から注入
+  - Job 3: 全プラットフォームの `.sig` を集約し `latest.json` を生成・アップロード
+  - `bundle.createUpdaterArtifacts: "v1Compatible"` を `tauri.conf.json` に追加
+
 - **updater 公開鍵を tauri.conf.json に登録** (P4-05) (#139)
   - `src-tauri/tauri.conf.json` の `plugins.updater.pubkey` に minisign 公開鍵を設定
   - 対応する秘密鍵は GitHub Secrets (`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) に配置済み
-  - release workflow（#140）で `latest.json` 署名生成に使用予定
 
 - **コマンドパレット** (P4-01) (#102)
   - `Ctrl/Cmd+K` でパレットを開閉
