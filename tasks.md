@@ -172,7 +172,7 @@
 - [x] P4-06: Windows (.msi) インストーラービルド (`tauri build`)
 - [x] P4-07: macOS (.dmg) インストーラービルド
 - [x] P4-08: README / CHANGELOG 整備
-- [ ] P4-09: GitHub public release 公開 (v0.1.0)
+- [x] P4-09: GitHub public release 公開 (v0.1.0)
 - [x] P4-10: アクセシビリティ確認 (キーボードナビゲーション / フォーカス管理)
 - [x] P4-11: `PullRequest` モデルに `head_sha` を追加し、CI check-runs のキーと API ref を SHA ベースに統一
        (現在は `pr.number` をキャッシュキーに使用。fork PR で同名ブランチが重複する場合の完全な解決策として Phase 4 で対応)
