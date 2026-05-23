@@ -3,6 +3,8 @@
 All notable changes to Arbor will be documented in this file.
 Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [Unreleased]
+
 ## [0.1.0] — 2026-05-23
 
 ### feat — Phase 4: UX 磨き + リリース
