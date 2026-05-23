@@ -10,6 +10,7 @@
     "github>scottlz0310/renovate-config//presets/options/schedule",
     "github>scottlz0310/renovate-config//presets/options/security"
   ],
+  "minimumReleaseAge": "3 days",
   "packageRules": [
     {
       "matchManagers": ["cargo"],
