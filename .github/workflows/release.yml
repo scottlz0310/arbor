@@ -175,7 +175,7 @@ jobs:
           }
 
           WIN_SIG_PATH=$(assert_one_sig "*.msi.zip.sig")
-          MAC_SIG_PATH=$(assert_one_sig "*aarch64*.dmg.tar.gz.sig")
+          MAC_SIG_PATH=$(assert_one_sig "*aarch64*.app.tar.gz.sig")
           LIN_SIG_PATH=$(assert_one_sig "*.AppImage.tar.gz.sig")
 
           WIN_BASE=$(basename "$WIN_SIG_PATH" .sig)
