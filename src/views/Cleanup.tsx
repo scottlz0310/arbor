@@ -32,7 +32,6 @@ export default function Cleanup() {
 
   // AI / ルールベース Insight を取得 (P3-08)
   // branchesByRepo を渡すことでルールエンジンのステールブランチ検出を有効化。
-  // AI Insight の target は repo_name なので repo 名で照合する。
   useEffect(() => {
     if (repos.length === 0) return;
     fetchInsights(repos, branchesByRepo, 14).then(({ insights: ins }) => setInsights(ins));
@@ -46,10 +45,25 @@ export default function Cleanup() {
     return () => { promise.then((f) => f()); };
   }, []);
 
-  // リポジトリ名で Insight を検索するヘルパー
-  // AI Insight / ルールベース repo-level Insight はいずれも target = repo_name。
-  const findInsightForRepo = (repoName: string): string | undefined =>
-    insights.find((ins) => ins.target === repoName)?.reason;
+  // Insight を行コンテキストで検索するヘルパー。
+  // - branch-level insight (ruleEngine の stale-branch) は target === branch 名
+  // - repo-level insight (AI / diverged 等) は target === repo 名
+  // 同じ repo に複数の branch-level insight がある場合に、各行で正しい reason が
+  // 出るよう、まず branch 名一致を試し、無ければ repo-level にフォールバックする。
+  const findInsightForRow = (
+    repoPath: string,
+    branchName: string,
+    repoName: string,
+  ): string | undefined => {
+    const branchHit = insights.find(
+      (ins) => ins.repo_path === repoPath && ins.target === branchName,
+    );
+    if (branchHit) return branchHit.reason;
+    const repoHit = insights.find(
+      (ins) => ins.repo_path === repoPath && ins.target === repoName,
+    );
+    return repoHit?.reason;
+  };
 
   // Load branches — scoped to selectedRepo if set, otherwise all repos.
   useEffect(() => {
@@ -223,7 +237,7 @@ export default function Cleanup() {
               checked={selected.has(makeKey(b._repoPath, b.name))}
               onToggle={() => toggleSelect(b._repoPath, b.name)}
               checkAccent="var(--red)"
-              aiReason={findInsightForRepo(b._repoName)}
+              aiReason={findInsightForRow(b._repoPath, b.name, b._repoName)}
             />
           ))}
         </CleanupSection>
@@ -245,7 +259,7 @@ export default function Cleanup() {
                 checked={selected.has(makeKey(b._repoPath, b.name))}
                 onToggle={() => toggleSelect(b._repoPath, b.name)}
                 checkAccent="var(--indigo)"
-                aiReason={findInsightForRepo(b._repoName)}
+                aiReason={findInsightForRow(b._repoPath, b.name, b._repoName)}
               />
             );
           })}

@@ -22,6 +22,7 @@ export function generateInsights(
       insights.push({
         type: 'risk',
         target: repo.name,
+        repo_path: repo.path,
         priority: 'high',
         reason: `${repo.ahead}コミット先行・${repo.behind}コミット遅延: diverged状態`,
         source: 'rule',
@@ -34,6 +35,7 @@ export function generateInsights(
       insights.push({
         type: 'prioritize',
         target: repo.name,
+        repo_path: repo.path,
         priority: 'high',
         reason: `リモートから${repo.behind}コミット遅れています`,
         source: 'rule',
@@ -50,13 +52,14 @@ export function generateInsights(
       insights.push({
         type: 'prioritize',
         target: repo.name,
+        repo_path: repo.path,
         priority: 'medium',
         reason: `${mergedCount}本のマージ済みブランチが残っています`,
         source: 'rule',
       });
     }
 
-    // Stale branches
+    // Stale branches — target は branch 名だが repo_path は親 repo を指す
     for (const branch of branches) {
       if (branch.is_current) continue;
       const ageSec = nowSec - branch.last_commit_ts;
@@ -65,6 +68,7 @@ export function generateInsights(
         insights.push({
           type: 'explain',
           target: branch.name,
+          repo_path: repo.path,
           priority: branch.behind >= 10 ? 'medium' : 'low',
           reason: `${ageDays}日間更新なし・mainから${branch.behind}コミット遅延`,
           source: 'rule',

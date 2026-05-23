@@ -155,7 +155,7 @@ describe('AiAssistant — 再分析ボタン', () => {
 
   it('正常時にクリックすると getAiInsights が呼ばれる', async () => {
     const mockInsights: AiInsight[] = [
-      { repo_name: 'alpha', kind: 'risk', message: '危険なブランチ', priority: 3 },
+      { repo_name: 'alpha', repo_path: '/repo/alpha', kind: 'risk', message: '危険なブランチ', priority: 3 },
     ];
     vi.mocked(invoke.getAiInsights).mockResolvedValue(mockInsights);
     act(() => {
@@ -184,8 +184,8 @@ describe('AiAssistant — Insight 表示', () => {
   it('選択リポジトリの insights だけがメインセクションに表示される', async () => {
     const repos = [makeRepo(), makeRepo({ path: '/repo/beta', name: 'beta' })];
     const insights: Insight[] = [
-      { type: 'risk',    target: 'alpha', priority: 'high',   reason: 'alpha-risk',    source: 'ai' },
-      { type: 'explain', target: 'beta',  priority: 'low',    reason: 'beta-explain',  source: 'ai' },
+      { type: 'risk',    target: 'alpha', repo_path: '/repo/alpha', priority: 'high',   reason: 'alpha-risk',    source: 'ai' },
+      { type: 'explain', target: 'beta',  repo_path: '/repo/beta',  priority: 'low',    reason: 'beta-explain',  source: 'ai' },
     ];
     vi.mocked(aiService.fetchInsights).mockResolvedValue({
       insights, source: 'ai', ollamaOffline: false,
@@ -241,6 +241,35 @@ describe('AiAssistant — Insight 表示', () => {
     await waitFor(() => {
       expect(screen.getAllByText('/work/clone-a/alpha').length).toBeGreaterThan(0);
       expect(screen.getAllByText('/work/clone-b/alpha').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('同名 repo の insight が path によって正しく分離される', async () => {
+    // 同名 repo を 2 つ用意し、それぞれに別の insight を割り当てる
+    const repoA = makeRepo({ path: '/work/clone-a/alpha', name: 'alpha' });
+    const repoB = makeRepo({ path: '/work/clone-b/alpha', name: 'alpha' });
+    const insights: Insight[] = [
+      // repo_path = clone-a を指す insight
+      { type: 'risk',    target: 'alpha', repo_path: '/work/clone-a/alpha',
+        priority: 'high', reason: 'clone-a-only-risk', source: 'ai' },
+      // repo_path = clone-b を指す insight
+      { type: 'explain', target: 'alpha', repo_path: '/work/clone-b/alpha',
+        priority: 'low',  reason: 'clone-b-only-explain', source: 'ai' },
+    ];
+    vi.mocked(aiService.fetchInsights).mockResolvedValue({
+      insights, source: 'ai', ollamaOffline: false,
+    });
+    act(() => {
+      useRepoStore.setState({ repos: [repoA, repoB], selectedRepo: repoA });
+    });
+    render(<AiAssistant />);
+    // selected = clone-a なので selected セクションに clone-a の reason のみが出る
+    // ALL REPOSITORIES グループは両方出るため、それぞれの reason が「丁度 1 回ずつ」現れる
+    await waitFor(() => {
+      // selected セクション + ALL REPOSITORIES の clone-a group の両方に表示 → 2 回
+      expect(screen.getAllByText('clone-a-only-risk').length).toBe(2);
+      // clone-b は selected ではないので ALL REPOSITORIES の clone-b group のみ → 1 回
+      expect(screen.getAllByText('clone-b-only-explain').length).toBe(1);
     });
   });
 });
@@ -313,7 +342,7 @@ describe('AiAssistant — イベント購読', () => {
       expect(eventHandlers.has('ai_insights_updated')).toBe(true);
     });
     const ai: AiInsight[] = [
-      { repo_name: 'alpha', kind: 'risk', message: 'event-pushed-risk', priority: 3 },
+      { repo_name: 'alpha', repo_path: '/repo/alpha', kind: 'risk', message: 'event-pushed-risk', priority: 3 },
     ];
     act(() => emitEvent('ai_insights_updated', ai));
     await waitFor(() => {
