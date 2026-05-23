@@ -12,7 +12,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
   - Job 1: draft release 作成（`gh release create --generate-notes`）
   - Job 2: matrix ビルド（windows-latest / macos-latest / ubuntu-latest）
     - Windows: `.msi` + `.msi.zip` + 署名 (x86_64-pc-windows-msvc)
-    - macOS: `.dmg` + `.dmg.tar.gz` + 署名 (aarch64-apple-darwin)
+    - macOS: `.dmg`（配布）/ `.app.tar.gz` + 署名（updater）(aarch64-apple-darwin)
     - Linux: `.AppImage` + `.deb` + 署名 (x86_64-unknown-linux-gnu)
     - `TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD` を Secrets から注入
   - Job 3: 全プラットフォームの `.sig` を集約し `latest.json` を生成・アップロード
