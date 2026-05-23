@@ -10,6 +10,7 @@ import Graph from './views/Graph';
 import PullRequests from './views/PullRequests';
 import Cleanup from './views/Cleanup';
 import Stash from './views/Stash';
+import AiAssistant from './views/AiAssistant';
 import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
 import { useUiStore } from './stores/uiStore';
@@ -90,6 +91,9 @@ export default function App() {
         )}
         {activeView === 'stash' && (
           <ErrorBoundary key="stash" viewName="Stash Manager"><Stash /></ErrorBoundary>
+        )}
+        {activeView === 'ai' && (
+          <ErrorBoundary key="ai" viewName="AI Assistant"><AiAssistant /></ErrorBoundary>
         )}
         {activeView === 'settings' && (
           <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>

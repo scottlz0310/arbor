@@ -19,6 +19,7 @@ const VIEW_COMMANDS: { id: ViewId; icon: string; label: string }[] = [
   { id: 'prs',       icon: '⇄', label: 'PR / Issues' },
   { id: 'cleanup',   icon: '✦', label: 'Cleanup' },
   { id: 'stash',     icon: '⊟', label: 'Stash' },
+  { id: 'ai',        icon: '⚛', label: 'AI Assistant' },
   { id: 'settings',  icon: '⚙', label: 'Settings' },
 ];
 
