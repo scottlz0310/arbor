@@ -7,6 +7,11 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/). Unreleased
 
 ### feat — Phase 4
 
+- **updater 公開鍵を tauri.conf.json に登録** (P4-05) (#139)
+  - `src-tauri/tauri.conf.json` の `plugins.updater.pubkey` に minisign 公開鍵を設定
+  - 対応する秘密鍵は GitHub Secrets (`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) に配置済み
+  - release workflow（#140）で `latest.json` 署名生成に使用予定
+
 - **コマンドパレット** (P4-01) (#102)
   - `Ctrl/Cmd+K` でパレットを開閉
   - ビュー遷移（7 件）・リポジトリ切替をインクリメンタル検索
