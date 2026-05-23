@@ -11,16 +11,17 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 jobs:
-  # ── 1. Draft release を作成し release_id を後続ジョブに渡す ─────────────────
+  # ── 1. Draft release を作成し release_id / tag を後続ジョブに渡す ──────────
   create-release:
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
       tag: ${{ steps.resolve-tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v6
-
       - name: Resolve tag
         id: resolve-tag
         run: |
@@ -30,16 +31,24 @@ jobs:
             echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create draft release
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.resolve-tag.outputs.tag }}
+
+      - name: Create draft release (idempotent)
         id: create
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.resolve-tag.outputs.tag }}"
-          gh release create "$TAG" \
-            --draft \
-            --generate-notes \
-            --title "$TAG"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists; reusing it"
+          else
+            gh release create "$TAG" \
+              --draft \
+              --generate-notes \
+              --title "$TAG"
+          fi
           RELEASE_ID=$(gh release view "$TAG" --json databaseId --jq .databaseId)
           echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
 
@@ -62,6 +71,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.create-release.outputs.tag }}
 
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-latest'
@@ -131,6 +142,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.create-release.outputs.tag }}
 
       - name: Download updater signatures
         env:
@@ -149,18 +162,38 @@ jobs:
           BASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-          WIN_SIG=$(cat "sigs/arbor_${VERSION}_x64_en-US.msi.zip.sig")
-          MAC_SIG=$(cat "sigs/arbor_${VERSION}_aarch64.dmg.tar.gz.sig")
-          LIN_SIG=$(cat "sigs/arbor_${VERSION}_amd64.AppImage.tar.gz.sig")
+          # glob + 1件アサート。ファイル名の変動に耐えつつ意図しない複数一致を検出する。
+          assert_one_sig() {
+            local pattern="$1"
+            local matched=( sigs/${pattern} )
+            if [[ ${#matched[@]} -ne 1 || ! -f "${matched[0]}" ]]; then
+              echo "ERROR: pattern '${pattern}' matched ${#matched[@]} file(s):"
+              ls sigs/ || true
+              exit 1
+            fi
+            echo "${matched[0]}"
+          }
+
+          WIN_SIG_PATH=$(assert_one_sig "*.msi.zip.sig")
+          MAC_SIG_PATH=$(assert_one_sig "*aarch64*.dmg.tar.gz.sig")
+          LIN_SIG_PATH=$(assert_one_sig "*.AppImage.tar.gz.sig")
+
+          WIN_BASE=$(basename "$WIN_SIG_PATH" .sig)
+          MAC_BASE=$(basename "$MAC_SIG_PATH" .sig)
+          LIN_BASE=$(basename "$LIN_SIG_PATH" .sig)
+
+          WIN_SIG=$(cat "$WIN_SIG_PATH")
+          MAC_SIG=$(cat "$MAC_SIG_PATH")
+          LIN_SIG=$(cat "$LIN_SIG_PATH")
 
           jq -n \
             --arg version "$VERSION" \
             --arg pub_date "$PUB_DATE" \
-            --arg win_url "${BASE_URL}/arbor_${VERSION}_x64_en-US.msi.zip" \
+            --arg win_url "${BASE_URL}/${WIN_BASE}" \
             --arg win_sig "$WIN_SIG" \
-            --arg mac_url "${BASE_URL}/arbor_${VERSION}_aarch64.dmg.tar.gz" \
+            --arg mac_url "${BASE_URL}/${MAC_BASE}" \
             --arg mac_sig "$MAC_SIG" \
-            --arg lin_url "${BASE_URL}/arbor_${VERSION}_amd64.AppImage.tar.gz" \
+            --arg lin_url "${BASE_URL}/${LIN_BASE}" \
             --arg lin_sig "$LIN_SIG" \
             '{
               version: $version,
