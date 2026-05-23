@@ -141,12 +141,12 @@ export default function AiAssistant() {
     }
   };
 
-  // リポジトリ別に Insight をグルーピング（target == repo.name）
+  // リポジトリ別に Insight をグルーピング（path で識別 — 同名 repo を区別するため）
   const insightsByRepo = repos.reduce<Record<string, Insight[]>>((acc, r) => {
-    acc[r.name] = insights.filter((i) => i.target === r.name);
+    acc[r.path] = insights.filter((i) => i.repo_path === r.path);
     return acc;
   }, {});
-  const selectedInsights = selectedRepo ? insightsByRepo[selectedRepo.name] ?? [] : [];
+  const selectedInsights = selectedRepo ? insightsByRepo[selectedRepo.path] ?? [] : [];
 
   const aiEnabled = aiConfig?.enabled ?? false;
   const reanalyzeDisabled =
@@ -191,7 +191,7 @@ export default function AiAssistant() {
             aiFailed={aiFailed}
             ollamaOffline={ollamaOffline}
           />
-          {/* 同名 repo 区別のため path を補助表示（根本対応は別 Issue） */}
+          {/* path 補助表示: 同名 repo を視覚的に区別する（識別自体は repo_path で行う） */}
           {selectedRepo && (
             <div style={{
               fontSize: 10, color: 'var(--text3)',
@@ -234,7 +234,7 @@ export default function AiAssistant() {
                 key={r.path}
                 repoName={r.name}
                 repoPath={r.path}
-                insights={insightsByRepo[r.name] ?? []}
+                insights={insightsByRepo[r.path] ?? []}
               />
             ))
           )}

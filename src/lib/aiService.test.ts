@@ -26,13 +26,13 @@ const REPOS: RepoInfo[] = [
 const BRANCHES: Record<string, BranchInfo[]> = {};
 
 const RULE_INSIGHTS: Insight[] = [
-  { type: 'explain', target: 'alpha', priority: 'low', reason: 'rule', source: 'rule' },
+  { type: 'explain', target: 'alpha', repo_path: '/repos/alpha', priority: 'low', reason: 'rule', source: 'rule' },
 ];
 
 const AI_RAW: AiInsight[] = [
-  { repo_name: 'alpha', kind: 'risk', message: 'diverged', priority: 3 },
-  { repo_name: 'alpha', kind: 'prioritize', message: 'pull needed', priority: 2 },
-  { repo_name: 'alpha', kind: 'explain', message: 'stale branch', priority: 0 },
+  { repo_name: 'alpha', repo_path: '/repos/alpha', kind: 'risk', message: 'diverged', priority: 3 },
+  { repo_name: 'alpha', repo_path: '/repos/alpha', kind: 'prioritize', message: 'pull needed', priority: 2 },
+  { repo_name: 'alpha', repo_path: '/repos/alpha', kind: 'explain', message: 'stale branch', priority: 0 },
 ];
 
 beforeEach(() => {
@@ -44,24 +44,29 @@ beforeEach(() => {
 
 describe('convertAiInsights', () => {
   it('priority 3 → high', () => {
-    const insights = convertAiInsights([{ repo_name: 'r', kind: 'risk', message: 'x', priority: 3 }]);
+    const insights = convertAiInsights([{ repo_name: 'r', repo_path: '/p/r', kind: 'risk', message: 'x', priority: 3 }]);
     expect(insights[0].priority).toBe('high');
     expect(insights[0].source).toBe('ai');
   });
 
   it('priority 2 → high', () => {
-    const insights = convertAiInsights([{ repo_name: 'r', kind: 'prioritize', message: 'x', priority: 2 }]);
+    const insights = convertAiInsights([{ repo_name: 'r', repo_path: '/p/r', kind: 'prioritize', message: 'x', priority: 2 }]);
     expect(insights[0].priority).toBe('high');
   });
 
   it('priority 1 → medium', () => {
-    const insights = convertAiInsights([{ repo_name: 'r', kind: 'explain', message: 'x', priority: 1 }]);
+    const insights = convertAiInsights([{ repo_name: 'r', repo_path: '/p/r', kind: 'explain', message: 'x', priority: 1 }]);
     expect(insights[0].priority).toBe('medium');
   });
 
   it('priority 0 → low', () => {
-    const insights = convertAiInsights([{ repo_name: 'r', kind: 'explain', message: 'x', priority: 0 }]);
+    const insights = convertAiInsights([{ repo_name: 'r', repo_path: '/p/r', kind: 'explain', message: 'x', priority: 0 }]);
     expect(insights[0].priority).toBe('low');
+  });
+
+  it('copies repo_path through to Insight', () => {
+    const insights = convertAiInsights([{ repo_name: 'r', repo_path: '/root/dup/r', kind: 'risk', message: 'x', priority: 1 }]);
+    expect(insights[0].repo_path).toBe('/root/dup/r');
   });
 
   it('maps kind and message correctly', () => {

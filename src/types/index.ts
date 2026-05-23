@@ -138,6 +138,11 @@ export interface CheckRun {
 /** Mirror of AiInsight in models.rs — raw response from get_ai_insights. */
 export interface AiInsight {
   repo_name: string;
+  /**
+   * Canonical repo identifier. Same-name repos under different roots are
+   * disambiguated by this field. Always matches a `RepoInfo.path`.
+   */
+  repo_path: string;
   /** "explain" | "prioritize" | "risk" */
   kind: InsightType;
   message: string;
@@ -160,7 +165,17 @@ export type InsightSource = 'rule' | 'ai';
 
 export interface Insight {
   type: InsightType;
+  /**
+   * Display label. For repo-level insights this is the repo name; for
+   * branch-level insights this is the branch name. Not unique — use
+   * `repo_path` for identification / grouping.
+   */
   target: string;
+  /**
+   * Canonical repo identifier (matches `RepoInfo.path`). Always set so
+   * insights can be grouped per-repo even when names collide.
+   */
+  repo_path: string;
   priority: 'low' | 'medium' | 'high';
   reason: string;
   source: InsightSource;

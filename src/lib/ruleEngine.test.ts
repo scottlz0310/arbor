@@ -151,4 +151,28 @@ describe('generateInsights', () => {
   it('empty repos list → empty insights', () => {
     expect(generateInsights([], {}, 14)).toHaveLength(0);
   });
+
+  it('全 insight に repo_path がセットされる（同名 repo 区別の前提）', () => {
+    const repoA = makeRepo({ path: '/root1/alpha', name: 'alpha', ahead: 1, behind: 1 });
+    const repoB = makeRepo({ path: '/root2/alpha', name: 'alpha', behind: 8 });
+    const staleBranch = makeBranch({
+      name: 'feature/old',
+      is_merged: false,
+      is_squash_merged: false,
+      last_commit_ts: Math.floor(Date.now() / 1000) - 30 * 86400,
+    });
+    const insights = generateInsights(
+      [repoA, repoB],
+      { [repoA.path]: [staleBranch], [repoB.path]: [] },
+      14,
+    );
+    // 全 insight に repo_path が入っている
+    for (const ins of insights) {
+      expect(ins.repo_path).toBeTruthy();
+      expect([repoA.path, repoB.path]).toContain(ins.repo_path);
+    }
+    // 同名 repo でも repo_path で区別できる
+    expect(insights.some((i) => i.repo_path === repoA.path)).toBe(true);
+    expect(insights.some((i) => i.repo_path === repoB.path)).toBe(true);
+  });
 });

@@ -128,9 +128,14 @@ pub enum InsightKind {
 }
 
 /// A single AI-generated insight for a repository.
+///
+/// `repo_path` is the canonical identifier (Arbor allows same-name repos under
+/// different root directories, so name alone is ambiguous). `repo_name` is
+/// kept as a display label.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiInsight {
     pub repo_name: String,
+    pub repo_path: String,
     pub kind: InsightKind,
     pub message: String,
     /// Priority level: 0 = lowest, 3 = highest urgency.

@@ -29,6 +29,7 @@ export function convertAiInsights(raw: AiInsight[]): Insight[] {
   return raw.map((r) => ({
     type: r.kind,
     target: r.repo_name,
+    repo_path: r.repo_path,
     priority: PRIORITY_MAP[r.priority] ?? 'low',
     reason: r.message,
     source: 'ai' as const,

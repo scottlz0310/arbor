@@ -32,7 +32,6 @@ export default function Cleanup() {
 
   // AI / ルールベース Insight を取得 (P3-08)
   // branchesByRepo を渡すことでルールエンジンのステールブランチ検出を有効化。
-  // AI Insight の target は repo_name なので repo 名で照合する。
   useEffect(() => {
     if (repos.length === 0) return;
     fetchInsights(repos, branchesByRepo, 14).then(({ insights: ins }) => setInsights(ins));
@@ -46,10 +45,9 @@ export default function Cleanup() {
     return () => { promise.then((f) => f()); };
   }, []);
 
-  // リポジトリ名で Insight を検索するヘルパー
-  // AI Insight / ルールベース repo-level Insight はいずれも target = repo_name。
-  const findInsightForRepo = (repoName: string): string | undefined =>
-    insights.find((ins) => ins.target === repoName)?.reason;
+  // リポジトリ path で Insight を検索するヘルパー（同名 repo の取り違えを防ぐため path 一致）
+  const findInsightForRepo = (repoPath: string): string | undefined =>
+    insights.find((ins) => ins.repo_path === repoPath)?.reason;
 
   // Load branches — scoped to selectedRepo if set, otherwise all repos.
   useEffect(() => {
@@ -223,7 +221,7 @@ export default function Cleanup() {
               checked={selected.has(makeKey(b._repoPath, b.name))}
               onToggle={() => toggleSelect(b._repoPath, b.name)}
               checkAccent="var(--red)"
-              aiReason={findInsightForRepo(b._repoName)}
+              aiReason={findInsightForRepo(b._repoPath)}
             />
           ))}
         </CleanupSection>
@@ -245,7 +243,7 @@ export default function Cleanup() {
                 checked={selected.has(makeKey(b._repoPath, b.name))}
                 onToggle={() => toggleSelect(b._repoPath, b.name)}
                 checkAccent="var(--indigo)"
-                aiReason={findInsightForRepo(b._repoName)}
+                aiReason={findInsightForRepo(b._repoPath)}
               />
             );
           })}

@@ -69,6 +69,9 @@ fn build_state_summary(repos: &[RepoInfo]) -> String {
     #[derive(Serialize)]
     struct RepoSummary<'a> {
         name: &'a str,
+        /// Canonical identifier — AI must echo this back as `repo_path` so the
+        /// frontend can disambiguate same-name repos under different roots.
+        path: &'a str,
         branch: &'a str,
         ahead: u32,
         behind: u32,
@@ -81,6 +84,7 @@ fn build_state_summary(repos: &[RepoInfo]) -> String {
         .iter()
         .map(|r| RepoSummary {
             name: &r.name,
+            path: &r.path,
             branch: &r.current_branch,
             ahead: r.ahead,
             behind: r.behind,
@@ -102,8 +106,10 @@ fn build_prompt(state_json: &str) -> String {
          Analyze the following repository states and return ONLY a JSON array — \
          no explanation, no markdown, no code fences. \
          Each element must have exactly these fields: \
-         {{\"repo_name\": string, \"kind\": \"explain\"|\"prioritize\"|\"risk\", \
+         {{\"repo_name\": string, \"repo_path\": string, \
+         \"kind\": \"explain\"|\"prioritize\"|\"risk\", \
          \"message\": string, \"priority\": 0-3}}. \
+         Copy `repo_name` and `repo_path` verbatim from the input — never invent or modify them. \
          Repository states:\n{state_json}"
     )
 }
@@ -133,6 +139,22 @@ fn parse_insights(raw: &str) -> Result<Vec<AiInsight>, String> {
         }
     }
     Ok(insights)
+}
+
+/// AI が返した insight のうち、入力 repo リストに存在する `repo_path` を持つものだけ残す。
+///
+/// AI は `repo_path` を入力からそのまま echo back するよう指示しているが、ハルシネーションで
+/// path を改変したり、欠落させたりするケースがある。誤帰属（別 repo の insight が表示される）
+/// よりは insight が消える方が害が少ないため、不一致は黙ってドロップする。
+/// 同名 repo の path 取り違えを救済するために name 一致での再マッピングは敢えて行わない
+/// （同名重複時に AI が混乱しても誤帰属を作らないため）。
+fn filter_valid_repo_path(insights: Vec<AiInsight>, repos: &[RepoInfo]) -> Vec<AiInsight> {
+    use std::collections::HashSet;
+    let valid_paths: HashSet<&str> = repos.iter().map(|r| r.path.as_str()).collect();
+    insights
+        .into_iter()
+        .filter(|i| valid_paths.contains(i.repo_path.as_str()))
+        .collect()
 }
 
 fn ollama_url(base: &str, path: &str) -> String {
@@ -196,7 +218,8 @@ async fn fetch_from_ollama(repos: &[RepoInfo]) -> Result<Vec<AiInsight>, String>
         .await
         .map_err(|e| format!("Ollama レスポンスのパースに失敗しました: {e}"))?;
 
-    parse_insights(&gen.response)
+    let insights = parse_insights(&gen.response)?;
+    Ok(filter_valid_repo_path(insights, &interesting_owned))
 }
 
 // ─── Tauri commands ───────────────────────────────────────────────────────────
@@ -396,19 +419,21 @@ mod tests {
     }
 
     #[test]
-    fn build_state_summary_includes_repo_name() {
+    fn build_state_summary_includes_repo_name_and_path() {
         let repos = vec![make_repo("myrepo", 2, 5, 3)];
         let s = build_state_summary(&repos);
         assert!(s.contains("myrepo"), "state summary should contain repo name: {s}");
+        assert!(s.contains("/repos/myrepo"), "state summary should contain repo path: {s}");
         assert!(s.contains("\"ahead\":2"), "{s}");
         assert!(s.contains("\"behind\":5"), "{s}");
     }
 
     #[test]
     fn build_prompt_contains_no_think_prefix() {
-        let prompt = build_prompt(r#"[{"name":"x"}]"#);
+        let prompt = build_prompt(r#"[{"name":"x","path":"/p"}]"#);
         assert!(prompt.starts_with("/no_think"), "prompt must start with /no_think");
         assert!(prompt.contains("JSON array"), "{prompt}");
+        assert!(prompt.contains("repo_path"), "prompt must instruct AI to return repo_path");
     }
 
     #[test]
@@ -431,20 +456,22 @@ mod tests {
 
     #[test]
     fn parse_insights_valid_json() {
-        let raw = r#"[{"repo_name":"repo1","kind":"risk","message":"diverged","priority":3}]"#;
+        let raw = r#"[{"repo_name":"repo1","repo_path":"/repos/repo1","kind":"risk","message":"diverged","priority":3}]"#;
         let insights = parse_insights(raw).unwrap();
         assert_eq!(insights.len(), 1);
         assert_eq!(insights[0].repo_name, "repo1");
+        assert_eq!(insights[0].repo_path, "/repos/repo1");
         assert_eq!(insights[0].kind, InsightKind::Risk);
         assert_eq!(insights[0].priority, 3);
     }
 
     #[test]
     fn parse_insights_with_fence() {
-        let raw = "```json\n[{\"repo_name\":\"r\",\"kind\":\"explain\",\"message\":\"ok\",\"priority\":0}]\n```";
+        let raw = "```json\n[{\"repo_name\":\"r\",\"repo_path\":\"/p/r\",\"kind\":\"explain\",\"message\":\"ok\",\"priority\":0}]\n```";
         let insights = parse_insights(raw).unwrap();
         assert_eq!(insights.len(), 1);
         assert_eq!(insights[0].repo_name, "r");
+        assert_eq!(insights[0].repo_path, "/p/r");
         assert_eq!(insights[0].kind, InsightKind::Explain);
     }
 
@@ -456,16 +483,110 @@ mod tests {
 
     #[test]
     fn parse_insights_invalid_kind_returns_err() {
-        let raw = r#"[{"repo_name":"r","kind":"warning","message":"x","priority":1}]"#;
+        let raw = r#"[{"repo_name":"r","repo_path":"/p","kind":"warning","message":"x","priority":1}]"#;
         let err = parse_insights(raw).unwrap_err();
         assert!(err.contains("JSON パース"), "{err}");
     }
 
     #[test]
     fn parse_insights_priority_out_of_range_returns_err() {
-        let raw = r#"[{"repo_name":"r","kind":"risk","message":"x","priority":99}]"#;
+        let raw = r#"[{"repo_name":"r","repo_path":"/p","kind":"risk","message":"x","priority":99}]"#;
         let err = parse_insights(raw).unwrap_err();
         assert!(err.contains("priority"), "{err}");
+    }
+
+    #[test]
+    fn parse_insights_missing_repo_path_returns_err() {
+        // serde は repo_path 必須 → 欠落するとデシリアライズで弾かれる
+        let raw = r#"[{"repo_name":"r","kind":"risk","message":"x","priority":1}]"#;
+        let err = parse_insights(raw).unwrap_err();
+        assert!(err.contains("JSON パース"), "{err}");
+    }
+
+    #[test]
+    fn filter_valid_repo_path_keeps_matching_paths() {
+        let repos = vec![make_repo("a", 0, 0, 0), make_repo("b", 0, 0, 0)];
+        let insights = vec![
+            AiInsight {
+                repo_name: "a".into(),
+                repo_path: "/repos/a".into(),
+                kind: InsightKind::Explain,
+                message: "ok".into(),
+                priority: 1,
+            },
+            AiInsight {
+                repo_name: "b".into(),
+                repo_path: "/repos/b".into(),
+                kind: InsightKind::Risk,
+                message: "ng".into(),
+                priority: 3,
+            },
+        ];
+        let filtered = filter_valid_repo_path(insights, &repos);
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn filter_valid_repo_path_drops_hallucinated_paths() {
+        // AI が存在しない path を返した場合は誤帰属を作らないようドロップする
+        let repos = vec![make_repo("a", 0, 0, 0)];
+        let insights = vec![
+            AiInsight {
+                repo_name: "a".into(),
+                repo_path: "/repos/a".into(),
+                kind: InsightKind::Explain,
+                message: "real".into(),
+                priority: 1,
+            },
+            AiInsight {
+                repo_name: "ghost".into(),
+                repo_path: "/repos/ghost".into(),
+                kind: InsightKind::Risk,
+                message: "hallucinated".into(),
+                priority: 3,
+            },
+        ];
+        let filtered = filter_valid_repo_path(insights, &repos);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].repo_path, "/repos/a");
+    }
+
+    #[test]
+    fn filter_valid_repo_path_handles_same_name_different_paths() {
+        // 同名 repo がある場合、path が一致するものだけ残す（name lookup フォールバックなし）
+        let mut repo_a1 = make_repo("alpha", 0, 0, 0);
+        repo_a1.path = "/root1/alpha".into();
+        let mut repo_a2 = make_repo("alpha", 0, 0, 0);
+        repo_a2.path = "/root2/alpha".into();
+        let repos = vec![repo_a1, repo_a2];
+
+        let insights = vec![
+            AiInsight {
+                repo_name: "alpha".into(),
+                repo_path: "/root1/alpha".into(),
+                kind: InsightKind::Explain,
+                message: "root1".into(),
+                priority: 1,
+            },
+            AiInsight {
+                repo_name: "alpha".into(),
+                repo_path: "/root2/alpha".into(),
+                kind: InsightKind::Risk,
+                message: "root2".into(),
+                priority: 3,
+            },
+            AiInsight {
+                repo_name: "alpha".into(),
+                repo_path: "/nowhere/alpha".into(),
+                kind: InsightKind::Risk,
+                message: "lost".into(),
+                priority: 2,
+            },
+        ];
+        let filtered = filter_valid_repo_path(insights, &repos);
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().any(|i| i.repo_path == "/root1/alpha"));
+        assert!(filtered.iter().any(|i| i.repo_path == "/root2/alpha"));
     }
 
     #[test]
@@ -509,6 +630,7 @@ mod tests {
         let cache = AiCacheState::default();
         let insight = AiInsight {
             repo_name: "r".to_string(),
+            repo_path: "/repos/r".to_string(),
             kind: InsightKind::Explain,
             message: "ok".to_string(),
             priority: 1,
