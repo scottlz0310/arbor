@@ -168,9 +168,9 @@
 - [x] P4-02: `commands/repo.rs` — `list_stashes` / `apply_stash` / `drop_stash`
 - [x] P4-03: `src/views/Stash.tsx` — Stash Manager UI (一覧 / apply / drop)
 - [x] P4-04: dsx バージョン表示 + アップデート確認 UI (Settings 画面)
-- [ ] P4-05: Tauri updater + GitHub Releases 自動更新フロー設定
-- [ ] P4-06: Windows (.msi) インストーラービルド (`tauri build`)
-- [ ] P4-07: macOS (.dmg) インストーラービルド
+- [x] P4-05: Tauri updater + GitHub Releases 自動更新フロー設定
+- [x] P4-06: Windows (.msi) インストーラービルド (`tauri build`)
+- [x] P4-07: macOS (.dmg) インストーラービルド
 - [x] P4-08: README / CHANGELOG 整備
 - [ ] P4-09: GitHub public release 公開 (v0.1.0)
 - [x] P4-10: アクセシビリティ確認 (キーボードナビゲーション / フォーカス管理)
