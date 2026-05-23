@@ -38,6 +38,7 @@ export default function AiAssistant() {
 
   // 接続テスト：Settings の testAiConnection はフォーム入力中の URL を検証するためのもの。
   // ここでは保存済み config を使って稼働確認したいので ollamaAvailable を使う。
+  // ボタン経由の明示的トリガなので cancelled guard は不要（初回 mount 時は useEffect 側で wrap）。
   const checkConnection = () => {
     setConnection('checking');
     ollamaAvailable()
@@ -51,11 +52,17 @@ export default function AiAssistant() {
     getConfig()
       .then((cfg) => { if (!cancelled) setAiConfig(cfg.ai); })
       .catch(() => {});
-    checkConnection();
+    setConnection('checking');
+    ollamaAvailable()
+      .then((ok) => { if (!cancelled) setConnection(ok ? 'connected' : 'disconnected'); })
+      .catch(() => { if (!cancelled) setConnection('disconnected'); });
     return () => { cancelled = true; };
   }, []);
 
-  // Insight 取得（repos 変更時に再実行）
+  // Insight 取得（repos / aiConfig 変更時に再実行）
+  // - aiConfig 未ロード時は待機
+  // - AI 無効化時は取得自体を抑止し、UI 側で「Settings で有効化してください」を促す
+  // - cancelled guard で repos 連続更新時の race を防ぐ
   useEffect(() => {
     if (repos.length === 0) {
       setInsights([]);
@@ -64,16 +71,28 @@ export default function AiAssistant() {
       setAiFailed(false);
       return;
     }
+    if (aiConfig === null) return; // 初期ロード完了待ち
+    if (!aiConfig.enabled) {
+      setInsights([]);
+      setOllamaOffline(false);
+      setAiBgRunning(false);
+      setAiFailed(false);
+      setInsightLoading(false);
+      return;
+    }
+    let cancelled = false;
     setInsightLoading(true);
     setAiFailed(false);
     fetchInsights(repos, {}, 14)
       .then(({ insights: ins, source: s, ollamaOffline: offline }) => {
+        if (cancelled) return;
         setInsights(ins);
         setSource(s);
         setOllamaOffline(offline);
       })
-      .finally(() => setInsightLoading(false));
-  }, [repos]);
+      .finally(() => { if (!cancelled) setInsightLoading(false); });
+    return () => { cancelled = true; };
+  }, [repos, aiConfig]);
 
   // バックグラウンド AI 更新イベント
   useEffect(() => {
@@ -167,8 +186,20 @@ export default function AiAssistant() {
             aiFailed={aiFailed}
             ollamaOffline={ollamaOffline}
           />
+          {/* 同名 repo 区別のため path を補助表示（根本対応は別 Issue） */}
+          {selectedRepo && (
+            <div style={{
+              fontSize: 10, color: 'var(--text3)',
+              fontFamily: 'var(--font-mono)', marginBottom: 8,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {selectedRepo.path}
+            </div>
+          )}
           {!selectedRepo ? (
             <EmptyState message="リポジトリを選択してください" />
+          ) : !aiEnabled ? (
+            <EmptyState message="AI Insight が無効化されています。Settings で有効化してください" tone="amber" />
           ) : insightLoading ? (
             <EmptyState message="分析中…" />
           ) : selectedInsights.length > 0 ? (
@@ -190,11 +221,14 @@ export default function AiAssistant() {
           <SectionHeader title="ALL REPOSITORIES" />
           {repos.length === 0 ? (
             <EmptyState message="リポジトリが登録されていません" />
+          ) : !aiEnabled ? (
+            <EmptyState message="AI Insight が無効化されています。Settings で有効化してください" tone="amber" />
           ) : (
             repos.map((r) => (
               <RepoInsightGroup
                 key={r.path}
                 repoName={r.name}
+                repoPath={r.path}
                 insights={insightsByRepo[r.name] ?? []}
               />
             ))
@@ -380,7 +414,11 @@ function InsightDetailCard({ insight }: { insight: Insight }) {
   );
 }
 
-function RepoInsightGroup({ repoName, insights }: { repoName: string; insights: Insight[] }) {
+function RepoInsightGroup({ repoName, repoPath, insights }: {
+  repoName: string;
+  repoPath: string;
+  insights: Insight[];
+}) {
   return (
     <div style={{
       padding: '10px 14px',
@@ -389,14 +427,22 @@ function RepoInsightGroup({ repoName, insights }: { repoName: string; insights: 
       borderRadius: 'var(--r)',
       marginBottom: 6,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: insights.length > 0 ? 8 : 0 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--indigo-l)', flex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 2 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--indigo-l)' }}>
           {repoName}
         </span>
-        <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+        <span style={{
+          flex: 1, fontSize: 10, color: 'var(--text3)',
+          fontFamily: 'var(--font-mono)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0,
+        }}>
+          {repoPath}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0 }}>
           {insights.length === 0 ? '— no insights' : `${insights.length} insight${insights.length === 1 ? '' : 's'}`}
         </span>
       </div>
+      <div style={{ height: insights.length > 0 ? 6 : 0 }} />
       {insights.map((ins, i) => {
         const s = INSIGHT_STYLE[ins.type];
         return (

@@ -23,9 +23,20 @@ vi.mock('../lib/aiService', async () => {
 });
 
 // @tauri-apps/api/event の listen をスタブ化（jsdom では IPC 利用不可）
+// 各 event 名に対する handler を捕捉して、テストから手動で payload を流せるようにする
+const eventHandlers = new Map<string, (event: { payload: unknown }) => void>();
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(() => Promise.resolve(() => {})),
+  listen: vi.fn((event: string, handler: (event: { payload: unknown }) => void) => {
+    eventHandlers.set(event, handler);
+    return Promise.resolve(() => eventHandlers.delete(event));
+  }),
 }));
+
+function emitEvent(name: string, payload: unknown) {
+  const handler = eventHandlers.get(name);
+  if (!handler) throw new Error(`No listener registered for "${name}"`);
+  handler({ payload });
+}
 
 function makeRepo(overrides: Partial<RepoInfo> = {}): RepoInfo {
   return {
@@ -56,6 +67,7 @@ const NO_INSIGHTS: Insight[] = [];
 
 beforeEach(() => {
   vi.clearAllMocks();
+  eventHandlers.clear();
   act(() => {
     useRepoStore.setState({ repos: [], selectedRepo: null });
     useUiStore.setState({ toasts: [], dsxProgress: [], dsxRunning: false, activeView: 'ai' });
@@ -202,6 +214,97 @@ describe('AiAssistant — Insight 表示', () => {
     render(<AiAssistant />);
     await waitFor(() => {
       expect(screen.getByText('Ollama が未起動のため AI 分析を実行できません')).toBeTruthy();
+    });
+  });
+
+  it('同名 repo の区別のため selected セクションに path が補助表示される', async () => {
+    const repo = makeRepo({ path: '/work/clone-a/alpha', name: 'alpha' });
+    act(() => {
+      useRepoStore.setState({ repos: [repo], selectedRepo: repo });
+    });
+    render(<AiAssistant />);
+    await waitFor(() => {
+      expect(screen.getAllByText('/work/clone-a/alpha').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('RepoInsightGroup に repo path が表示される（同名 repo 区別）', async () => {
+    const repos = [
+      makeRepo({ path: '/work/clone-a/alpha', name: 'alpha' }),
+      makeRepo({ path: '/work/clone-b/alpha', name: 'alpha' }),
+    ];
+    act(() => {
+      useRepoStore.setState({ repos, selectedRepo: repos[0] });
+    });
+    render(<AiAssistant />);
+    // clone-a path は selected セクション + group の両方に出るため getAllByText
+    await waitFor(() => {
+      expect(screen.getAllByText('/work/clone-a/alpha').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('/work/clone-b/alpha').length).toBeGreaterThan(0);
+    });
+  });
+});
+
+describe('AiAssistant — AI disabled 時の挙動', () => {
+  it('AI disabled 時は fetchInsights を呼ばず "Settings で有効化" 表示', async () => {
+    vi.mocked(invoke.getConfig).mockResolvedValue(makeConfig(false));
+    act(() => {
+      useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
+    });
+    render(<AiAssistant />);
+    await waitFor(() => {
+      expect(screen.getAllByText(/Settings で有効化してください/).length).toBeGreaterThan(0);
+    });
+    expect(aiService.fetchInsights).not.toHaveBeenCalled();
+  });
+});
+
+describe('AiAssistant — イベント購読', () => {
+  it('ai_insights_loading で "AI 分析中…" バッジが表示される', async () => {
+    act(() => {
+      useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
+    });
+    render(<AiAssistant />);
+    await waitFor(() => {
+      expect(eventHandlers.has('ai_insights_loading')).toBe(true);
+    });
+    act(() => emitEvent('ai_insights_loading', undefined));
+    await waitFor(() => {
+      expect(screen.getByText(/AI 分析中…/)).toBeTruthy();
+    });
+  });
+
+  it('ai_insights_updated で AI insight に差し替わる', async () => {
+    act(() => {
+      useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
+    });
+    render(<AiAssistant />);
+    await waitFor(() => {
+      expect(eventHandlers.has('ai_insights_updated')).toBe(true);
+    });
+    const ai: AiInsight[] = [
+      { repo_name: 'alpha', kind: 'risk', message: 'event-pushed-risk', priority: 3 },
+    ];
+    act(() => emitEvent('ai_insights_updated', ai));
+    await waitFor(() => {
+      expect(screen.getByText('event-pushed-risk')).toBeTruthy();
+    });
+  });
+
+  it('ai_insights_failed で "AI 失敗" バッジが表示される', async () => {
+    act(() => {
+      useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
+    });
+    render(<AiAssistant />);
+    // SectionHeader の aiFailed バッジは !loading 条件下でのみ表示されるので、
+    // 初回 fetchInsights の loading が解けるまで待ってから emit する
+    await waitFor(() => {
+      expect(aiService.fetchInsights).toHaveBeenCalled();
+      expect(screen.getByText(/特筆すべき項目はありません/)).toBeTruthy();
+    });
+    act(() => emitEvent('ai_insights_failed', undefined));
+    await waitFor(() => {
+      expect(screen.getByText(/AI 失敗/)).toBeTruthy();
     });
   });
 });
