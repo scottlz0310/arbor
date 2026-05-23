@@ -63,15 +63,20 @@ export default function AiAssistant() {
   // - aiConfig 未ロード時は待機
   // - AI 無効化時は取得自体を抑止し、UI 側で「Settings で有効化してください」を促す
   // - cancelled guard で repos 連続更新時の race を防ぐ
+  // - mid-fetch 中に non-active 分岐へ遷移した場合に loading が残らないよう全分岐で明示リセット
   useEffect(() => {
     if (repos.length === 0) {
       setInsights([]);
       setOllamaOffline(false);
       setAiBgRunning(false);
       setAiFailed(false);
+      setInsightLoading(false);
       return;
     }
-    if (aiConfig === null) return; // 初期ロード完了待ち
+    if (aiConfig === null) {
+      setInsightLoading(false);
+      return; // 初期ロード完了待ち
+    }
     if (!aiConfig.enabled) {
       setInsights([]);
       setOllamaOffline(false);

@@ -259,6 +259,36 @@ describe('AiAssistant — AI disabled 時の挙動', () => {
   });
 });
 
+describe('AiAssistant — loading 状態のリセット', () => {
+  it('mid-fetch 中に repos が空になっても insightLoading が残らない', async () => {
+    // 解決可能な fetch を pending のまま保持して mid-fetch 状態を再現する
+    let resolveFetch!: (v: { insights: Insight[]; source: 'rule' | 'ai'; ollamaOffline: boolean }) => void;
+    vi.mocked(aiService.fetchInsights).mockReturnValue(
+      new Promise((res) => { resolveFetch = res; }),
+    );
+    act(() => {
+      useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
+    });
+    render(<AiAssistant />);
+    // loading 表示が出るまで待つ（aiConfig 読み込み完了後）
+    await waitFor(() => {
+      expect(screen.getByText('分析中…')).toBeTruthy();
+    });
+    // repos を空にする → cancelled guard で finally がスキップされるが、
+    // 新しい effect 側が setInsightLoading(false) を明示実行するので loading は残らない
+    act(() => {
+      useRepoStore.setState({ repos: [], selectedRepo: null });
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('分析中…')).toBeNull();
+    });
+    // pending fetch を後から解決しても loading は復活しない
+    act(() => resolveFetch({ insights: [], source: 'rule', ollamaOffline: false }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText('分析中…')).toBeNull();
+  });
+});
+
 describe('AiAssistant — イベント購読', () => {
   it('ai_insights_loading で "AI 分析中…" バッジが表示される', async () => {
     act(() => {
