@@ -164,12 +164,12 @@ jobs:
       - name: Upload Rust coverage to Codecov
         # fork PRs do not have access to secrets; skip upload in that case
         if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: src-tauri/lcov.info
           flags: rust
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend:
@@ -205,9 +205,9 @@ jobs:
       - name: Upload frontend coverage to Codecov
         # fork PRs do not have access to secrets; skip upload in that case
         if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage/lcov.info
           flags: frontend
-          fail_ci_if_error: false
+          fail_ci_if_error: true
