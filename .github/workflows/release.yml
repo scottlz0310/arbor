@@ -31,7 +31,7 @@ jobs:
             echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.resolve-tag.outputs.tag }}
 
@@ -70,7 +70,7 @@ jobs:
             tauri-args: ''
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.create-release.outputs.tag }}
 
@@ -141,7 +141,7 @@ jobs:
     needs: [create-release, build-tauri]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.create-release.outputs.tag }}
 
