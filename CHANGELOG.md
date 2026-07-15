@@ -7,6 +7,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
+- **Cleanup Wizard 強化 (PR-C): repo 横断 UI と型付き実行結果表示** (#186)
+  - Rust の `cleanup_preview` / `cleanup_execute` を利用する typed frontend API を追加
+  - 全登録 repo の local branch / remote-tracking ref をカテゴリ・repo 単位で表示
+  - merged のみ初期選択し、stale / upstream 消失 / remote-tracking は明示選択に限定
+  - safety block、repo / remote エラー、構造化確認、項目単位の実行結果を表示
+  - 実行後の再 preview と、複数 repo / remote・部分失敗を含む UI テストを追加
+
 - **Cleanup Wizard 強化 (PR-B): 型付き execute と実行直前の再検証** (#186)
   - `cleanup_execute` Tauri コマンドと項目単位の `success` / `skipped` / `failed` 結果を追加
   - preview 時点の OID・upstream・remote・候補種別・merge 状態を repo 単位で再検証
