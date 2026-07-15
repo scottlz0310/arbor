@@ -10,7 +10,9 @@ use std::collections::{HashMap, HashSet};
 
 /// 登録済み全 repo を横断して Cleanup 候補を列挙する。
 /// 読み取り専用: ローカル ref・remote-tracking ref を一切変更しない。
-#[tauri::command]
+/// 全 repo × 全 remote へ順に接続するため応答が遅い remote で長時間ブロックし得る。
+/// main thread を塞いで UI をフリーズさせないよう async 指定で別スレッド実行にする。
+#[tauri::command(async)]
 pub fn cleanup_preview() -> Result<CleanupPreview, String> {
     let config = load_config()?;
     let now_ts = std::time::SystemTime::now()
@@ -78,11 +80,15 @@ fn preview_repo_inner(
     // fetch ではなく ls-remote 相当 (connect + list) を使うことで、
     // preview がローカル ref を変更しないことを保証する。
     let mut live_heads: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut remote_default_branches: HashMap<String, String> = HashMap::new();
     let mut remote_errors = Vec::new();
     for remote in &remote_names {
         match list_remote_heads(&repo, remote) {
-            Ok(heads) => {
+            Ok((heads, default_branch)) => {
                 live_heads.insert(remote.clone(), heads);
+                if let Some(db) = default_branch {
+                    remote_default_branches.insert(remote.clone(), db);
+                }
             }
             Err(error) => remote_errors.push(RemoteFetchError {
                 remote: remote.clone(),
@@ -91,17 +97,14 @@ fn preview_repo_inner(
         }
     }
 
+    let default_branch = detect_default_branch(&repo, &remote_default_branches);
     let ctx = RepoContext {
         repo: &repo,
         repo_path,
         repo_name,
         params,
-        head_oid: repo
-            .head()
-            .ok()
-            .and_then(|h| h.peel_to_commit().ok())
-            .map(|c| c.id()),
-        default_branch: detect_default_branch(&repo),
+        merged_basis_oid: merged_basis_oid(&repo, default_branch.as_deref()),
+        default_branch,
         worktree_branches: worktree_checked_out_branches(&repo),
     };
 
@@ -130,12 +133,24 @@ struct RepoContext<'a> {
     repo_path: &'a str,
     repo_name: &'a str,
     params: &'a PreviewParams<'a>,
-    head_oid: Option<git2::Oid>,
+    /// merged 判定の基準 commit。default branch tip、無ければ HEAD。
+    merged_basis_oid: Option<git2::Oid>,
     default_branch: Option<String>,
     worktree_branches: HashSet<String>,
 }
 
 impl RepoContext<'_> {
+    /// tip が merged 判定基準に取り込み済み (基準と同一 commit または祖先) かを返す。
+    /// fast-forward マージ直後 (tip == 基準 commit) も merged として扱う。
+    fn is_merged_into_basis(&self, tip: git2::Oid) -> bool {
+        match self.merged_basis_oid {
+            Some(basis) => {
+                basis == tip || self.repo.graph_descendant_of(basis, tip).unwrap_or(false)
+            }
+            None => false,
+        }
+    }
+
     fn local_candidates(&self) -> Result<Vec<CleanupCandidate>, String> {
         let mut candidates = Vec::new();
         for item in self
@@ -154,12 +169,10 @@ impl RepoContext<'_> {
             };
             let tip = commit.id();
 
-            let is_merged = match self.head_oid {
-                Some(head) if head != tip => {
-                    self.repo.graph_descendant_of(head, tip).unwrap_or(false)
-                }
-                _ => false,
-            };
+            // 基準 branch (default branch) 自身と checkout 中の branch は merged 扱いにしない。
+            let is_merged = !branch.is_head()
+                && self.default_branch.as_deref() != Some(name.as_str())
+                && self.is_merged_into_basis(tip);
             let (upstream, remote_name) = upstream_state(self.repo, &name);
             let age_secs = self.params.now_ts - commit.time().seconds();
             let stale_secs = i64::from(self.params.stale_threshold_days) * 86_400;
@@ -238,12 +251,7 @@ impl RepoContext<'_> {
                 Err(_) => continue,
             };
             let tip = commit.id();
-            let is_merged = match self.head_oid {
-                Some(head) if head != tip => {
-                    self.repo.graph_descendant_of(head, tip).unwrap_or(false)
-                }
-                _ => false,
-            };
+            let is_merged = self.is_merged_into_basis(tip);
 
             let mut blocked = Vec::new();
             if self.default_branch.as_deref() == Some(branch_part) {
@@ -344,26 +352,49 @@ fn list_remote_names(repo: &Repository) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-/// `git ls-remote --heads` 相当。remote 上に現存する branch 名の集合を返す。
+/// `git ls-remote` 相当。remote 上に現存する branch 名の集合と、
+/// remote 側 HEAD のシンボリックターゲット (default branch 名) を返す。
 /// fetch と違いローカルの remote-tracking ref を更新しないため preview に安全。
-fn list_remote_heads(repo: &Repository, name: &str) -> Result<HashSet<String>, String> {
+fn list_remote_heads(
+    repo: &Repository,
+    name: &str,
+) -> Result<(HashSet<String>, Option<String>), String> {
     let mut remote = repo.find_remote(name).map_err(|e| e.to_string())?;
     remote
         .connect(Direction::Fetch)
         .map_err(|e| e.to_string())?;
-    let heads = remote
-        .list()
-        .map_err(|e| e.to_string())?
-        .iter()
-        .filter_map(|h| h.name().strip_prefix("refs/heads/").map(str::to_string))
-        .collect();
+    let mut heads = HashSet::new();
+    let mut default_branch = None;
+    for head in remote.list().map_err(|e| e.to_string())? {
+        let name = head.name();
+        if name == "HEAD" {
+            if let Some(target) = head.symref_target() {
+                if let Some(branch) = target.strip_prefix("refs/heads/") {
+                    default_branch = Some(branch.to_string());
+                }
+            }
+        } else if let Some(branch) = name.strip_prefix("refs/heads/") {
+            heads.insert(branch.to_string());
+        }
+    }
     let _ = remote.disconnect();
-    Ok(heads)
+    Ok((heads, default_branch))
 }
 
-/// default branch 名を解決する。remote の HEAD symref を優先し、
+/// default branch 名を解決する。直近の接続 (ls-remote) で得た remote HEAD symref を最優先し、
+/// 次にローカルの refs/remotes/<remote>/HEAD を確認し、
 /// 無ければローカルの main / master にフォールバックする。
-fn detect_default_branch(repo: &Repository) -> Option<String> {
+fn detect_default_branch(
+    repo: &Repository,
+    remote_default_branches: &HashMap<String, String>,
+) -> Option<String> {
+    if let Ok(remotes) = repo.remotes() {
+        for name in remotes.iter().flatten().flatten() {
+            if let Some(db) = remote_default_branches.get(name) {
+                return Some(db.clone());
+            }
+        }
+    }
     if let Ok(remotes) = repo.remotes() {
         for name in remotes.iter().flatten().flatten() {
             let Ok(head_ref) = repo.find_reference(&format!("refs/remotes/{name}/HEAD")) else {
@@ -380,6 +411,22 @@ fn detect_default_branch(repo: &Repository) -> Option<String> {
         .into_iter()
         .find(|&name| repo.find_branch(name, BranchType::Local).is_ok())
         .map(str::to_string)
+}
+
+/// merged 判定の基準 commit を返す。default branch の local tip を基準とし、
+/// local に default branch が無い場合は HEAD にフォールバックする。
+/// checkout 中の HEAD は repo ごとに恣意的なため、基準には使わない。
+fn merged_basis_oid(repo: &Repository, default_branch: Option<&str>) -> Option<git2::Oid> {
+    default_branch
+        .and_then(|name| repo.find_branch(name, BranchType::Local).ok())
+        .and_then(|b| b.get().peel_to_commit().ok())
+        .map(|c| c.id())
+        .or_else(|| {
+            repo.head()
+                .ok()
+                .and_then(|h| h.peel_to_commit().ok())
+                .map(|c| c.id())
+        })
 }
 
 /// linked worktree で checkout 中の branch 名の集合を返す。
@@ -638,11 +685,22 @@ mod tests {
         let clone =
             git2::Repository::clone(source.path_str(), &clone_dir.path).expect("clone");
         let head = clone.head().unwrap().peel_to_commit().unwrap();
-        clone.branch("feature", &head, false).expect("branch");
+        let _branch = clone.branch("feature", &head, false).expect("branch");
         // upstream 設定だけ残して remote-tracking ref が存在しない状態を作る
         let mut cfg = clone.config().expect("config");
         cfg.set_str("branch.feature.remote", "origin").unwrap();
         cfg.set_str("branch.feature.merge", "refs/heads/feature").unwrap();
+
+        // feature ブランチに main 未マージの独自コミットを追加する
+        clone.set_head("refs/heads/feature").expect("set head");
+        std::fs::write(clone_dir.path.join("feature.txt"), "feature\n").expect("write");
+        commit_all(&clone, "feature commit");
+
+        // HEAD を main に戻す
+        clone.set_head("refs/heads/main").expect("set head main");
+        let mut checkout_opts = git2::build::CheckoutBuilder::new();
+        checkout_opts.force();
+        clone.checkout_head(Some(&mut checkout_opts)).expect("checkout");
 
         let preview = preview_repo(clone_dir.path_str(), "clone", &params(now_ts()));
 
@@ -750,12 +808,30 @@ mod tests {
     }
 
     #[test]
-    fn detect_default_branch_prefers_remote_head_symref() {
-        let source = init_repo_with_commit("origin commit");
-        let clone_dir = TempDir::new("clone-default");
-        let clone =
-            git2::Repository::clone(source.path_str(), &clone_dir.path).expect("clone");
+    fn detect_default_branch_without_local_origin_head() {
+        let dir = TempDir::new("remote-source");
+        let mut opts = git2::RepositoryInitOptions::new();
+        opts.initial_head("trunk");
+        let remote_repo = git2::Repository::init_opts(&dir.path, &opts).expect("init repo");
+        std::fs::write(dir.path.join("README.md"), "hello\n").expect("write file");
+        commit_all(&remote_repo, "initial");
 
-        assert_eq!(detect_default_branch(&clone), Some("main".to_string()));
+        let clone_dir = TempDir::new("clone-test");
+        let clone_repo = git2::Repository::clone(dir.path_str(), &clone_dir.path).expect("clone");
+
+        if let Ok(mut head_ref) = clone_repo.find_reference("refs/remotes/origin/HEAD") {
+            head_ref.delete().expect("delete origin/HEAD");
+        }
+
+        let (_, default_branch) = list_remote_heads(&clone_repo, "origin").expect("list remote heads");
+        assert_eq!(default_branch, Some("trunk".to_string()));
+
+        let mut remote_default_branches = HashMap::new();
+        if let Some(db) = default_branch {
+            remote_default_branches.insert("origin".to_string(), db);
+        }
+
+        let db = detect_default_branch(&clone_repo, &remote_default_branches);
+        assert_eq!(db, Some("trunk".to_string()));
     }
 }

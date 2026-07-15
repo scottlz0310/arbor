@@ -168,7 +168,8 @@ pub enum CleanupOperation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateKind {
-    /// HEAD にマージ済みの local branch（初期選択対象）。
+    /// default branch にマージ済みの local branch（初期選択対象）。
+    /// local に default branch が無い repo では HEAD 基準にフォールバックする。
     Merged,
     /// stale 閾値を超えた local branch（明示選択のみ）。
     Stale,
