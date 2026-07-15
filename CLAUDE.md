@@ -116,15 +116,16 @@ Rust backend (Tauri commands)
 - **GitHub PAT**: OS キーチェーン（keyring クレート）に保存。`config.settings.github_keychain_key` がキー名
 - **AI モデル**: `config.ai.model`。デフォルト `qwen3.5:latest`（`ollama list` で確認済み）
 
-### dsx コマンドマッピング
+### 主要 Tauri コマンドマッピング
 
-| Tauri コマンド | dsx コマンド | 備考 |
-|---------------|------------|------|
+| Tauri コマンド | バックエンド処理 | 備考 |
+|---------------|-----------------|------|
 | `repo_update` | `dsx repo update --no-tui --jobs 4` | stdout を `dsx_progress` イベントでストリーム |
-| `repo_cleanup_preview` | `dsx repo cleanup -n` | dry-run、stdout をそのままフロントに返す |
-| `repo_cleanup` | `dsx repo cleanup` | ConfirmDialog 後に呼び出す |
+| `cleanup_preview` | git2 | 登録済み全リポジトリの削除候補を読み取り専用で列挙 |
+| `cleanup_execute` | git2 | 選択候補を再検証して local branch 削除または remote-tracking ref prune を実行 |
 
-`repo_update` と `repo_cleanup` は `run_dsx_with_events` を使いストリーミング。`repo_cleanup_preview` は `run_dsx_sync`（同期）。
+`repo_update` は `run_dsx_with_events` を使いストリーミングする。Cleanup コマンドは
+`commands/cleanup.rs` で実装し、dsx を呼び出さない。
 
 ### 認証の制約（Phase 1）
 
