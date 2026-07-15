@@ -548,6 +548,7 @@ mod tests {
             name: "configured-name".to_string(),
             github_owner: owner.map(String::from),
             github_repo: repo.map(String::from),
+            protected_branches: Vec::new(),
         }
     }
 

@@ -5,6 +5,18 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### feat
+
+- **Cleanup Wizard 強化 (PR-A): repo 横断 preview コマンド** (#186)
+  - `cleanup_preview` Tauri コマンド追加。登録済み全 repo を横断して削除候補を列挙する
+  - `CleanupCandidate` / `CleanupOperation` / `CleanupPreview` 等の共有モデル追加
+    （local branch 削除と remote-tracking ref prune を別 operation として分離）
+  - 候補判定: マージ済み / stale / upstream 消失 local branch、remote 上に存在しない
+    stale remote-tracking ref（ls-remote 相当で最新状態を確認し、preview はローカル ref を変更しない）
+  - 安全条件（checkout 中・default branch・protected・worktree 使用中）を `blocked` として付与
+  - remote 接続失敗は repo 単位の `remote_errors` として報告し、該当 remote の prune 候補は提示しない
+  - `RepoConfig.protected_branches` 設定を追加（Cleanup の削除対象から除外する branch/ref 名）
+
 ## [0.1.0] — 2026-05-23
 
 ### feat — Phase 4: UX 磨き + リリース

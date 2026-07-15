@@ -63,6 +63,9 @@ pub struct RepoConfig {
     pub name: String,
     pub github_owner: Option<String>,
     pub github_repo: Option<String>,
+    /// Cleanup Wizard で削除対象から除外する branch/ref 名 (Issue #186)。
+    #[serde(default)]
+    pub protected_branches: Vec<String>,
 }
 
 /// Returns the platform-appropriate config directory:

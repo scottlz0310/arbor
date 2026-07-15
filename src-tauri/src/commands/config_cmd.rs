@@ -71,6 +71,7 @@ pub fn add_repository(
         name,
         github_owner,
         github_repo,
+        protected_branches: Vec::new(),
     });
 
     save_config(&config)?;
@@ -658,7 +659,7 @@ mod tests {
     }
 
     fn make_repo(path: &str) -> RepoConfig {
-        RepoConfig { path: path.into(), name: path.split('/').last().unwrap_or(path).into(), github_owner: None, github_repo: None }
+        RepoConfig { path: path.into(), name: path.split('/').next_back().unwrap_or(path).into(), github_owner: None, github_repo: None, protected_branches: Vec::new() }
     }
 
     #[test]
