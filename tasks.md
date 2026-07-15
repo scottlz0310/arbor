@@ -191,7 +191,7 @@
        - 安全条件 (checkout 中・default・protected・worktree) を `blocked` として付与
        - remote は ls-remote 相当で最新状態を確認（preview はローカル ref を変更しない）
        - `RepoConfig.protected_branches` 設定追加、一時 Git repo によるテスト
-- [ ] CW-02 (PR-B): Rust `cleanup_execute` + 実行直前の再検証 (OID / upstream / remote 現存チェック)、
+- [x] CW-02 (PR-B): Rust `cleanup_execute` + 実行直前の再検証 (OID / upstream / remote 現存チェック)、
        項目単位の success / skipped / failed 返却
 - [ ] CW-03 (PR-C): フロントエンド刷新 — repo 横断一覧 (local / remote-tracking カテゴリ分離)、
        確認ダイアログ (`repo / remote / ref / operation` 識別)、実行結果表示、テスト

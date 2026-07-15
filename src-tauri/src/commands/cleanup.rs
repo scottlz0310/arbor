@@ -1,7 +1,8 @@
-use crate::config::load_config;
+use crate::config::{load_config, AppConfig};
 use crate::models::{
-    CandidateKind, CleanupCandidate, CleanupOperation, CleanupPreview, RemoteFetchError,
-    RepoCleanupPreview, SafetyBlock, UpstreamState,
+    CandidateKind, CleanupCandidate, CleanupExecutionItemResult, CleanupExecutionRequest,
+    CleanupExecutionResult, CleanupExecutionStatus, CleanupOperation, CleanupPreview,
+    RemoteFetchError, RepoCleanupPreview, SafetyBlock, UpstreamState,
 };
 use git2::{BranchType, Direction, Repository};
 use std::collections::{HashMap, HashSet};
@@ -15,10 +16,7 @@ use std::collections::{HashMap, HashSet};
 #[tauri::command(async)]
 pub fn cleanup_preview() -> Result<CleanupPreview, String> {
     let config = load_config()?;
-    let now_ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_secs() as i64;
+    let now_ts = unix_timestamp()?;
 
     let repos = config
         .repositories
@@ -37,6 +35,398 @@ pub fn cleanup_preview() -> Result<CleanupPreview, String> {
         repos,
         generated_at: now_ts,
     })
+}
+
+// ─── cleanup_execute ─────────────────────────────────────────────────────────
+
+/// preview で選択された候補を repo ごとに再検証して実行する。
+/// 再検証・実行の失敗は他の項目を巻き込まず、項目単位の結果として返す。
+#[tauri::command(async)]
+pub fn cleanup_execute(request: CleanupExecutionRequest) -> Result<CleanupExecutionResult, String> {
+    let config = load_config()?;
+    execute_cleanup(&config, request.candidates)
+}
+
+fn execute_cleanup(
+    config: &AppConfig,
+    candidates: Vec<CleanupCandidate>,
+) -> Result<CleanupExecutionResult, String> {
+    let mut grouped: HashMap<String, Vec<(usize, CleanupCandidate)>> = HashMap::new();
+    let mut repo_order = Vec::new();
+    for (index, candidate) in candidates.iter().cloned().enumerate() {
+        if !grouped.contains_key(&candidate.repo_path) {
+            repo_order.push(candidate.repo_path.clone());
+        }
+        grouped
+            .entry(candidate.repo_path.clone())
+            .or_default()
+            .push((index, candidate));
+    }
+
+    let mut results = vec![None; candidates.len()];
+    let now_ts = unix_timestamp()?;
+
+    for repo_path in repo_order {
+        let mut requested = grouped
+            .remove(&repo_path)
+            .expect("repo_order is built from grouped keys");
+        // local branch が stale remote-tracking ref を upstream に持つ場合でも、
+        // この batch 自身の prune で upstream 状態を先に変えない。
+        requested.sort_by_key(|(_, candidate)| candidate.operation as u8);
+        let Some(repo_config) = config
+            .repositories
+            .iter()
+            .find(|repo| repo.path == repo_path)
+        else {
+            for (index, candidate) in requested {
+                results[index] = Some(item_result(
+                    &candidate,
+                    CleanupExecutionStatus::Skipped,
+                    Some("repository is no longer registered".to_string()),
+                    None,
+                ));
+            }
+            continue;
+        };
+        for (_, candidate) in &mut requested {
+            candidate.repo_name.clone_from(&repo_config.name);
+        }
+
+        let params = PreviewParams {
+            stale_threshold_days: config.settings.stale_threshold_days,
+            protected_branches: &repo_config.protected_branches,
+            now_ts,
+        };
+        let current_preview = preview_repo(&repo_path, &repo_config.name, &params);
+        if let Some(error) = current_preview.error.as_deref() {
+            for (index, candidate) in requested {
+                results[index] = Some(item_result(
+                    &candidate,
+                    CleanupExecutionStatus::Failed,
+                    None,
+                    Some(format!("revalidate {}: {error}", candidate.repo_path)),
+                ));
+            }
+            continue;
+        }
+
+        let repo = match Repository::open(&repo_path) {
+            Ok(repo) => repo,
+            Err(error) => {
+                for (index, candidate) in requested {
+                    results[index] = Some(item_result(
+                        &candidate,
+                        CleanupExecutionStatus::Failed,
+                        None,
+                        Some(format!("open {} for execute: {error}", candidate.repo_path)),
+                    ));
+                }
+                continue;
+            }
+        };
+
+        let mut seen = HashSet::new();
+        for (index, candidate) in requested {
+            let key = (candidate.operation as u8, candidate.ref_name.clone());
+            if !seen.insert(key) {
+                results[index] = Some(item_result(
+                    &candidate,
+                    CleanupExecutionStatus::Skipped,
+                    Some("duplicate cleanup target".to_string()),
+                    None,
+                ));
+                continue;
+            }
+
+            if !candidate.blocked.is_empty() {
+                results[index] = Some(item_result(
+                    &candidate,
+                    CleanupExecutionStatus::Skipped,
+                    Some(format!("preview safety block: {:?}", candidate.blocked)),
+                    None,
+                ));
+                continue;
+            }
+
+            let current = current_preview.candidates.iter().find(|current| {
+                current.operation == candidate.operation && current.ref_name == candidate.ref_name
+            });
+            let Some(current) = current else {
+                if let Some(remote_error) = candidate.remote_name.as_deref().and_then(|remote| {
+                    current_preview
+                        .remote_errors
+                        .iter()
+                        .find(|error| error.remote == remote)
+                }) {
+                    results[index] = Some(item_result(
+                        &candidate,
+                        CleanupExecutionStatus::Failed,
+                        None,
+                        Some(format!(
+                            "revalidate {} remote {}: {}",
+                            candidate.repo_path, remote_error.remote, remote_error.error
+                        )),
+                    ));
+                } else {
+                    results[index] = Some(item_result(
+                        &candidate,
+                        CleanupExecutionStatus::Skipped,
+                        Some(missing_candidate_reason(&repo, &candidate)),
+                        None,
+                    ));
+                }
+                continue;
+            };
+
+            if !current.blocked.is_empty() {
+                results[index] = Some(item_result(
+                    &candidate,
+                    CleanupExecutionStatus::Skipped,
+                    Some(format!("current safety block: {:?}", current.blocked)),
+                    None,
+                ));
+                continue;
+            }
+            if let Some(reason) = snapshot_change_reason(&candidate, current) {
+                results[index] = Some(item_result(
+                    &candidate,
+                    CleanupExecutionStatus::Skipped,
+                    Some(reason),
+                    None,
+                ));
+                continue;
+            }
+
+            results[index] = Some(
+                match execute_candidate(&repo, current, &repo_config.protected_branches) {
+                    Ok(()) => item_result(&candidate, CleanupExecutionStatus::Success, None, None),
+                    Err(ExecuteError::Skipped(reason)) => item_result(
+                        &candidate,
+                        CleanupExecutionStatus::Skipped,
+                        Some(reason),
+                        None,
+                    ),
+                    Err(ExecuteError::Failed(error)) => item_result(
+                        &candidate,
+                        CleanupExecutionStatus::Failed,
+                        None,
+                        Some(error),
+                    ),
+                },
+            );
+        }
+    }
+
+    Ok(CleanupExecutionResult {
+        items: results
+            .into_iter()
+            .map(|result| result.expect("every requested candidate receives a result"))
+            .collect(),
+        completed_at: unix_timestamp()?,
+    })
+}
+
+fn snapshot_change_reason(
+    previewed: &CleanupCandidate,
+    current: &CleanupCandidate,
+) -> Option<String> {
+    let mut changed = Vec::new();
+    if previewed.oid != current.oid {
+        changed.push("OID");
+    }
+    if previewed.upstream != current.upstream {
+        changed.push("upstream");
+    }
+    if previewed.remote_name != current.remote_name {
+        changed.push("remote");
+    }
+    if previewed.kind != current.kind {
+        changed.push("candidate kind");
+    }
+    if previewed.is_merged != current.is_merged {
+        changed.push("merge state");
+    }
+    (!changed.is_empty()).then(|| format!("state changed after preview: {}", changed.join(", ")))
+}
+
+fn missing_candidate_reason(repo: &Repository, previewed: &CleanupCandidate) -> String {
+    let branch_type = match previewed.operation {
+        CleanupOperation::DeleteLocalBranch => BranchType::Local,
+        CleanupOperation::PruneRemoteTrackingRef => BranchType::Remote,
+    };
+    let Ok(branch) = repo.find_branch(&previewed.ref_name, branch_type) else {
+        return "target no longer exists".to_string();
+    };
+    if branch
+        .get()
+        .peel_to_commit()
+        .is_ok_and(|commit| commit.id().to_string() != previewed.oid)
+    {
+        return "state changed after preview: OID".to_string();
+    }
+    if previewed.operation == CleanupOperation::DeleteLocalBranch
+        && upstream_state(repo, &previewed.ref_name).0 != previewed.upstream
+    {
+        return "state changed after preview: upstream".to_string();
+    }
+    "target is no longer a cleanup candidate".to_string()
+}
+
+enum ExecuteError {
+    Skipped(String),
+    Failed(String),
+}
+
+fn execute_candidate(
+    repo: &Repository,
+    candidate: &CleanupCandidate,
+    protected_branches: &[String],
+) -> Result<(), ExecuteError> {
+    match candidate.operation {
+        CleanupOperation::DeleteLocalBranch => {
+            let mut branch = repo
+                .find_branch(&candidate.ref_name, BranchType::Local)
+                .map_err(|_| ExecuteError::Skipped("local branch no longer exists".to_string()))?;
+            let oid = branch
+                .get()
+                .peel_to_commit()
+                .map_err(|error| {
+                    ExecuteError::Failed(format!(
+                        "resolve local branch {}: {error}",
+                        candidate.ref_name
+                    ))
+                })?
+                .id();
+            if oid.to_string() != candidate.oid {
+                return Err(ExecuteError::Skipped(
+                    "state changed immediately before delete: OID".to_string(),
+                ));
+            }
+            if upstream_state(repo, &candidate.ref_name).0 != candidate.upstream {
+                return Err(ExecuteError::Skipped(
+                    "state changed immediately before delete: upstream".to_string(),
+                ));
+            }
+            if branch.is_head() {
+                return Err(ExecuteError::Skipped(
+                    "local branch is currently checked out".to_string(),
+                ));
+            }
+            if protected_branches.contains(&candidate.ref_name) {
+                return Err(ExecuteError::Skipped(
+                    "local branch is protected".to_string(),
+                ));
+            }
+            if is_worktree_checked_out(repo, &candidate.ref_name).map_err(|error| {
+                ExecuteError::Failed(format!(
+                    "revalidate worktrees for {}: {error}",
+                    candidate.repo_path
+                ))
+            })? {
+                return Err(ExecuteError::Skipped(
+                    "local branch is checked out in a worktree".to_string(),
+                ));
+            }
+            branch.delete().map_err(|error| {
+                ExecuteError::Failed(format!(
+                    "delete local branch {}: {error}",
+                    candidate.ref_name
+                ))
+            })
+        }
+        CleanupOperation::PruneRemoteTrackingRef => {
+            let remote_names = list_remote_names(repo).map_err(|error| {
+                ExecuteError::Failed(format!("list remotes for {}: {error}", candidate.repo_path))
+            })?;
+            let Some((remote, branch_name)) = split_remote_ref(&candidate.ref_name, &remote_names)
+            else {
+                return Err(ExecuteError::Skipped(
+                    "remote-tracking ref no longer maps to a configured remote".to_string(),
+                ));
+            };
+            if candidate.remote_name.as_deref() != Some(remote) {
+                return Err(ExecuteError::Skipped(
+                    "state changed immediately before prune: remote".to_string(),
+                ));
+            }
+            let (live_heads, default_branch) =
+                list_remote_heads(repo, remote).map_err(|error| {
+                    ExecuteError::Failed(format!(
+                        "revalidate {} remote {remote}: {error}",
+                        candidate.repo_path
+                    ))
+                })?;
+            if live_heads.contains(branch_name) {
+                return Err(ExecuteError::Skipped(format!(
+                    "remote branch {remote}/{branch_name} currently exists"
+                )));
+            }
+            if default_branch.as_deref() == Some(branch_name) {
+                return Err(ExecuteError::Skipped(
+                    "remote-tracking ref is the current default branch".to_string(),
+                ));
+            }
+            if protected_branches
+                .iter()
+                .any(|protected| protected == branch_name || protected == &candidate.ref_name)
+            {
+                return Err(ExecuteError::Skipped(
+                    "remote-tracking ref is protected".to_string(),
+                ));
+            }
+
+            let mut branch = repo
+                .find_branch(&candidate.ref_name, BranchType::Remote)
+                .map_err(|_| {
+                    ExecuteError::Skipped("remote-tracking ref no longer exists".to_string())
+                })?;
+            let oid = branch
+                .get()
+                .peel_to_commit()
+                .map_err(|error| {
+                    ExecuteError::Failed(format!(
+                        "resolve remote-tracking ref {}: {error}",
+                        candidate.ref_name
+                    ))
+                })?
+                .id();
+            if oid.to_string() != candidate.oid {
+                return Err(ExecuteError::Skipped(
+                    "state changed immediately before prune: OID".to_string(),
+                ));
+            }
+            branch.delete().map_err(|error| {
+                ExecuteError::Failed(format!(
+                    "prune remote-tracking ref {}: {error}",
+                    candidate.ref_name
+                ))
+            })
+        }
+    }
+}
+
+fn item_result(
+    candidate: &CleanupCandidate,
+    status: CleanupExecutionStatus,
+    reason: Option<String>,
+    error: Option<String>,
+) -> CleanupExecutionItemResult {
+    CleanupExecutionItemResult {
+        repo_path: candidate.repo_path.clone(),
+        repo_name: candidate.repo_name.clone(),
+        ref_name: candidate.ref_name.clone(),
+        operation: candidate.operation,
+        status,
+        reason,
+        error,
+    }
+}
+
+fn unix_timestamp() -> Result<i64, String> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())
+        .map(|duration| duration.as_secs() as i64)
 }
 
 // ─── preview_repo ────────────────────────────────────────────────────────────
@@ -455,11 +845,36 @@ fn worktree_checked_out_branches(repo: &Repository) -> HashSet<String> {
     checked_out
 }
 
+/// execute 時は worktree の確認失敗を安全側に倒し、削除を続行しない。
+fn is_worktree_checked_out(repo: &Repository, branch_name: &str) -> Result<bool, String> {
+    let names = repo
+        .worktrees()
+        .map_err(|error| format!("list worktrees: {error}"))?;
+    for name in names.iter() {
+        let name = name
+            .map_err(|error| format!("read worktree name: {error}"))?
+            .ok_or_else(|| "worktree name is not valid UTF-8".to_string())?;
+        let worktree = repo
+            .find_worktree(name)
+            .map_err(|error| format!("open worktree metadata {name}: {error}"))?;
+        let worktree_repo = Repository::open_from_worktree(&worktree)
+            .map_err(|error| format!("open worktree {name}: {error}"))?;
+        let head = worktree_repo
+            .head()
+            .map_err(|error| format!("read worktree HEAD {name}: {error}"))?;
+        if head.is_branch() && head.shorthand().is_ok_and(|short| short == branch_name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::RepoConfig;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -539,6 +954,37 @@ mod tests {
         ref_name: &str,
     ) -> Option<&'a CleanupCandidate> {
         preview.candidates.iter().find(|c| c.ref_name == ref_name)
+    }
+
+    fn config_for_repos(repos: &[(&TempDir, &str)]) -> AppConfig {
+        AppConfig {
+            repositories: repos
+                .iter()
+                .map(|(dir, name)| RepoConfig {
+                    path: dir.path_str().to_string(),
+                    name: (*name).to_string(),
+                    github_owner: None,
+                    github_repo: None,
+                    protected_branches: Vec::new(),
+                })
+                .collect(),
+            ..AppConfig::default()
+        }
+    }
+
+    fn merged_feature_candidate(dir: &TempDir) -> CleanupCandidate {
+        let repo = git2::Repository::open(dir.path_str()).expect("open");
+        let base = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feature", &base, false).expect("branch");
+        std::fs::write(dir.path.join("next.txt"), "next\n").expect("write");
+        commit_all(&repo, "advance main");
+        drop(base);
+        drop(repo);
+
+        let preview = preview_repo(dir.path_str(), "repo", &params(now_ts()));
+        find(&preview, "feature")
+            .expect("feature candidate")
+            .clone()
     }
 
     // ── classify_local (パラメータ化) ─────────────────────────────────────────
@@ -833,5 +1279,214 @@ mod tests {
 
         let db = detect_default_branch(&clone_repo, &remote_default_branches);
         assert_eq!(db, Some("trunk".to_string()));
+    }
+
+    // ── execute ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn execute_deletes_revalidated_local_branch() {
+        let dir = init_repo_with_commit("base");
+        let candidate = merged_feature_candidate(&dir);
+        let config = config_for_repos(&[(&dir, "repo")]);
+
+        let result = execute_cleanup(&config, vec![candidate]).expect("execute");
+
+        assert_eq!(result.items.len(), 1);
+        assert_eq!(result.items[0].status, CleanupExecutionStatus::Success);
+        let repo = git2::Repository::open(dir.path_str()).expect("open");
+        assert!(repo.find_branch("feature", BranchType::Local).is_err());
+    }
+
+    #[test]
+    fn execute_prunes_only_stale_remote_tracking_ref() {
+        let source = init_repo_with_commit("origin commit");
+        {
+            let repo = git2::Repository::open(source.path_str()).expect("open source");
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.branch("feature", &head, false).expect("branch");
+        }
+        let clone_dir = TempDir::new("execute-prune");
+        git2::Repository::clone(source.path_str(), &clone_dir.path).expect("clone");
+        {
+            let repo = git2::Repository::open(source.path_str()).expect("open source");
+            repo.find_branch("feature", BranchType::Local)
+                .expect("feature")
+                .delete()
+                .expect("delete remote feature");
+        }
+        let preview = preview_repo(clone_dir.path_str(), "clone", &params(now_ts()));
+        let candidate = find(&preview, "origin/feature")
+            .expect("prune candidate")
+            .clone();
+        let config = config_for_repos(&[(&clone_dir, "clone")]);
+
+        let result = execute_cleanup(&config, vec![candidate]).expect("execute");
+
+        assert_eq!(result.items[0].status, CleanupExecutionStatus::Success);
+        let clone = git2::Repository::open(clone_dir.path_str()).expect("open clone");
+        assert!(clone
+            .find_branch("origin/feature", BranchType::Remote)
+            .is_err());
+        let source_repo = git2::Repository::open(source.path_str()).expect("open source");
+        assert!(source_repo.find_branch("main", BranchType::Local).is_ok());
+    }
+
+    #[test]
+    fn execute_skips_snapshot_changes() {
+        for (change, expected_reason) in [("oid", "OID"), ("upstream", "upstream")] {
+            let dir = init_repo_with_commit("base");
+            let candidate = merged_feature_candidate(&dir);
+            let repo = git2::Repository::open(dir.path_str()).expect("open");
+            match change {
+                "oid" => {
+                    let branch = repo
+                        .find_branch("feature", BranchType::Local)
+                        .expect("feature");
+                    let parent = branch.get().peel_to_commit().expect("commit");
+                    let tree = parent.tree().expect("tree");
+                    let signature = git2::Signature::now("Arbor Test", "arbor@example.invalid")
+                        .expect("signature");
+                    repo.commit(
+                        Some("refs/heads/feature"),
+                        &signature,
+                        &signature,
+                        "feature moved",
+                        &tree,
+                        &[&parent],
+                    )
+                    .expect("move feature");
+                }
+                "upstream" => {
+                    repo.remote("origin", dir.path_str()).expect("remote");
+                    let main = repo.head().unwrap().peel_to_commit().unwrap();
+                    repo.reference("refs/remotes/origin/main", main.id(), false, "test setup")
+                        .expect("tracking ref");
+                    let mut cfg = repo.config().expect("config");
+                    cfg.set_str("branch.feature.remote", "origin").unwrap();
+                    cfg.set_str("branch.feature.merge", "refs/heads/main")
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            drop(repo);
+            let config = config_for_repos(&[(&dir, "repo")]);
+
+            let result = execute_cleanup(&config, vec![candidate]).expect("execute");
+
+            assert_eq!(
+                result.items[0].status,
+                CleanupExecutionStatus::Skipped,
+                "change={change}"
+            );
+            assert!(
+                result.items[0]
+                    .reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains(expected_reason)),
+                "change={change} reason={:?}",
+                result.items[0].reason
+            );
+            let repo = git2::Repository::open(dir.path_str()).expect("open");
+            assert!(repo.find_branch("feature", BranchType::Local).is_ok());
+        }
+    }
+
+    #[test]
+    fn execute_rejects_preview_safety_blocks() {
+        for safety_block in [
+            SafetyBlock::CurrentBranch,
+            SafetyBlock::DefaultBranch,
+            SafetyBlock::ProtectedBranch,
+            SafetyBlock::WorktreeCheckedOut,
+        ] {
+            let dir = init_repo_with_commit("base");
+            let mut candidate = merged_feature_candidate(&dir);
+            candidate.blocked = vec![safety_block];
+            let config = config_for_repos(&[(&dir, "repo")]);
+
+            let result = execute_cleanup(&config, vec![candidate]).expect("execute");
+
+            assert_eq!(
+                result.items[0].status,
+                CleanupExecutionStatus::Skipped,
+                "safety_block={safety_block:?}"
+            );
+            let repo = git2::Repository::open(dir.path_str()).expect("open");
+            assert!(repo.find_branch("feature", BranchType::Local).is_ok());
+        }
+    }
+
+    #[test]
+    fn execute_rejects_safety_block_added_after_preview() {
+        let dir = init_repo_with_commit("base");
+        let candidate = merged_feature_candidate(&dir);
+        let mut config = config_for_repos(&[(&dir, "repo")]);
+        config.repositories[0].protected_branches = vec!["feature".to_string()];
+
+        let result = execute_cleanup(&config, vec![candidate]).expect("execute");
+
+        assert_eq!(result.items[0].status, CleanupExecutionStatus::Skipped);
+        assert!(result.items[0]
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("ProtectedBranch")));
+        let repo = git2::Repository::open(dir.path_str()).expect("open");
+        assert!(repo.find_branch("feature", BranchType::Local).is_ok());
+    }
+
+    #[test]
+    fn execute_skips_remote_ref_that_reappeared_after_preview() {
+        let source = init_repo_with_commit("origin commit");
+        {
+            let repo = git2::Repository::open(source.path_str()).expect("open source");
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.branch("feature", &head, false).expect("branch");
+        }
+        let clone_dir = TempDir::new("execute-remote-restored");
+        git2::Repository::clone(source.path_str(), &clone_dir.path).expect("clone");
+        {
+            let repo = git2::Repository::open(source.path_str()).expect("open source");
+            repo.find_branch("feature", BranchType::Local)
+                .expect("feature")
+                .delete()
+                .expect("delete remote feature");
+        }
+        let preview = preview_repo(clone_dir.path_str(), "clone", &params(now_ts()));
+        let candidate = find(&preview, "origin/feature")
+            .expect("prune candidate")
+            .clone();
+        {
+            let repo = git2::Repository::open(source.path_str()).expect("open source");
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.branch("feature", &head, false)
+                .expect("restore remote feature");
+        }
+        let config = config_for_repos(&[(&clone_dir, "clone")]);
+
+        let result = execute_cleanup(&config, vec![candidate]).expect("execute");
+
+        assert_eq!(result.items[0].status, CleanupExecutionStatus::Skipped);
+        let clone = git2::Repository::open(clone_dir.path_str()).expect("open clone");
+        assert!(clone
+            .find_branch("origin/feature", BranchType::Remote)
+            .is_ok());
+    }
+
+    #[test]
+    fn execute_reports_success_and_repo_failure_per_item() {
+        let good = init_repo_with_commit("base");
+        let good_candidate = merged_feature_candidate(&good);
+        let broken = TempDir::new("execute-broken");
+        let mut broken_candidate = good_candidate.clone();
+        broken_candidate.repo_path = broken.path_str().to_string();
+        broken_candidate.repo_name = "broken".to_string();
+        let config = config_for_repos(&[(&good, "good"), (&broken, "broken")]);
+
+        let result =
+            execute_cleanup(&config, vec![good_candidate, broken_candidate]).expect("execute");
+
+        assert_eq!(result.items[0].status, CleanupExecutionStatus::Success);
+        assert_eq!(result.items[1].status, CleanupExecutionStatus::Failed);
+        assert!(result.items[1].error.is_some());
     }
 }
