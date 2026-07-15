@@ -3,14 +3,16 @@ mod config;
 mod models;
 
 use commands::{
-    ai::{get_ai_insights, get_ai_insights_cached, ollama_available, test_ai_connection, AiCacheState},
+    ai::{
+        get_ai_insights, get_ai_insights_cached, ollama_available, test_ai_connection, AiCacheState,
+    },
     cleanup::{cleanup_execute, cleanup_preview},
     config_cmd::{
         add_repository, delete_github_pat, detect_github_remote, get_config, has_github_pat,
         remove_repository, scan_directory, scan_missing_repositories, set_github_pat,
         update_ai_config, update_repository_github, update_settings,
     },
-    dsx::{dsx_check, dsx_latest_version, dsx_self_update, env_inject, repo_cleanup, repo_cleanup_preview, repo_update, sys_update},
+    dsx::{dsx_check, dsx_latest_version, dsx_self_update, env_inject, repo_update, sys_update},
     github::{get_check_runs, get_issues, get_pull_requests},
     repo::{
         apply_stash, delete_branches, drop_stash, fetch_all, get_branches, get_commit_graph,
@@ -65,8 +67,6 @@ pub fn run() {
             dsx_check,
             dsx_latest_version,
             repo_update,
-            repo_cleanup_preview,
-            repo_cleanup,
             env_inject,
             sys_update,
             dsx_self_update,

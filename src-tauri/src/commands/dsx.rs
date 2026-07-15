@@ -90,34 +90,6 @@ pub async fn repo_update(app: AppHandle, repo_path: String) -> Result<DsxOutput,
     .await
 }
 
-// ─── repo_cleanup_preview ────────────────────────────────────────────────────
-
-/// Runs `dsx repo cleanup -n` (dry-run) and returns raw stdout for the
-/// frontend to parse and display in the Cleanup Wizard confirmation step.
-///
-/// NOTE: The exact output format depends on the dsx version.
-/// Check `dsx repo cleanup --help` to confirm JSON flag availability.
-#[tauri::command]
-pub async fn repo_cleanup_preview(repo_path: String) -> Result<DsxOutput, String> {
-    let output = run_dsx_sync(&repo_path, &["repo", "cleanup", "-n"])?;
-    if output.exit_code != 0 {
-        return Err(format!(
-            "dsx repo cleanup preview failed with exit code {}: {}",
-            output.exit_code, output.stderr
-        ));
-    }
-    Ok(output)
-}
-
-// ─── repo_cleanup ─────────────────────────────────────────────────────────────
-
-/// Executes `dsx repo cleanup` after the user has confirmed in the dialog.
-/// Only call this command after `repo_cleanup_preview` and user confirmation.
-#[tauri::command]
-pub async fn repo_cleanup(app: AppHandle, repo_path: String) -> Result<DsxOutput, String> {
-    run_dsx_with_events(&app, &repo_path, &["repo", "cleanup"]).await
-}
-
 // ─── env_inject ───────────────────────────────────────────────────────────────
 
 /// Runs `dsx env run -- <cmd>` in the given repository directory.
@@ -216,26 +188,24 @@ async fn run_dsx_with_events(
     })
 }
 
-/// Runs a dsx command synchronously and returns the result.
-fn run_dsx_sync(cwd: &str, args: &[&str]) -> Result<DsxOutput, String> {
-    let output = Command::new("dsx")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .map_err(|e| format!("Failed to spawn dsx: {e}"))?;
-
-    Ok(DsxOutput {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        exit_code: output.status.code().unwrap_or(-1),
-    })
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn run_dsx_sync(args: &[&str]) -> Result<DsxOutput, String> {
+        let output = Command::new("dsx")
+            .args(args)
+            .output()
+            .map_err(|e| format!("Failed to spawn dsx: {e}"))?;
+
+        Ok(DsxOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code: output.status.code().unwrap_or(-1),
+        })
+    }
 
     /// `extract_tag_name` が "tag_name" フィールドを正しく取り出すことを検証する。
     #[test]
@@ -275,10 +245,7 @@ mod tests {
                 status.version.is_none(),
                 "version must be None when unavailable"
             );
-            assert!(
-                status.path.is_none(),
-                "path must be None when unavailable"
-            );
+            assert!(status.path.is_none(), "path must be None when unavailable");
         }
     }
 
@@ -288,10 +255,13 @@ mod tests {
         if !dsx_check().available {
             return; // dsx が PATH になければスキップ
         }
-        let result = run_dsx_sync(".", &["--version"]);
+        let result = run_dsx_sync(&["--version"]);
         let output = result.expect("run_dsx_sync should not error when dsx is available");
         assert_eq!(output.exit_code, 0);
-        assert!(!output.stdout.is_empty(), "stdout should contain version string");
+        assert!(
+            !output.stdout.is_empty(),
+            "stdout should contain version string"
+        );
     }
 
     /// dsx が利用可能な場合に `which_dsx` がパスを返すことを確認する。
@@ -312,10 +282,13 @@ mod tests {
         if !dsx_check().available {
             return;
         }
-        let result = run_dsx_sync(".", &["self-update", "--help"]);
+        let result = run_dsx_sync(&["self-update", "--help"]);
         let output = result.expect("dsx self-update --help should not error");
         let has_output = !output.stdout.is_empty() || !output.stderr.is_empty();
-        assert!(has_output, "dsx self-update --help should produce some output");
+        assert!(
+            has_output,
+            "dsx self-update --help should produce some output"
+        );
     }
 
     /// `env_inject` に渡すコマンド文字列が空白で正しく分割されることを確認する。
@@ -341,7 +314,7 @@ mod tests {
         if !dsx_check().available {
             return;
         }
-        let result = run_dsx_sync(".", &["--help"]);
+        let result = run_dsx_sync(&["--help"]);
         let output = result.expect("dsx --help should not error");
         // dsx --help は exit 0 または非ゼロを返す実装に依存するが
         // 少なくとも stdout/stderr のどちらかに出力があることを確認

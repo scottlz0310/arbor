@@ -5,6 +5,10 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### refactor
+
+- 旧 Cleanup 画面専用の dsx cleanup command と登録を削除 (#190)
+
 ### feat
 
 - **Cleanup Wizard 強化 (PR-C): repo 横断 UI と型付き実行結果表示** (#186)
