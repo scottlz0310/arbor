@@ -4,6 +4,7 @@ mod models;
 
 use commands::{
     ai::{get_ai_insights, get_ai_insights_cached, ollama_available, test_ai_connection, AiCacheState},
+    cleanup::cleanup_preview,
     config_cmd::{
         add_repository, delete_github_pat, detect_github_remote, get_config, has_github_pat,
         remove_repository, scan_directory, scan_missing_repositories, set_github_pat,
@@ -52,6 +53,8 @@ pub fn run() {
             list_stashes,
             apply_stash,
             drop_stash,
+            // Cleanup Wizard (Issue #186)
+            cleanup_preview,
             // AI / Ollama
             ollama_available,
             test_ai_connection,
