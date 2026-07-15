@@ -17,7 +17,9 @@ fn parse_github_url(url: &str) -> Option<(String, String)> {
         .or_else(|| url.strip_prefix("git@github.com:"))?;
     let path = path.trim_end_matches('/').trim_end_matches(".git");
     let (owner, repo) = path.split_once('/')?;
-    if owner.is_empty() || repo.is_empty() { return None; }
+    if owner.is_empty() || repo.is_empty() {
+        return None;
+    }
     Some((owner.to_string(), repo.to_string()))
 }
 
@@ -48,8 +50,7 @@ pub fn add_repository(
     let mut config = load_config()?;
 
     // Validate the path is actually a git repository.
-    git2::Repository::open(&path)
-        .map_err(|e| format!("Not a git repository: {e}"))?;
+    git2::Repository::open(&path).map_err(|e| format!("Not a git repository: {e}"))?;
 
     // Avoid duplicate entries.
     if config.repositories.iter().any(|r| r.path == path) {
@@ -95,12 +96,29 @@ pub fn update_repository_github(
     github_repo: Option<String>,
 ) -> Result<AppConfig, String> {
     // Normalise: empty strings are treated as None.
-    let owner = github_owner.and_then(|s| { let t = s.trim().to_string(); if t.is_empty() { None } else { Some(t) } });
-    let repo_name = github_repo.and_then(|s| { let t = s.trim().to_string(); if t.is_empty() { None } else { Some(t) } });
+    let owner = github_owner.and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    });
+    let repo_name = github_repo.and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    });
     // Validate: both set or both None.
     match (&owner, &repo_name) {
-        (Some(_), None) | (None, Some(_)) =>
-            return Err("github_owner と github_repo は両方設定するか、両方空にしてください".to_string()),
+        (Some(_), None) | (None, Some(_)) => {
+            return Err(
+                "github_owner と github_repo は両方設定するか、両方空にしてください".to_string(),
+            )
+        }
         _ => {}
     }
     let mut config = load_config()?;
@@ -147,23 +165,34 @@ mod pat_crypto {
     }
 
     fn blob(data: &[u8]) -> CRYPT_INTEGER_BLOB {
-        CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 }
+        CRYPT_INTEGER_BLOB {
+            cbData: data.len() as u32,
+            pbData: data.as_ptr() as *mut u8,
+        }
     }
 
     pub fn encrypt(plaintext: &str) -> Result<String, String> {
         let input = plaintext.as_bytes();
         let data_in = blob(input);
-        let mut data_out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
+        let mut data_out = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: ptr::null_mut(),
+        };
         unsafe {
             let ok: i32 = CryptProtectData(
-                &data_in, ptr::null(), ptr::null_mut(),
-                ptr::null_mut(), ptr::null_mut(),
-                CRYPTPROTECT_UI_FORBIDDEN, &mut data_out,
+                &data_in,
+                ptr::null(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut data_out,
             );
             if ok == 0 {
                 return Err("DPAPI 暗号化に失敗しました".to_string());
             }
-            let enc = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
+            let enc =
+                std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
             LocalFree(data_out.pbData.cast());
             Ok(base64_encode(&enc))
         }
@@ -173,17 +202,28 @@ mod pat_crypto {
         let ciphertext = base64_decode(encoded)
             .map_err(|_| "DPAPI blob の base64 デコードに失敗しました".to_string())?;
         let data_in = blob(&ciphertext);
-        let mut data_out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
+        let mut data_out = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: ptr::null_mut(),
+        };
         unsafe {
             let ok: i32 = CryptUnprotectData(
-                &data_in, ptr::null_mut(), ptr::null_mut(),
-                ptr::null_mut(), ptr::null_mut(),
-                CRYPTPROTECT_UI_FORBIDDEN, &mut data_out,
+                &data_in,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut data_out,
             );
             if ok == 0 {
-                return Err("DPAPI 復号に失敗しました（別のユーザー/マシンの blob は復号できません）".to_string());
+                return Err(
+                    "DPAPI 復号に失敗しました（別のユーザー/マシンの blob は復号できません）"
+                        .to_string(),
+                );
             }
-            let bytes = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
+            let bytes =
+                std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
             LocalFree(data_out.pbData.cast());
             String::from_utf8(bytes).map_err(|e| format!("UTF-8 変換エラー: {e}"))
         }
@@ -201,25 +241,40 @@ mod pat_crypto {
             let n = (b0 << 16) | (b1 << 8) | b2;
             out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
             out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
-            out.push(if chunk.len() > 1 { ALPHABET[((n >> 6) & 0x3f) as usize] as char } else { '=' });
-            out.push(if chunk.len() > 2 { ALPHABET[(n & 0x3f) as usize] as char } else { '=' });
+            out.push(if chunk.len() > 1 {
+                ALPHABET[((n >> 6) & 0x3f) as usize] as char
+            } else {
+                '='
+            });
+            out.push(if chunk.len() > 2 {
+                ALPHABET[(n & 0x3f) as usize] as char
+            } else {
+                '='
+            });
         }
         out
     }
 
     fn base64_decode(s: &str) -> Result<Vec<u8>, ()> {
         let mut table = [0xffu8; 256];
-        for (i, &b) in ALPHABET.iter().enumerate() { table[b as usize] = i as u8; }
+        for (i, &b) in ALPHABET.iter().enumerate() {
+            table[b as usize] = i as u8;
+        }
         let s = s.trim_end_matches('=');
         let mut out = Vec::with_capacity(s.len() * 3 / 4);
         let mut buf = 0u32;
         let mut bits = 0u32;
         for c in s.bytes() {
             let v = table[c as usize];
-            if v == 0xff { return Err(()); }
+            if v == 0xff {
+                return Err(());
+            }
             buf = (buf << 6) | v as u32;
             bits += 6;
-            if bits >= 8 { bits -= 8; out.push(((buf >> bits) & 0xff) as u8); }
+            if bits >= 8 {
+                bits -= 8;
+                out.push(((buf >> bits) & 0xff) as u8);
+            }
         }
         Ok(out)
     }
@@ -263,19 +318,21 @@ mod pat_crypto {
 
     fn keychain_entry() -> Result<keyring_core::Entry, String> {
         ensure_default_store()?;
-        keyring_core::Entry::new(SERVICE, USER)
-            .map_err(|e| format!("credential store エラー: {e}"))
+        keyring_core::Entry::new(SERVICE, USER).map_err(|e| format!("credential store エラー: {e}"))
     }
 
     pub fn encrypt(plaintext: &str) -> Result<String, String> {
-        keychain_entry()?.set_password(plaintext).map_err(|e| format!("{e}"))?;
+        keychain_entry()?
+            .set_password(plaintext)
+            .map_err(|e| format!("{e}"))?;
         Ok(String::new()) // sentinel: PAT is in keyring, not in this blob
     }
 
     pub fn decrypt(_encoded: &str) -> Result<String, String> {
         keychain_entry()?.get_password().map_err(|e| match e {
             keyring_core::Error::NoEntry => {
-                "GitHub PAT が設定されていません。Settings から PAT を登録してください。".to_string()
+                "GitHub PAT が設定されていません。Settings から PAT を登録してください。"
+                    .to_string()
             }
             other => format!("{other}"),
         })
@@ -326,7 +383,10 @@ pub(crate) fn load_github_pat() -> Result<String, String> {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             return pat_crypto::decrypt("");
             #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-            Err("GitHub PAT が設定されていません。Settings から PAT を登録してください。".to_string())
+            Err(
+                "GitHub PAT が設定されていません。Settings から PAT を登録してください。"
+                    .to_string(),
+            )
         }
     }
 }
@@ -455,12 +515,16 @@ pub fn update_ai_config(
     let mut config = load_config()?;
     if let Some(v) = provider {
         let t = v.trim().to_string();
-        if t.is_empty() { return Err("provider を入力してください".to_string()); }
+        if t.is_empty() {
+            return Err("provider を入力してください".to_string());
+        }
         config.ai.provider = t;
     }
     if let Some(v) = ollama_url {
         let t = v.trim().to_string();
-        if t.is_empty() { return Err("Ollama URL を入力してください".to_string()); }
+        if t.is_empty() {
+            return Err("Ollama URL を入力してください".to_string());
+        }
         if !t.starts_with("http://") && !t.starts_with("https://") {
             return Err("Ollama URL は http:// または https:// で始まる必要があります".to_string());
         }
@@ -468,7 +532,9 @@ pub fn update_ai_config(
     }
     if let Some(v) = model {
         let t = v.trim().to_string();
-        if t.is_empty() { return Err("モデル名を入力してください".to_string()); }
+        if t.is_empty() {
+            return Err("モデル名を入力してください".to_string());
+        }
         config.ai.model = t;
     }
     if let Some(v) = enabled {
@@ -505,10 +571,8 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("clock should be after epoch")
                 .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "arbor-{prefix}-{}-{unique}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("arbor-{prefix}-{}-{unique}", std::process::id()));
             std::fs::create_dir_all(&path).expect("create temp dir");
             Self { path }
         }
@@ -595,7 +659,10 @@ mod tests {
         match entry.get_password() {
             Ok(val) => {
                 let _ = entry.delete_credential();
-                assert_eq!(val, SECRET, "キーチェーンの読み取り値が書き込み値と一致しない");
+                assert_eq!(
+                    val, SECRET,
+                    "キーチェーンの読み取り値が書き込み値と一致しない"
+                );
             }
             Err(e) => {
                 let _ = entry.delete_credential();
@@ -622,20 +689,30 @@ mod tests {
         }
 
         // Clean up any leftover from a previous run.
-        if let Ok(e) = keyring_core::Entry::new(SERVICE, USER) { let _ = e.delete_credential(); }
+        if let Ok(e) = keyring_core::Entry::new(SERVICE, USER) {
+            let _ = e.delete_credential();
+        }
 
         let entry1 = match keyring_core::Entry::new(SERVICE, USER) {
             Ok(e) => e,
-            Err(e) => { eprintln!("entry1::new failed ({e}) — skipping"); return; }
+            Err(e) => {
+                eprintln!("entry1::new failed ({e}) — skipping");
+                return;
+            }
         };
         if let Err(e) = entry1.set_password(SECRET) {
-            eprintln!("set_password failed ({e}) — skipping"); return;
+            eprintln!("set_password failed ({e}) — skipping");
+            return;
         }
 
         // Read with a completely separate Entry instance (simulates separate Tauri command calls).
         let entry2 = match keyring_core::Entry::new(SERVICE, USER) {
             Ok(e) => e,
-            Err(e) => { let _ = entry1.delete_credential(); eprintln!("entry2::new failed ({e}) — skipping"); return; }
+            Err(e) => {
+                let _ = entry1.delete_credential();
+                eprintln!("entry2::new failed ({e}) — skipping");
+                return;
+            }
         };
         let result = entry2.get_password();
         let _ = entry1.delete_credential();
@@ -653,13 +730,22 @@ mod tests {
         const PAT: &str = "ghp_TestDpapiRoundtrip12345";
         let encrypted = super::pat_encrypt(PAT).expect("DPAPI encrypt");
         assert!(!encrypted.is_empty(), "encrypted blob should not be empty");
-        assert_ne!(encrypted, PAT, "encrypted blob should differ from plaintext");
+        assert_ne!(
+            encrypted, PAT,
+            "encrypted blob should differ from plaintext"
+        );
         let decrypted = super::pat_decrypt(&encrypted).expect("DPAPI decrypt");
         assert_eq!(decrypted, PAT, "decrypted value should match original");
     }
 
     fn make_repo(path: &str) -> RepoConfig {
-        RepoConfig { path: path.into(), name: path.split('/').next_back().unwrap_or(path).into(), github_owner: None, github_repo: None, protected_branches: Vec::new() }
+        RepoConfig {
+            path: path.into(),
+            name: path.split('/').next_back().unwrap_or(path).into(),
+            github_owner: None,
+            github_repo: None,
+            protected_branches: Vec::new(),
+        }
     }
 
     #[test]

@@ -181,7 +181,13 @@ async fn fetch_from_ollama(repos: &[RepoInfo]) -> Result<Vec<AiInsight>, String>
     // behind/ahead/modified/untracked/stash が全て 0 の repo は AI が分析する情報がない。
     let interesting: Vec<&RepoInfo> = repos
         .iter()
-        .filter(|r| r.behind > 0 || r.ahead > 0 || r.modified_count > 0 || r.untracked_count > 0 || r.stash_count > 0)
+        .filter(|r| {
+            r.behind > 0
+                || r.ahead > 0
+                || r.modified_count > 0
+                || r.untracked_count > 0
+                || r.stash_count > 0
+        })
         .collect();
 
     if interesting.is_empty() {
@@ -422,8 +428,14 @@ mod tests {
     fn build_state_summary_includes_repo_name_and_path() {
         let repos = vec![make_repo("myrepo", 2, 5, 3)];
         let s = build_state_summary(&repos);
-        assert!(s.contains("myrepo"), "state summary should contain repo name: {s}");
-        assert!(s.contains("/repos/myrepo"), "state summary should contain repo path: {s}");
+        assert!(
+            s.contains("myrepo"),
+            "state summary should contain repo name: {s}"
+        );
+        assert!(
+            s.contains("/repos/myrepo"),
+            "state summary should contain repo path: {s}"
+        );
         assert!(s.contains("\"ahead\":2"), "{s}");
         assert!(s.contains("\"behind\":5"), "{s}");
     }
@@ -431,9 +443,15 @@ mod tests {
     #[test]
     fn build_prompt_contains_no_think_prefix() {
         let prompt = build_prompt(r#"[{"name":"x","path":"/p"}]"#);
-        assert!(prompt.starts_with("/no_think"), "prompt must start with /no_think");
+        assert!(
+            prompt.starts_with("/no_think"),
+            "prompt must start with /no_think"
+        );
         assert!(prompt.contains("JSON array"), "{prompt}");
-        assert!(prompt.contains("repo_path"), "prompt must instruct AI to return repo_path");
+        assert!(
+            prompt.contains("repo_path"),
+            "prompt must instruct AI to return repo_path"
+        );
     }
 
     #[test]
@@ -483,14 +501,16 @@ mod tests {
 
     #[test]
     fn parse_insights_invalid_kind_returns_err() {
-        let raw = r#"[{"repo_name":"r","repo_path":"/p","kind":"warning","message":"x","priority":1}]"#;
+        let raw =
+            r#"[{"repo_name":"r","repo_path":"/p","kind":"warning","message":"x","priority":1}]"#;
         let err = parse_insights(raw).unwrap_err();
         assert!(err.contains("JSON パース"), "{err}");
     }
 
     #[test]
     fn parse_insights_priority_out_of_range_returns_err() {
-        let raw = r#"[{"repo_name":"r","repo_path":"/p","kind":"risk","message":"x","priority":99}]"#;
+        let raw =
+            r#"[{"repo_name":"r","repo_path":"/p","kind":"risk","message":"x","priority":99}]"#;
         let err = parse_insights(raw).unwrap_err();
         assert!(err.contains("priority"), "{err}");
     }
@@ -681,7 +701,11 @@ mod tests {
         }
         assert_eq!(cache.entries.lock().unwrap().len(), 2);
         cache.clear();
-        assert_eq!(cache.entries.lock().unwrap().len(), 0, "clear() 後はエントリが 0 になる");
+        assert_eq!(
+            cache.entries.lock().unwrap().len(),
+            0,
+            "clear() 後はエントリが 0 になる"
+        );
     }
 
     /// test_ai_connection: 接続できないポートに対して Ok(false) を返すことを確認する。
