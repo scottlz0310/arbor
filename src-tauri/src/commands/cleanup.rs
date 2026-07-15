@@ -152,12 +152,18 @@ fn execute_cleanup(
                 current.operation == candidate.operation && current.ref_name == candidate.ref_name
             });
             let Some(current) = current else {
-                if let Some(remote_error) = candidate.remote_name.as_deref().and_then(|remote| {
-                    current_preview
-                        .remote_errors
-                        .iter()
-                        .find(|error| error.remote == remote)
-                }) {
+                let remote_error = match candidate.operation {
+                    CleanupOperation::DeleteLocalBranch => None,
+                    CleanupOperation::PruneRemoteTrackingRef => {
+                        candidate.remote_name.as_deref().and_then(|remote| {
+                            current_preview
+                                .remote_errors
+                                .iter()
+                                .find(|error| error.remote == remote)
+                        })
+                    }
+                };
+                if let Some(remote_error) = remote_error {
                     results[index] = Some(item_result(
                         &candidate,
                         CleanupExecutionStatus::Failed,
@@ -1388,6 +1394,92 @@ mod tests {
             );
             let repo = git2::Repository::open(dir.path_str()).expect("open");
             assert!(repo.find_branch("feature", BranchType::Local).is_ok());
+        }
+    }
+
+    #[test]
+    fn execute_ignores_remote_failure_when_local_branch_is_no_longer_candidate() {
+        let dir = init_repo_with_commit("base");
+        let repo = git2::Repository::open(dir.path_str()).expect("open");
+        let base = repo.head().unwrap().peel_to_commit().unwrap();
+        let tree = base.tree().expect("tree");
+        let signature =
+            git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("signature");
+        let feature_oid = repo
+            .commit(
+                Some("refs/heads/feature"),
+                &signature,
+                &signature,
+                "feature commit",
+                &tree,
+                &[&base],
+            )
+            .expect("commit feature");
+        let missing_remote = dir.path.join("no-such-remote");
+        repo.remote("origin", missing_remote.to_str().unwrap())
+            .expect("remote");
+        let mut git_config = repo.config().expect("config");
+        git_config
+            .set_str("branch.feature.remote", "origin")
+            .expect("set remote");
+        git_config
+            .set_str("branch.feature.merge", "refs/heads/feature")
+            .expect("set merge");
+        drop(git_config);
+
+        let preview = preview_repo(dir.path_str(), "repo", &params(now_ts()));
+        let candidate = find(&preview, "feature")
+            .expect("upstream-gone candidate")
+            .clone();
+        repo.reference(
+            "refs/remotes/origin/feature",
+            feature_oid,
+            false,
+            "restore upstream",
+        )
+        .expect("restore upstream");
+        drop(tree);
+        drop(base);
+        drop(repo);
+        let config = config_for_repos(&[(&dir, "repo")]);
+
+        let result = execute_cleanup(&config, vec![candidate]).expect("execute");
+
+        assert_eq!(result.items[0].status, CleanupExecutionStatus::Skipped);
+        assert_eq!(
+            result.items[0].reason.as_deref(),
+            Some("state changed after preview: upstream")
+        );
+        assert!(result.items[0].error.is_none());
+    }
+
+    #[test]
+    fn execute_skips_invalid_batch_items() {
+        for (case, expected_reason) in [
+            ("unregistered", "repository is no longer registered"),
+            ("duplicate", "duplicate cleanup target"),
+        ] {
+            let dir = init_repo_with_commit("base");
+            let candidate = merged_feature_candidate(&dir);
+            let (config, candidates) = match case {
+                "unregistered" => (AppConfig::default(), vec![candidate]),
+                "duplicate" => (
+                    config_for_repos(&[(&dir, "repo")]),
+                    vec![candidate.clone(), candidate],
+                ),
+                _ => unreachable!(),
+            };
+
+            let result = execute_cleanup(&config, candidates).expect("execute");
+
+            assert!(
+                result.items.iter().any(|item| {
+                    item.status == CleanupExecutionStatus::Skipped
+                        && item.reason.as_deref() == Some(expected_reason)
+                }),
+                "case={case} items={:?}",
+                result.items
+            );
         }
     }
 
