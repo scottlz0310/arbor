@@ -5,6 +5,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-15
+
 ### refactor
 
 - 旧 Cleanup 画面専用の dsx cleanup command と登録を削除 (#190)
@@ -34,6 +36,14 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
   - 安全条件（checkout 中・default branch・protected・worktree 使用中）を `blocked` として付与
   - remote 接続失敗は repo 単位の `remote_errors` として報告し、該当 remote の prune 候補は提示しない
   - `RepoConfig.protected_branches` 設定を追加（Cleanup の削除対象から除外する branch/ref 名）
+
+### test
+
+- debug build の実機テスト用に `ARBOR_CONFIG_DIR` で隔離設定ディレクトリを指定可能にした
+
+### ci
+
+- Rust source 全体を rustfmt で統一し、CI の Rust lint job に format check を追加
 
 ## [0.1.0] — 2026-05-23
 

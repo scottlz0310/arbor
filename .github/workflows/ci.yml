@@ -7,11 +7,11 @@ on:
     branches: [main]
 
 jobs:
-  # ── Rust: lint ──────────────────────────────────────────────────────────────
+  # ── Rust: format + lint ─────────────────────────────────────────────────────
   # Runs in parallel with rust-coverage and rust-platform-check.
   # cargo check is omitted: clippy subsumes it.
   rust-lint:
-    name: Rust clippy
+    name: Rust fmt / clippy
     runs-on: windows-latest
     defaults:
       run:
@@ -22,7 +22,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - name: Cache cargo registry (shared)
         uses: actions/cache@v6
@@ -39,6 +39,9 @@ jobs:
           path: src-tauri/target
           key: ${{ runner.os }}-cargo-target-lint-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-target-lint-
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
 
       - name: cargo clippy
         run: cargo clippy -- -D warnings
