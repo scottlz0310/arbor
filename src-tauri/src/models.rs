@@ -252,6 +252,43 @@ pub struct CleanupPreview {
     pub generated_at: i64,
 }
 
+/// Cleanup preview からユーザーが選択した項目を execute へ渡す入力。
+/// 各 candidate 自体が preview 時点の OID / upstream 状態を保持する。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupExecutionRequest {
+    pub candidates: Vec<CleanupCandidate>,
+}
+
+/// Cleanup execute の項目単位ステータス。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CleanupExecutionStatus {
+    Success,
+    Skipped,
+    Failed,
+}
+
+/// Cleanup execute の項目単位結果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupExecutionItemResult {
+    pub repo_path: String,
+    pub repo_name: String,
+    pub ref_name: String,
+    pub operation: CleanupOperation,
+    pub status: CleanupExecutionStatus,
+    /// 再検証で skip した理由。success / failed では None。
+    pub reason: Option<String>,
+    /// 実行に失敗したエラー。success / skipped では None。
+    pub error: Option<String>,
+}
+
+/// repo 横断 Cleanup execute の全体結果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupExecutionResult {
+    pub items: Vec<CleanupExecutionItemResult>,
+    pub completed_at: i64,
+}
+
 /// A single check run result for a commit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckRun {

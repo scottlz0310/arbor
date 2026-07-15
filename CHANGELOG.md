@@ -7,6 +7,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
+- **Cleanup Wizard 強化 (PR-B): 型付き execute と実行直前の再検証** (#186)
+  - `cleanup_execute` Tauri コマンドと項目単位の `success` / `skipped` / `failed` 結果を追加
+  - preview 時点の OID・upstream・remote・候補種別・merge 状態を repo 単位で再検証
+  - current / default / protected / worktree の安全条件に該当する項目は実行時にも拒否
+  - remote-tracking ref は削除直前に remote を再照会し、remote branch が復活した場合は skip
+  - local branch 削除と remote-tracking ref prune の部分成功・部分失敗を分離して返却
+
 - **Cleanup Wizard 強化 (PR-A): repo 横断 preview コマンド** (#186)
   - `cleanup_preview` Tauri コマンド追加。登録済み全 repo を横断して削除候補を列挙する
   - `CleanupCandidate` / `CleanupOperation` / `CleanupPreview` 等の共有モデル追加
