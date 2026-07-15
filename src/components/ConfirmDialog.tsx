@@ -2,9 +2,10 @@ import { useEffect, useId, useRef } from 'react';
 
 interface ConfirmDialogProps {
   title: string;
-  message: string;
+  message: React.ReactNode;
   confirmLabel?: string;
   confirmDisabled?: boolean;
+  maxWidth?: number;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -14,6 +15,7 @@ export default function ConfirmDialog({
   message,
   confirmLabel = 'Confirm',
   confirmDisabled = false,
+  maxWidth = 420,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -90,14 +92,14 @@ export default function ConfirmDialog({
           border: '1px solid var(--border2)',
           borderRadius: 'var(--r2)',
           padding: '24px 28px',
-          maxWidth: 420,
+          maxWidth,
           width: '100%',
         }}
       >
         <h2 id={titleId} style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{title}</h2>
-        <p id={messageId} style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.65, marginBottom: 20, whiteSpace: 'pre-wrap' }}>
+        <div id={messageId} style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.65, marginBottom: 20, whiteSpace: 'pre-wrap' }}>
           {message}
-        </p>
+        </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button
             onClick={onCancel}

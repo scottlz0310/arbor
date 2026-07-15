@@ -60,6 +60,67 @@ export interface DsxStatus {
   path: string | null;
 }
 
+// ─── Cleanup Wizard (Issue #186) ────────────────────────────────────────────
+
+export type CleanupOperation = 'delete_local_branch' | 'prune_remote_tracking_ref';
+export type CandidateKind = 'merged' | 'stale' | 'upstream_gone' | 'stale_remote_tracking';
+export type UpstreamState = 'none' | 'tracked' | 'gone';
+export type SafetyBlock =
+  | 'current_branch'
+  | 'default_branch'
+  | 'protected_branch'
+  | 'worktree_checked_out';
+
+export interface CleanupCandidate {
+  repo_path: string;
+  repo_name: string;
+  ref_name: string;
+  operation: CleanupOperation;
+  kind: CandidateKind;
+  remote_name: string | null;
+  oid: string;
+  last_commit_ts: number;
+  is_merged: boolean;
+  upstream: UpstreamState;
+  stale_days: number | null;
+  blocked: SafetyBlock[];
+}
+
+export interface RemoteFetchError {
+  remote: string;
+  error: string;
+}
+
+export interface RepoCleanupPreview {
+  repo_path: string;
+  repo_name: string;
+  candidates: CleanupCandidate[];
+  remote_errors: RemoteFetchError[];
+  error: string | null;
+}
+
+export interface CleanupPreview {
+  repos: RepoCleanupPreview[];
+  generated_at: number;
+}
+
+export type CleanupExecutionStatus = 'success' | 'skipped' | 'failed';
+
+export interface CleanupExecutionItemResult {
+  repo_path: string;
+  repo_name: string;
+  ref_name: string;
+  operation: CleanupOperation;
+  status: CleanupExecutionStatus;
+  reason: string | null;
+  error: string | null;
+}
+
+export interface CleanupExecutionResult {
+  items: CleanupExecutionItemResult[];
+  completed_at: number;
+}
+
 // ─── Mirror of src-tauri/src/config.rs ──────────────────────────────────────
 
 export interface AppConfig {

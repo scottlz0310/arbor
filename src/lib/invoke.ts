@@ -11,6 +11,9 @@ import type {
   AppConfig,
   BranchInfo,
   CheckRun,
+  CleanupCandidate,
+  CleanupExecutionResult,
+  CleanupPreview,
   CommitNode,
   DeleteResult,
   DsxOutput,
@@ -95,6 +98,14 @@ export const applyStash = (repoPath: string, index: number) =>
 export const dropStash = (repoPath: string, index: number) =>
   tauriInvoke<void>('drop_stash', { repoPath, index });
 
+// ─── Cleanup Wizard ─────────────────────────────────────────────────────────
+
+export const cleanupPreview = () =>
+  tauriInvoke<CleanupPreview>('cleanup_preview');
+
+export const cleanupExecute = (candidates: CleanupCandidate[]) =>
+  tauriInvoke<CleanupExecutionResult>('cleanup_execute', { request: { candidates } });
+
 // ─── GitHub PAT ──────────────────────────────────────────────────────────────
 
 export const setGithubPat = (pat: string) =>
@@ -131,12 +142,6 @@ export const dsxLatestVersion = () =>
 
 export const repoUpdate = (repoPath: string) =>
   tauriInvoke<DsxOutput>('repo_update', { repoPath });
-
-export const repoCleanupPreview = (repoPath: string) =>
-  tauriInvoke<DsxOutput>('repo_cleanup_preview', { repoPath });
-
-export const repoCleanup = (repoPath: string) =>
-  tauriInvoke<DsxOutput>('repo_cleanup', { repoPath });
 
 export const envInject = (repoPath: string, cmd: string) =>
   tauriInvoke<DsxOutput>('env_inject', { repoPath, cmd });
