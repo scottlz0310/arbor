@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -73,9 +74,25 @@ pub struct RepoConfig {
 /// - macOS:   ~/Library/Application Support/arbor/config.toml
 /// - Linux:   ~/.config/arbor/config.toml
 fn config_path() -> Result<PathBuf, String> {
-    let base = dirs::config_dir()
-        .ok_or_else(|| "Could not determine config directory for this OS".to_string())?;
+    // 実機テストが利用者の設定を触れないよう、debug build のみ隔離先を許可する。
+    #[cfg(debug_assertions)]
+    let debug_override = std::env::var_os("ARBOR_CONFIG_DIR");
+    #[cfg(not(debug_assertions))]
+    let debug_override = None;
+
+    let base = resolve_config_base(dirs::config_dir(), debug_override)?;
     Ok(base.join("arbor").join("config.toml"))
+}
+
+fn resolve_config_base(
+    default_base: Option<PathBuf>,
+    debug_override: Option<OsString>,
+) -> Result<PathBuf, String> {
+    debug_override
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or(default_base)
+        .ok_or_else(|| "Could not determine config directory for this OS".to_string())
 }
 
 pub fn load_config() -> Result<AppConfig, String> {
@@ -106,6 +123,39 @@ mod tests {
         assert_eq!(s.stale_threshold_days, 14);
         assert!(s.fetch_on_startup);
         assert_eq!(s.github_keychain_key, "arbor_github_pat");
+    }
+
+    #[test]
+    fn resolve_config_base_cases() {
+        let default = PathBuf::from("default-config");
+        let isolated = PathBuf::from("isolated-config");
+
+        let cases = [
+            (
+                Some(default.clone()),
+                Some(OsString::from("isolated-config")),
+                Ok(isolated),
+            ),
+            (
+                Some(default.clone()),
+                Some(OsString::new()),
+                Ok(default.clone()),
+            ),
+            (Some(default.clone()), None, Ok(default)),
+            (
+                None,
+                None,
+                Err("Could not determine config directory for this OS"),
+            ),
+        ];
+
+        for (default_base, debug_override, expected) in cases {
+            let actual = resolve_config_base(default_base, debug_override);
+            match expected {
+                Ok(path) => assert_eq!(actual.expect("config base should resolve"), path),
+                Err(message) => assert_eq!(actual.expect_err("config base should fail"), message),
+            }
+        }
     }
 
     #[test]
