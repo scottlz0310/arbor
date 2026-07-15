@@ -195,6 +195,8 @@
        項目単位の success / skipped / failed 返却
 - [x] CW-03 (PR-C): フロントエンド刷新 — repo 横断一覧 (local / remote-tracking カテゴリ分離)、
        確認ダイアログ (`repo / remote / ref / operation` 識別)、実行結果表示、テスト
+- [x] CW-04: orphan 化した旧 dsx cleanup command と `invoke_handler!` 登録を削除
+       ([#190](https://github.com/scottlz0310/arbor/issues/190))
 
 ---
 
