@@ -348,7 +348,7 @@ function CandidateRow({
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
         <input
           type="checkbox"
-          aria-label={`Select ${candidate.repo_name} ${candidate.ref_name}`}
+          aria-label={`Select ${candidate.repo_name} ${candidate.repo_path} ${candidate.ref_name}`}
           checked={checked}
           disabled={blocked}
           onChange={onToggle}
@@ -465,6 +465,9 @@ function ExecutionResultRow({ item }: { item: CleanupExecutionItemResult }) {
         <strong style={{ color, textTransform: 'uppercase', fontSize: 10 }}>{item.status}</strong>
         <code>{item.repo_name} / {item.ref_name}</code>
         <span style={{ color: 'var(--text3)', marginLeft: 'auto' }}>{operationLabels[item.operation]}</span>
+      </div>
+      <div style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 9, marginTop: 3 }}>
+        {item.repo_path}
       </div>
       {(item.reason || item.error) && (
         <div style={{ color: item.error ? 'var(--red)' : 'var(--text3)', fontSize: 10, marginTop: 4 }}>

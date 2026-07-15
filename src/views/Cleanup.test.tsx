@@ -130,6 +130,18 @@ describe('Cleanup — repo 横断 preview', () => {
     expect(mockCleanupPreview).toHaveBeenCalledTimes(1);
   });
 
+  it('同名 repo・同名 branch を repo path で識別できる', async () => {
+    mockCleanupPreview.mockResolvedValue(makePreview([
+      makeRepo('/repos/a', 'shared-name', [makeCandidate({ repo_name: 'shared-name' })]),
+      makeRepo('/work/a', 'shared-name', [makeCandidate({ repo_path: '/work/a', repo_name: 'shared-name' })]),
+    ]));
+
+    render(<Cleanup />);
+
+    expect(await screen.findByRole('checkbox', { name: 'Select shared-name /repos/a feature/done' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select shared-name /work/a feature/done' })).toBeChecked();
+  });
+
   it('local branch と remote-tracking ref を別カテゴリで表示する', async () => {
     render(<Cleanup />);
 
@@ -160,17 +172,17 @@ describe('Cleanup — 選択と安全条件', () => {
   it('未ブロックの merged local branch だけを初期選択する', async () => {
     render(<Cleanup />);
 
-    expect(await screen.findByRole('checkbox', { name: 'Select repo-a feature/done' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Select repo-b feature/done' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Select repo-a feature/stale' })).not.toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Select repo-a origin/removed' })).not.toBeChecked();
+    expect(await screen.findByRole('checkbox', { name: 'Select repo-a /repos/a feature/done' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select repo-b /work/clone-b/a feature/done' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select repo-a /repos/a feature/stale' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select repo-a /repos/a origin/removed' })).not.toBeChecked();
     expect(screen.getByRole('button', { name: 'Execute selected (2)' })).toBeEnabled();
   });
 
   it('安全条件に該当する候補は選択不可で理由を表示する', async () => {
     render(<Cleanup />);
 
-    const blocked = await screen.findByRole('checkbox', { name: 'Select repo-a feature/current' });
+    const blocked = await screen.findByRole('checkbox', { name: 'Select repo-a /repos/a feature/current' });
     expect(blocked).toBeDisabled();
     expect(screen.getByText(/Selection blocked: currently checked out/)).toBeInTheDocument();
   });
@@ -179,8 +191,8 @@ describe('Cleanup — 選択と安全条件', () => {
     const user = userEvent.setup();
     render(<Cleanup />);
 
-    await user.click(await screen.findByRole('checkbox', { name: 'Select repo-a feature/stale' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Select repo-a origin/removed' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Select repo-a /repos/a feature/stale' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select repo-a /repos/a origin/removed' }));
 
     expect(screen.getByRole('button', { name: 'Execute selected (4)' })).toBeEnabled();
   });
@@ -190,7 +202,7 @@ describe('Cleanup — 確認と実行結果', () => {
   it('確認画面を repo 単位でグループ化し、repo / remote / ref / operation を表示する', async () => {
     const user = userEvent.setup();
     render(<Cleanup />);
-    await user.click(await screen.findByRole('checkbox', { name: 'Select repo-a origin/removed' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Select repo-a /repos/a origin/removed' }));
     await user.click(screen.getByRole('button', { name: 'Execute selected (3)' }));
 
     const dialog = screen.getByRole('dialog');
@@ -219,7 +231,7 @@ describe('Cleanup — 確認と実行結果', () => {
       completed_at: 1_700_000_200,
     });
     render(<Cleanup />);
-    await user.click(await screen.findByRole('checkbox', { name: 'Select repo-a feature/stale' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Select repo-a /repos/a feature/stale' }));
     await user.click(screen.getByRole('button', { name: 'Execute selected (3)' }));
     await user.click(screen.getByRole('button', { name: 'Execute cleanup' }));
 
@@ -227,6 +239,9 @@ describe('Cleanup — 確認と実行結果', () => {
       expect(mockCleanupExecute).toHaveBeenCalledWith([mergedA, staleA, mergedB]);
     });
     expect(await screen.findByText('1 succeeded · 1 skipped · 1 failed · completed', { exact: false })).toBeInTheDocument();
+    const results = screen.getByRole('region', { name: 'Cleanup execution results' });
+    expect(within(results).getAllByText('/repos/a')).toHaveLength(2);
+    expect(within(results).getByText('/work/clone-b/a')).toBeInTheDocument();
     expect(screen.getByText('state changed after preview')).toBeInTheDocument();
     expect(screen.getByText('delete failed')).toBeInTheDocument();
     expect(mockCleanupPreview).toHaveBeenCalledTimes(2);
@@ -244,7 +259,7 @@ describe('Cleanup — 確認と実行結果', () => {
     await user.click(screen.getByRole('button', { name: 'Rescan' }));
 
     expect(await screen.findByText('feature/new')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Select repo-a feature/new' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select repo-a /repos/a feature/new' })).toBeChecked();
     expect(screen.queryByText('feature/done')).not.toBeInTheDocument();
   });
 
