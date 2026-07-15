@@ -602,8 +602,7 @@ impl RepoContext<'_> {
                 last_commit_ts: commit.time().seconds(),
                 is_merged,
                 upstream,
-                stale_days: (kind == CandidateKind::Stale)
-                    .then_some((age_secs / 86_400) as u32),
+                stale_days: (kind == CandidateKind::Stale).then_some((age_secs / 86_400) as u32),
                 blocked,
             });
         }
@@ -936,8 +935,15 @@ mod tests {
         let tree = repo.find_tree(tree_id).expect("find tree");
         let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
         let parents: Vec<&git2::Commit> = parent.iter().collect();
-        repo.commit(Some("HEAD"), &signature, &signature, message, &tree, &parents)
-            .expect("commit")
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .expect("commit")
     }
 
     fn params(now_ts: i64) -> PreviewParams<'static> {
@@ -955,10 +961,7 @@ mod tests {
             .as_secs() as i64
     }
 
-    fn find<'a>(
-        preview: &'a RepoCleanupPreview,
-        ref_name: &str,
-    ) -> Option<&'a CleanupCandidate> {
+    fn find<'a>(preview: &'a RepoCleanupPreview, ref_name: &str) -> Option<&'a CleanupCandidate> {
         preview.candidates.iter().find(|c| c.ref_name == ref_name)
     }
 
@@ -1002,10 +1005,25 @@ mod tests {
             (true, UpstreamState::Tracked, 0, Some(CandidateKind::Merged)),
             (true, UpstreamState::Gone, 200, Some(CandidateKind::Merged)),
             // upstream 消失は stale より優先される
-            (false, UpstreamState::Gone, 0, Some(CandidateKind::UpstreamGone)),
-            (false, UpstreamState::Gone, 200, Some(CandidateKind::UpstreamGone)),
+            (
+                false,
+                UpstreamState::Gone,
+                0,
+                Some(CandidateKind::UpstreamGone),
+            ),
+            (
+                false,
+                UpstreamState::Gone,
+                200,
+                Some(CandidateKind::UpstreamGone),
+            ),
             // stale は閾値超過のみ
-            (false, UpstreamState::Tracked, 200, Some(CandidateKind::Stale)),
+            (
+                false,
+                UpstreamState::Tracked,
+                200,
+                Some(CandidateKind::Stale),
+            ),
             (false, UpstreamState::None, 200, Some(CandidateKind::Stale)),
             // どれにも該当しなければ候補にしない (閾値ちょうどは stale ではない)
             (false, UpstreamState::Tracked, 100, None),
@@ -1057,7 +1075,10 @@ mod tests {
         assert_eq!(c.operation, CleanupOperation::DeleteLocalBranch);
         assert!(c.is_merged);
         assert!(c.blocked.is_empty());
-        assert!(find(&preview, "main").is_none(), "HEAD branch は merged 扱いにしない");
+        assert!(
+            find(&preview, "main").is_none(),
+            "HEAD branch は merged 扱いにしない"
+        );
     }
 
     #[test]
@@ -1134,14 +1155,14 @@ mod tests {
     fn upstream_gone_branch_is_candidate() {
         let source = init_repo_with_commit("origin commit");
         let clone_dir = TempDir::new("clone-gone");
-        let clone =
-            git2::Repository::clone(source.path_str(), &clone_dir.path).expect("clone");
+        let clone = git2::Repository::clone(source.path_str(), &clone_dir.path).expect("clone");
         let head = clone.head().unwrap().peel_to_commit().unwrap();
         let _branch = clone.branch("feature", &head, false).expect("branch");
         // upstream 設定だけ残して remote-tracking ref が存在しない状態を作る
         let mut cfg = clone.config().expect("config");
         cfg.set_str("branch.feature.remote", "origin").unwrap();
-        cfg.set_str("branch.feature.merge", "refs/heads/feature").unwrap();
+        cfg.set_str("branch.feature.merge", "refs/heads/feature")
+            .unwrap();
 
         // feature ブランチに main 未マージの独自コミットを追加する
         clone.set_head("refs/heads/feature").expect("set head");
@@ -1152,7 +1173,9 @@ mod tests {
         clone.set_head("refs/heads/main").expect("set head main");
         let mut checkout_opts = git2::build::CheckoutBuilder::new();
         checkout_opts.force();
-        clone.checkout_head(Some(&mut checkout_opts)).expect("checkout");
+        clone
+            .checkout_head(Some(&mut checkout_opts))
+            .expect("checkout");
 
         let preview = preview_repo(clone_dir.path_str(), "clone", &params(now_ts()));
 
@@ -1201,7 +1224,8 @@ mod tests {
         let dir = init_repo_with_commit("base");
         let repo = git2::Repository::open(dir.path_str()).expect("open");
         let missing = dir.path.join("no-such-remote");
-        repo.remote("origin", missing.to_str().unwrap()).expect("add remote");
+        repo.remote("origin", missing.to_str().unwrap())
+            .expect("add remote");
         // 接続不能 remote の remote-tracking ref を手動で作る
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         repo.reference(
@@ -1275,7 +1299,8 @@ mod tests {
             head_ref.delete().expect("delete origin/HEAD");
         }
 
-        let (_, default_branch) = list_remote_heads(&clone_repo, "origin").expect("list remote heads");
+        let (_, default_branch) =
+            list_remote_heads(&clone_repo, "origin").expect("list remote heads");
         assert_eq!(default_branch, Some("trunk".to_string()));
 
         let mut remote_default_branches = HashMap::new();

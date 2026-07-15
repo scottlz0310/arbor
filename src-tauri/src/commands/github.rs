@@ -38,14 +38,10 @@ fn api_url(path_parts: &[&str], params: &[(&str, &str)]) -> Result<Url, String> 
 
 fn check_status(status: StatusCode) -> Result<(), String> {
     if status == StatusCode::UNAUTHORIZED {
-        return Err(
-            "GitHub PAT が無効です。Settings から PAT を更新してください。".to_string(),
-        );
+        return Err("GitHub PAT が無効です。Settings から PAT を更新してください。".to_string());
     }
     if status == StatusCode::NOT_FOUND {
-        return Err(
-            "リポジトリが見つかりません。owner / repo 名を確認してください。".to_string(),
-        );
+        return Err("リポジトリが見つかりません。owner / repo 名を確認してください。".to_string());
     }
     if !status.is_success() {
         return Err(format!("GitHub API エラー: HTTP {status}"));
@@ -112,7 +108,10 @@ pub(crate) fn parse_next_link(headers: &reqwest::header::HeaderMap) -> Option<St
         let part = part.trim();
         if part.contains(r#"rel="next""#) {
             if let Some(url_part) = part.split(';').next() {
-                let url = url_part.trim().trim_start_matches('<').trim_end_matches('>');
+                let url = url_part
+                    .trim()
+                    .trim_start_matches('<')
+                    .trim_end_matches('>');
                 return Some(url.to_string());
             }
         }
@@ -307,7 +306,14 @@ mod tests {
     fn api_url_encodes_slash_in_git_ref() {
         // Branch names like "feature/foo" must be percent-encoded as path segments.
         let url = api_url(
-            &["repos", "owner", "repo", "commits", "feature/foo", "check-runs"],
+            &[
+                "repos",
+                "owner",
+                "repo",
+                "commits",
+                "feature/foo",
+                "check-runs",
+            ],
             &[("per_page", "100")],
         )
         .expect("should build");
@@ -320,7 +326,10 @@ mod tests {
     #[test]
     fn api_url_no_query_params() {
         let url = api_url(&["repos", "owner", "repo", "pulls"], &[]).expect("should build");
-        assert_eq!(url.as_str(), "https://api.github.com/repos/owner/repo/pulls");
+        assert_eq!(
+            url.as_str(),
+            "https://api.github.com/repos/owner/repo/pulls"
+        );
     }
 
     #[test]
@@ -383,9 +392,8 @@ mod tests {
 
     #[test]
     fn parse_next_link_no_next_returns_none() {
-        let headers = make_link_header(
-            r#"<https://api.github.com/repos/o/r/pulls?page=1>; rel="prev""#,
-        );
+        let headers =
+            make_link_header(r#"<https://api.github.com/repos/o/r/pulls?page=1>; rel="prev""#);
         assert!(parse_next_link(&headers).is_none());
     }
 
@@ -397,9 +405,8 @@ mod tests {
     #[test]
     fn parse_next_link_last_page_only() {
         // Only "last" present (single-page response has no "next").
-        let headers = make_link_header(
-            r#"<https://api.github.com/repos/o/r/pulls?page=1>; rel="last""#,
-        );
+        let headers =
+            make_link_header(r#"<https://api.github.com/repos/o/r/pulls?page=1>; rel="last""#);
         assert!(parse_next_link(&headers).is_none());
     }
 

@@ -139,10 +139,7 @@ pub fn get_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
 // ─── delete_branches ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn delete_branches(
-    repo_path: String,
-    names: Vec<String>,
-) -> Result<Vec<DeleteResult>, String> {
+pub fn delete_branches(repo_path: String, names: Vec<String>) -> Result<Vec<DeleteResult>, String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let mut results = Vec::new();
     for name in names {
@@ -241,10 +238,7 @@ const MAX_COMMITS_LIMIT: usize = 10_000;
 /// assignments suitable for SVG column rendering.
 /// The requested `limit` is clamped to `MAX_COMMITS_LIMIT`.
 #[tauri::command]
-pub fn get_commit_graph(
-    repo_path: String,
-    limit: Option<u32>,
-) -> Result<Vec<CommitNode>, String> {
+pub fn get_commit_graph(repo_path: String, limit: Option<u32>) -> Result<Vec<CommitNode>, String> {
     let max = (limit.unwrap_or(200) as usize).min(MAX_COMMITS_LIMIT);
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
 
@@ -259,7 +253,10 @@ pub fn get_commit_graph(
         }
         let short = r.shorthand().map_err(|e| e.to_string())?;
         if let Ok(commit) = r.peel_to_commit() {
-            ref_map.entry(commit.id()).or_default().push(short.to_string());
+            ref_map
+                .entry(commit.id())
+                .or_default()
+                .push(short.to_string());
         }
     }
 
@@ -481,10 +478,8 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("clock should be after epoch")
                 .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "arbor-{prefix}-{}-{unique}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("arbor-{prefix}-{}-{unique}", std::process::id()));
             std::fs::create_dir_all(&path).expect("create temp dir");
             Self { path }
         }
@@ -511,8 +506,8 @@ mod tests {
         index.add_path(Path::new("README.md")).expect("add path");
         index.write().expect("write index");
         let tree_id = index.write_tree().expect("write tree");
-        let signature = git2::Signature::now("Arbor Test", "arbor@example.invalid")
-            .expect("test signature");
+        let signature =
+            git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("test signature");
 
         {
             let tree = repo.find_tree(tree_id).expect("find tree");
@@ -600,7 +595,10 @@ mod tests {
 
         let info = repo_info_for_path(dir.path_str()).expect("repo info");
 
-        assert_eq!(info.modified_count, 1, "modified_count should be 1 after editing a tracked file");
+        assert_eq!(
+            info.modified_count, 1,
+            "modified_count should be 1 after editing a tracked file"
+        );
         assert_eq!(info.untracked_count, 0);
     }
 
@@ -612,7 +610,10 @@ mod tests {
 
         let info = repo_info_for_path(dir.path_str()).expect("repo info");
 
-        assert_eq!(info.untracked_count, 1, "untracked_count should be 1 for a new untracked file");
+        assert_eq!(
+            info.untracked_count, 1,
+            "untracked_count should be 1 for a new untracked file"
+        );
         assert_eq!(info.modified_count, 0);
     }
 
@@ -624,7 +625,10 @@ mod tests {
 
         let info = repo_info_for_path(dir.path_str()).expect("repo info");
 
-        assert_eq!(info.modified_count, 1, "deleted tracked file should count as modified");
+        assert_eq!(
+            info.modified_count, 1,
+            "deleted tracked file should count as modified"
+        );
     }
 
     #[test]
@@ -636,8 +640,14 @@ mod tests {
 
         let info = repo_info_for_path(dir.path_str()).expect("repo info");
 
-        assert_eq!(info.stash_count, 1, "stash_count should reflect the number of stash entries");
-        assert_eq!(info.modified_count, 0, "working tree should be clean after stash");
+        assert_eq!(
+            info.stash_count, 1,
+            "stash_count should reflect the number of stash entries"
+        );
+        assert_eq!(
+            info.modified_count, 0,
+            "working tree should be clean after stash"
+        );
     }
 
     #[test]
@@ -662,8 +672,7 @@ mod tests {
         // ローカルの「リモート」リポジトリを作成し、クローン後にローカルコミットを追加する
         let source = init_repo_with_commit("origin commit");
         let clone_dir = TempDir::new("clone-ahead");
-        let clone = git2::Repository::clone(source.path_str(), &clone_dir.path)
-            .expect("clone");
+        let clone = git2::Repository::clone(source.path_str(), &clone_dir.path).expect("clone");
 
         // クローン先でファイルを変更してコミットする
         let readme = clone_dir.path.join("README.md");
@@ -671,12 +680,19 @@ mod tests {
         {
             let sig = git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("sig");
             let mut index = clone.index().expect("index");
-            index.add_path(std::path::Path::new("README.md")).expect("add");
+            index
+                .add_path(std::path::Path::new("README.md"))
+                .expect("add");
             index.write().expect("write index");
             let tree_id = index.write_tree().expect("write tree");
             let tree = clone.find_tree(tree_id).expect("find tree");
-            let parent = clone.head().expect("head").peel_to_commit().expect("commit");
-            clone.commit(Some("HEAD"), &sig, &sig, "local only", &tree, &[&parent])
+            let parent = clone
+                .head()
+                .expect("head")
+                .peel_to_commit()
+                .expect("commit");
+            clone
+                .commit(Some("HEAD"), &sig, &sig, "local only", &tree, &[&parent])
                 .expect("commit");
         }
         drop(clone);
@@ -703,19 +719,28 @@ mod tests {
             std::fs::write(source.path.join("README.md"), "upstream change\n").expect("write");
             let sig = git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("sig");
             let mut idx = source_repo.index().expect("index");
-            idx.add_path(std::path::Path::new("README.md")).expect("add");
+            idx.add_path(std::path::Path::new("README.md"))
+                .expect("add");
             idx.write().expect("write idx");
             let tree_id = idx.write_tree().expect("write tree");
             let tree = source_repo.find_tree(tree_id).expect("tree");
-            let parent = source_repo.head().expect("head").peel_to_commit().expect("commit");
-            source_repo.commit(Some("HEAD"), &sig, &sig, "upstream only", &tree, &[&parent])
+            let parent = source_repo
+                .head()
+                .expect("head")
+                .peel_to_commit()
+                .expect("commit");
+            source_repo
+                .commit(Some("HEAD"), &sig, &sig, "upstream only", &tree, &[&parent])
                 .expect("commit");
         }
 
         // clone 側で fetch して origin/main を更新する
         let clone_repo = Repo::open(clone_dir.path_str()).expect("open clone");
-        clone_repo.find_remote("origin").expect("remote")
-            .fetch(&["main"], None, None).expect("fetch");
+        clone_repo
+            .find_remote("origin")
+            .expect("remote")
+            .fetch(&["main"], None, None)
+            .expect("fetch");
         drop(clone_repo);
 
         let info = repo_info_for_path(clone_dir.path_str()).expect("repo info");
@@ -755,7 +780,8 @@ mod tests {
         let mut opts = git2::RepositoryInitOptions::new();
         opts.initial_head("main");
         let repo = git2::Repository::init_opts(&target.path, &opts).expect("init target");
-        repo.remote("origin", source.path_str()).expect("add origin");
+        repo.remote("origin", source.path_str())
+            .expect("add origin");
         drop(repo);
 
         let result = fetch_all(target.path_str().to_string()).expect("fetch all");
@@ -769,8 +795,7 @@ mod tests {
         // Modify a tracked file so there is something to stash.
         let path = repo.workdir().expect("workdir").join("README.md");
         std::fs::write(&path, format!("stash content: {message}\n")).expect("write");
-        let sig =
-            git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("signature");
+        let sig = git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("signature");
         repo.stash_save(&sig, message, None).expect("stash save")
     }
 
@@ -819,8 +844,7 @@ mod tests {
         // After apply the file has the stashed content, stash entry still exists.
         let stashes = list_stashes(dir.path_str().to_string()).expect("list stashes");
         assert_eq!(stashes.len(), 1, "apply keeps the stash entry");
-        let content =
-            std::fs::read_to_string(dir.path.join("README.md")).expect("read README");
+        let content = std::fs::read_to_string(dir.path.join("README.md")).expect("read README");
         assert!(content.contains("to apply"));
     }
 
