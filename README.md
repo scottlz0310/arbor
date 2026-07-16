@@ -25,7 +25,10 @@
 | [dsx CLI](https://github.com/scottlz0310/dsx) | 0.2.5+ | git 一括操作 |
 | Ollama | 最新安定版 | AI Insight（任意） |
 
-> **Windows**: MSVC Build Tools または Visual Studio が必要  
+> **Windows**: MSVC Build Tools または Visual Studio が必要
+>
+> Bun の isolated linker はシンボリックリンクを使用します。`bun install` が権限エラーになる場合は、Windows の [開発者モード](https://learn.microsoft.com/windows/apps/get-started/enable-your-device-for-development)を有効にしてください。
+>
 > **macOS**: Xcode Command Line Tools が必要
 
 ## セットアップ
