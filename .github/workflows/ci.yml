@@ -181,29 +181,27 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24.18.0
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun ci
 
       - name: Type check
-        run: pnpm run typecheck
+        run: bun run typecheck
 
       - name: Build
-        run: pnpm run build
+        run: bun run build
         env:
           TAURI_ENV_TARGET_TRIPLE: x86_64-unknown-linux-gnu
 
       - name: Unit tests with coverage
-        run: pnpm run test:coverage
+        run: bun run test:coverage
 
       - name: Upload frontend coverage to Codecov
         # fork PRs do not have access to secrets; skip upload in that case

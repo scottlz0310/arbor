@@ -91,18 +91,16 @@ jobs:
             pkg-config \
             wget
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24.18.0
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun ci
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

@@ -20,7 +20,7 @@
 |--------|-----------|------|
 | Rust / rustup | 1.78+ | バックエンドビルド |
 | Node.js | 24 LTS | フロントエンドビルド |
-| pnpm | 10+ | パッケージ管理 |
+| Bun | `package.json#packageManager` に準拠 | パッケージ管理 |
 | cmake | 最新安定版 | git2 クレートのビルドに必要 |
 | [dsx CLI](https://github.com/scottlz0310/dsx) | 0.2.5+ | git 一括操作 |
 | Ollama | 最新安定版 | AI Insight（任意） |
@@ -32,27 +32,27 @@
 
 ```bash
 # 依存インストール（git フックも同時にセットアップされる）
-pnpm install
+bun install
 
 # 開発サーバー起動（Vite + Tauri ホットリロード）
-pnpm tauri dev
+bun run tauri dev
 ```
 
 ## ビルド
 
 ```bash
 # リリースビルド（.msi / .dmg を生成）
-pnpm tauri build
+bun run tauri build
 ```
 
 ## 開発コマンド
 
 ```bash
 # フロントエンド
-pnpm typecheck          # 型チェック
-pnpm test               # vitest（ワンショット）
-pnpm test:watch         # vitest ウォッチモード
-pnpm test:coverage      # カバレッジ付きテスト
+bun run typecheck          # 型チェック
+bun run test               # vitest（ワンショット）
+bun run test:watch         # vitest ウォッチモード
+bun run test:coverage      # カバレッジ付きテスト
 
 # Rust バックエンド（src-tauri/ 配下）
 cargo check  --manifest-path src-tauri/Cargo.toml
