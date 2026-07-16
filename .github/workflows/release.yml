@@ -94,6 +94,8 @@ jobs:
       - name: Setup Bun
         id: setup-bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".bun-version"
 
       - name: Cache Bun dependencies
         uses: actions/cache@v6
