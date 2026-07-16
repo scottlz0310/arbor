@@ -17,15 +17,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # git2 ビルドに cmake が必要 (Windows: MSVC Build Tools or Visual Studio)
 rustup update           # Rust 1.78+
 node --version          # Node 24 LTS
-pnpm --version          # pnpm 10+（npm/npx の代わりに使用）
+bun --version           # package.json の packageManager に準拠
 dsx --version           # dsx CLI v0.2.5+ が PATH に必要
 ```
 
 ### 起動・ビルド
 ```bash
-pnpm install            # フロントエンド依存インストール
-pnpm tauri dev          # 開発サーバー起動 (Vite + Tauri ホットリロード)
-pnpm tauri build        # リリースビルド (.msi / .dmg)
+bun install             # フロントエンド依存インストール
+bun run tauri dev       # 開発サーバー起動 (Vite + Tauri ホットリロード)
+bun run tauri build     # リリースビルド (.msi / .dmg)
 ```
 
 ### Rust チェック
@@ -38,25 +38,25 @@ cargo test   --manifest-path src-tauri/Cargo.toml   # テスト実行
 
 ### フロントエンドのみ
 ```bash
-pnpm dev                # Vite dev server のみ (Tauri なし)
-pnpm build              # TypeScript コンパイル + Vite ビルド
-pnpm typecheck          # 型チェックのみ（emit なし）
-pnpm test               # vitest run（ワンショット）
-pnpm test:watch         # vitest ウォッチモード
-pnpm test:coverage      # カバレッジ付き（coverage/lcov.info を生成）
+bun run dev             # Vite dev server のみ (Tauri なし)
+bun run build           # TypeScript コンパイル + Vite ビルド
+bun run typecheck       # 型チェックのみ（emit なし）
+bun run test            # vitest run（ワンショット）
+bun run test:watch      # vitest ウォッチモード
+bun run test:coverage   # カバレッジ付き（coverage/lcov.info を生成）
 ```
 
 単一テストファイルを実行する場合:
 ```bash
-pnpm vitest run src/lib/ruleEngine.test.ts
+bun run vitest run src/lib/ruleEngine.test.ts
 ```
 
 ### Git フック（lefthook）
 
-`lefthook.yml` で定義。`pnpm install` 実行時に自動インストールされる。
+`lefthook.yml` で定義。`bun install` 実行時に自動インストールされる。
 
-- **pre-commit（並列）**: `pnpm run typecheck`、`cargo check`
-- **pre-push（直列）**: `cargo clippy -- -D warnings`、`cargo test`、`pnpm test`
+- **pre-commit（並列）**: `bun run typecheck`、`cargo check`
+- **pre-push（直列）**: `cargo clippy -- -D warnings`、`cargo test`、`bun run test`
 
 ## アーキテクチャ
 

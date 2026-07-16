@@ -5,6 +5,10 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### chore
+
+- パッケージマネージャーを pnpm から Bun へ移行し、lockfile、CI、release workflow、Tauri hook、開発ドキュメントを統一 (#195)
+
 ## [0.2.0] — 2026-07-15
 
 ### refactor

@@ -91,18 +91,25 @@ jobs:
             pkg-config \
             wget
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        id: setup-bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-version }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-version }}-
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24.18.0
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun ci
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
