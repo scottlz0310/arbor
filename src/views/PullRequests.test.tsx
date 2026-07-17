@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'bun:test';
 import { act } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import PullRequests from './PullRequests';
@@ -8,9 +8,14 @@ import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import * as invoke from '../lib/invoke';
 
-const mockHasGithubPat    = vi.spyOn(invoke, 'hasGithubPat');
-const mockGetPullRequests = vi.spyOn(invoke, 'getPullRequests');
-const mockGetCheckRuns    = vi.spyOn(invoke, 'getCheckRuns');
+const mockHasGithubPat    = spyOn(invoke, 'hasGithubPat');
+const mockGetPullRequests = spyOn(invoke, 'getPullRequests');
+const mockGetCheckRuns    = spyOn(invoke, 'getCheckRuns');
+
+// module export への spy をファイル外へ漏らさない
+afterAll(() => {
+  mock.restore();
+});
 
 function makePr(number: number, headSha: string, headRef = 'feat/branch') {
   return {
@@ -53,7 +58,7 @@ function renderPullRequests() {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  jest.clearAllMocks();
   act(() => {
     useRepoStore.setState({ repos: [], selectedRepo: null });
     useUiStore.setState({ activeView: 'prs', toasts: [], dsxProgress: [], dsxRunning: false });
@@ -133,12 +138,12 @@ describe('PullRequests — check-runs (head_sha)', () => {
     const sha = 'abc1234def5678901234567890abcdef12345678';
     mockGetPullRequests.mockResolvedValue([makePr(1, sha, 'feat/same-branch')] as never);
     renderPullRequests();
-    // PRs タブが表示されるまで待つ
-    await screen.findByRole('button', { name: 'PRs' });
+    // PRs タブが表示されるまで待つ。PR 件数ロード後はラベルが "PRs (N)" に変わるため前方一致
+    await screen.findByRole('button', { name: /^PRs/ }, { timeout: 5000 });
     // TanStack Query が fetch を開始するまで待つ
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(mockGetCheckRuns).toHaveBeenCalledWith('scott', 'arbor', sha);
-    });
+    }, { timeout: 5000 });
     // branch name では呼ばれていないことを確認
     expect(mockGetCheckRuns).not.toHaveBeenCalledWith('scott', 'arbor', 'feat/same-branch');
   });
@@ -151,10 +156,10 @@ describe('PullRequests — check-runs (head_sha)', () => {
       makePr(2, sha2, 'feat/shared'),
     ] as never);
     renderPullRequests();
-    await screen.findByRole('button', { name: 'PRs' });
-    await vi.waitFor(() => {
+    await screen.findByRole('button', { name: /^PRs/ }, { timeout: 5000 });
+    await waitFor(() => {
       expect(mockGetCheckRuns).toHaveBeenCalledWith('scott', 'arbor', sha1);
       expect(mockGetCheckRuns).toHaveBeenCalledWith('scott', 'arbor', sha2);
-    });
+    }, { timeout: 5000 });
   });
 });

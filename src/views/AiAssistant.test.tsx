@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn, type Mock } from 'bun:test';
 import { act } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import AiAssistant from './AiAssistant';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
@@ -8,29 +9,21 @@ import * as invoke from '../lib/invoke';
 import * as aiService from '../lib/aiService';
 import type { AiInsight, AppConfig, Insight, RepoInfo } from '../types';
 
-vi.mock('../lib/invoke', () => ({
-  getAiInsights:    vi.fn(),
-  getConfig:        vi.fn(),
-  ollamaAvailable:  vi.fn(),
-}));
+// invoke / aiService は spyOn で部分モックする（convertAiInsights は実体を使う）
+const mockGetAiInsights   = spyOn(invoke, 'getAiInsights');
+const mockGetConfig       = spyOn(invoke, 'getConfig');
+const mockOllamaAvailable = spyOn(invoke, 'ollamaAvailable');
+const mockFetchInsights   = spyOn(aiService, 'fetchInsights');
 
-vi.mock('../lib/aiService', async () => {
-  const actual = await vi.importActual<typeof import('../lib/aiService')>('../lib/aiService');
-  return {
-    ...actual,
-    fetchInsights: vi.fn(),
-  };
+// module export への spy をファイル外へ漏らさない
+afterAll(() => {
+  mock.restore();
 });
 
-// @tauri-apps/api/event の listen をスタブ化（jsdom では IPC 利用不可）
+// @tauri-apps/api/event の listen は preload でモック済み。
 // 各 event 名に対する handler を捕捉して、テストから手動で payload を流せるようにする
 const eventHandlers = new Map<string, (event: { payload: unknown }) => void>();
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn((event: string, handler: (event: { payload: unknown }) => void) => {
-    eventHandlers.set(event, handler);
-    return Promise.resolve(() => eventHandlers.delete(event));
-  }),
-}));
+const mockListen = listen as Mock<typeof listen>;
 
 function emitEvent(name: string, payload: unknown) {
   const handler = eventHandlers.get(name);
@@ -66,22 +59,26 @@ function makeConfig(enabled = true): AppConfig {
 const NO_INSIGHTS: Insight[] = [];
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  jest.clearAllMocks();
   eventHandlers.clear();
+  mockListen.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+    eventHandlers.set(event, handler);
+    return Promise.resolve(() => eventHandlers.delete(event));
+  }) as never);
   act(() => {
     useRepoStore.setState({ repos: [], selectedRepo: null });
     useUiStore.setState({ toasts: [], dsxProgress: [], dsxRunning: false, activeView: 'ai' });
   });
-  vi.mocked(invoke.getConfig).mockResolvedValue(makeConfig(true));
-  vi.mocked(invoke.ollamaAvailable).mockResolvedValue(true);
-  vi.mocked(aiService.fetchInsights).mockResolvedValue({
+  mockGetConfig.mockResolvedValue(makeConfig(true));
+  mockOllamaAvailable.mockResolvedValue(true);
+  mockFetchInsights.mockResolvedValue({
     insights: NO_INSIGHTS, source: 'rule', ollamaOffline: false,
   });
 });
 
 describe('AiAssistant — 接続ステータス', () => {
   it('Ollama 接続成功時に "接続済み" を表示する', async () => {
-    vi.mocked(invoke.ollamaAvailable).mockResolvedValue(true);
+    mockOllamaAvailable.mockResolvedValue(true);
     render(<AiAssistant />);
     await waitFor(() => {
       expect(screen.getByText('Ollama に接続済み')).toBeTruthy();
@@ -89,7 +86,7 @@ describe('AiAssistant — 接続ステータス', () => {
   });
 
   it('Ollama 接続失敗時に "接続できません" を表示する', async () => {
-    vi.mocked(invoke.ollamaAvailable).mockResolvedValue(false);
+    mockOllamaAvailable.mockResolvedValue(false);
     render(<AiAssistant />);
     await waitFor(() => {
       expect(screen.getByText('Ollama に接続できません')).toBeTruthy();
@@ -97,7 +94,7 @@ describe('AiAssistant — 接続ステータス', () => {
   });
 
   it('AI 無効化時は接続ステータスより先に "無効化されています" を表示する', async () => {
-    vi.mocked(invoke.getConfig).mockResolvedValue(makeConfig(false));
+    mockGetConfig.mockResolvedValue(makeConfig(false));
     render(<AiAssistant />);
     await waitFor(() => {
       expect(screen.getByText('AI Insight は無効化されています')).toBeTruthy();
@@ -114,9 +111,9 @@ describe('AiAssistant — 接続ステータス', () => {
 
   it('接続テストボタンで ollamaAvailable が再実行される', async () => {
     render(<AiAssistant />);
-    await waitFor(() => expect(invoke.ollamaAvailable).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockOllamaAvailable).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: '接続テスト' }));
-    await waitFor(() => expect(invoke.ollamaAvailable).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockOllamaAvailable).toHaveBeenCalledTimes(2));
   });
 });
 
@@ -130,7 +127,7 @@ describe('AiAssistant — 再分析ボタン', () => {
   });
 
   it('接続失敗時は disabled', async () => {
-    vi.mocked(invoke.ollamaAvailable).mockResolvedValue(false);
+    mockOllamaAvailable.mockResolvedValue(false);
     act(() => {
       useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
     });
@@ -142,7 +139,7 @@ describe('AiAssistant — 再分析ボタン', () => {
   });
 
   it('AI 無効時は disabled', async () => {
-    vi.mocked(invoke.getConfig).mockResolvedValue(makeConfig(false));
+    mockGetConfig.mockResolvedValue(makeConfig(false));
     act(() => {
       useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
     });
@@ -157,7 +154,7 @@ describe('AiAssistant — 再分析ボタン', () => {
     const mockInsights: AiInsight[] = [
       { repo_name: 'alpha', repo_path: '/repo/alpha', kind: 'risk', message: '危険なブランチ', priority: 3 },
     ];
-    vi.mocked(invoke.getAiInsights).mockResolvedValue(mockInsights);
+    mockGetAiInsights.mockResolvedValue(mockInsights);
     act(() => {
       useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
     });
@@ -168,7 +165,7 @@ describe('AiAssistant — 再分析ボタン', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /再分析/ }));
     await waitFor(() => {
-      expect(invoke.getAiInsights).toHaveBeenCalledWith([makeRepo()]);
+      expect(mockGetAiInsights).toHaveBeenCalledWith([makeRepo()]);
     });
   });
 });
@@ -187,7 +184,7 @@ describe('AiAssistant — Insight 表示', () => {
       { type: 'risk',    target: 'alpha', repo_path: '/repo/alpha', priority: 'high',   reason: 'alpha-risk',    source: 'ai' },
       { type: 'explain', target: 'beta',  repo_path: '/repo/beta',  priority: 'low',    reason: 'beta-explain',  source: 'ai' },
     ];
-    vi.mocked(aiService.fetchInsights).mockResolvedValue({
+    mockFetchInsights.mockResolvedValue({
       insights, source: 'ai', ollamaOffline: false,
     });
     act(() => {
@@ -205,7 +202,7 @@ describe('AiAssistant — Insight 表示', () => {
   });
 
   it('Ollama オフライン時に専用メッセージを表示', async () => {
-    vi.mocked(aiService.fetchInsights).mockResolvedValue({
+    mockFetchInsights.mockResolvedValue({
       insights: [], source: 'rule', ollamaOffline: true,
     });
     act(() => {
@@ -256,7 +253,7 @@ describe('AiAssistant — Insight 表示', () => {
       { type: 'explain', target: 'alpha', repo_path: '/work/clone-b/alpha',
         priority: 'low',  reason: 'clone-b-only-explain', source: 'ai' },
     ];
-    vi.mocked(aiService.fetchInsights).mockResolvedValue({
+    mockFetchInsights.mockResolvedValue({
       insights, source: 'ai', ollamaOffline: false,
     });
     act(() => {
@@ -276,7 +273,7 @@ describe('AiAssistant — Insight 表示', () => {
 
 describe('AiAssistant — AI disabled 時の挙動', () => {
   it('AI disabled 時は fetchInsights を呼ばず "Settings で有効化" 表示', async () => {
-    vi.mocked(invoke.getConfig).mockResolvedValue(makeConfig(false));
+    mockGetConfig.mockResolvedValue(makeConfig(false));
     act(() => {
       useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
     });
@@ -284,7 +281,7 @@ describe('AiAssistant — AI disabled 時の挙動', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/Settings で有効化してください/).length).toBeGreaterThan(0);
     });
-    expect(aiService.fetchInsights).not.toHaveBeenCalled();
+    expect(mockFetchInsights).not.toHaveBeenCalled();
   });
 });
 
@@ -292,7 +289,7 @@ describe('AiAssistant — loading 状態のリセット', () => {
   it('mid-fetch 中に repos が空になっても insightLoading が残らない', async () => {
     // 解決可能な fetch を pending のまま保持して mid-fetch 状態を再現する
     let resolveFetch!: (v: { insights: Insight[]; source: 'rule' | 'ai'; ollamaOffline: boolean }) => void;
-    vi.mocked(aiService.fetchInsights).mockReturnValue(
+    mockFetchInsights.mockReturnValue(
       new Promise((res) => { resolveFetch = res; }),
     );
     act(() => {
@@ -345,8 +342,9 @@ describe('AiAssistant — イベント購読', () => {
       { repo_name: 'alpha', repo_path: '/repo/alpha', kind: 'risk', message: 'event-pushed-risk', priority: 3 },
     ];
     act(() => emitEvent('ai_insights_updated', ai));
+    // selected セクションと repo グループの両方に表示され得るため getAllByText
     await waitFor(() => {
-      expect(screen.getByText('event-pushed-risk')).toBeTruthy();
+      expect(screen.getAllByText('event-pushed-risk').length).toBeGreaterThan(0);
     });
   });
 
@@ -358,7 +356,7 @@ describe('AiAssistant — イベント購読', () => {
     // SectionHeader の aiFailed バッジは !loading 条件下でのみ表示されるので、
     // 初回 fetchInsights の loading が解けるまで待ってから emit する
     await waitFor(() => {
-      expect(aiService.fetchInsights).toHaveBeenCalled();
+      expect(mockFetchInsights).toHaveBeenCalled();
       expect(screen.getByText(/特筆すべき項目はありません/)).toBeTruthy();
     });
     act(() => emitEvent('ai_insights_failed', undefined));

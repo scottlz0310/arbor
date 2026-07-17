@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'bun:test';
 import * as invoke from '../lib/invoke';
 import { useUiStore } from '../stores/uiStore';
 import type {
@@ -12,8 +12,13 @@ import type {
 } from '../types';
 import Cleanup from './Cleanup';
 
-const mockCleanupPreview = vi.spyOn(invoke, 'cleanupPreview');
-const mockCleanupExecute = vi.spyOn(invoke, 'cleanupExecute');
+const mockCleanupPreview = spyOn(invoke, 'cleanupPreview');
+const mockCleanupExecute = spyOn(invoke, 'cleanupExecute');
+
+// module export への spy をファイル外へ漏らさない
+afterAll(() => {
+  mock.restore();
+});
 
 function makeCandidate(overrides: Partial<CleanupCandidate> = {}): CleanupCandidate {
   return {
@@ -108,7 +113,7 @@ function resultItem(
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  jest.clearAllMocks();
   act(() => {
     useUiStore.setState({ toasts: [], dsxProgress: [], dsxRunning: false });
   });

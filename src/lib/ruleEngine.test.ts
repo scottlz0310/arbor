@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { generateInsights } from './ruleEngine';
 import type { BranchInfo, RepoInfo } from '../types';
 

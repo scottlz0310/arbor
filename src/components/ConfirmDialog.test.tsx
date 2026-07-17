@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, mock } from 'bun:test';
 import { act } from 'react';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -8,8 +8,8 @@ function renderDialog(overrides?: Partial<Parameters<typeof ConfirmDialog>[0]>) 
   const props = {
     title: 'Delete branch',
     message: 'Are you sure?',
-    onConfirm: vi.fn(),
-    onCancel: vi.fn(),
+    onConfirm: mock(),
+    onCancel: mock(),
     ...overrides,
   };
   const { unmount } = render(<ConfirmDialog {...props} />);

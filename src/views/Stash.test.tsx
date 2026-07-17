@@ -1,16 +1,21 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'bun:test';
 import { act } from 'react';
 import Stash from './Stash';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import * as invoke from '../lib/invoke';
 
-const mockListStashes = vi.spyOn(invoke, 'listStashes');
-const mockApplyStash  = vi.spyOn(invoke, 'applyStash');
-const mockDropStash   = vi.spyOn(invoke, 'dropStash');
-const mockLoadRepos   = vi.fn();
+const mockListStashes = spyOn(invoke, 'listStashes');
+const mockApplyStash  = spyOn(invoke, 'applyStash');
+const mockDropStash   = spyOn(invoke, 'dropStash');
+const mockLoadRepos   = mock();
+
+// module export への spy をファイル外へ漏らさない
+afterAll(() => {
+  mock.restore();
+});
 
 function makeRepo(path = '/repo/a', name = 'repo-a') {
   return {
@@ -31,7 +36,7 @@ function renderStash() {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  jest.clearAllMocks();
   act(() => {
     useRepoStore.setState({ repos: [], selectedRepo: null, loadRepos: mockLoadRepos });
     useUiStore.setState({ toasts: [] });

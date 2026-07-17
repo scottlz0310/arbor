@@ -53,8 +53,8 @@ bun run tauri build
 ```bash
 # フロントエンド
 bun run typecheck          # 型チェック
-bun run test               # vitest（ワンショット）
-bun run test:watch         # vitest ウォッチモード
+bun run test               # bun test（ワンショット）
+bun run test:watch         # bun test ウォッチモード
 bun run test:coverage      # カバレッジ付きテスト
 
 # Rust バックエンド（src-tauri/ 配下）

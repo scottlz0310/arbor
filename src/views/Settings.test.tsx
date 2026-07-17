@@ -1,28 +1,33 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, jest, mock, spyOn, type Mock } from 'bun:test';
 import { act } from 'react';
-
-// @tauri-apps/plugin-dialog の open をファイルレベルでモックする
-const mockOpen = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mockOpen }));
+import { open } from '@tauri-apps/plugin-dialog';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Settings from './Settings';
 import ToastContainer from '../components/Toast';
 import * as invoke from '../lib/invoke';
 import { useUiStore } from '../stores/uiStore';
 
+// @tauri-apps/plugin-dialog は preload (src/test/setup.ts) でモック済み
+const mockOpen = open as Mock<typeof open>;
+
 // デフォルトの invoke モックを設定する
-const mockDsxCheck = vi.spyOn(invoke, 'dsxCheck');
-const mockDsxLatestVersion = vi.spyOn(invoke, 'dsxLatestVersion');
-const mockGetConfig = vi.spyOn(invoke, 'getConfig');
-const mockHasGithubPat = vi.spyOn(invoke, 'hasGithubPat');
-const mockSysUpdate = vi.spyOn(invoke, 'sysUpdate');
-const mockDetectGithubRemote = vi.spyOn(invoke, 'detectGithubRemote');
-const mockUpdateRepositoryGithub = vi.spyOn(invoke, 'updateRepositoryGithub');
-const mockScanMissingRepositories = vi.spyOn(invoke, 'scanMissingRepositories');
-const mockRemoveRepository = vi.spyOn(invoke, 'removeRepository');
-const mockScanDirectory = vi.spyOn(invoke, 'scanDirectory');
+const mockDsxCheck = spyOn(invoke, 'dsxCheck');
+const mockDsxLatestVersion = spyOn(invoke, 'dsxLatestVersion');
+const mockGetConfig = spyOn(invoke, 'getConfig');
+const mockHasGithubPat = spyOn(invoke, 'hasGithubPat');
+const mockSysUpdate = spyOn(invoke, 'sysUpdate');
+const mockDetectGithubRemote = spyOn(invoke, 'detectGithubRemote');
+const mockUpdateRepositoryGithub = spyOn(invoke, 'updateRepositoryGithub');
+const mockScanMissingRepositories = spyOn(invoke, 'scanMissingRepositories');
+const mockRemoveRepository = spyOn(invoke, 'removeRepository');
+const mockScanDirectory = spyOn(invoke, 'scanDirectory');
+
+// module export への spy をファイル外へ漏らさない
+afterAll(() => {
+  mock.restore();
+});
 
 const availableDsxStatus = { available: true, version: 'v0.2.3', path: '/usr/local/bin/dsx' };
 const unavailableDsxStatus = { available: false, version: null, path: null };
@@ -53,7 +58,7 @@ function renderSettings(withToast = false) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  jest.clearAllMocks();
   act(() => { useUiStore.setState({ toasts: [] }); });
   mockGetConfig.mockResolvedValue(mockConfig as never);
   mockHasGithubPat.mockResolvedValue(false as never);
@@ -68,7 +73,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.clearAllMocks();
+  jest.clearAllMocks();
 });
 
 describe('Settings — Repositories section', () => {
@@ -161,7 +166,7 @@ describe('Settings — dsx CLI section', () => {
     renderSettings();
     const btn = await screen.findByRole('button', { name: 'バージョン確認' });
     await userEvent.click(btn);
-    expect(mockDsxLatestVersion).toHaveBeenCalledOnce();
+    expect(mockDsxLatestVersion).toHaveBeenCalledTimes(1);
   });
 
   it('最新版のとき「最新版です」を表示する', async () => {
@@ -182,7 +187,7 @@ describe('Settings — dsx CLI section', () => {
   });
 
   it('「Self Update」クリックで確認ダイアログが表示される', async () => {
-    const mockDsxSelfUpdate = vi.spyOn(invoke, 'dsxSelfUpdate').mockResolvedValue({} as never);
+    const mockDsxSelfUpdate = spyOn(invoke, 'dsxSelfUpdate').mockResolvedValue({} as never);
     mockDsxLatestVersion.mockResolvedValue('v0.9.9' as never);
     renderSettings();
     await userEvent.click(await screen.findByRole('button', { name: 'バージョン確認' }));
@@ -192,7 +197,7 @@ describe('Settings — dsx CLI section', () => {
   });
 
   it('「Self Update」確認後に dsxSelfUpdate が呼ばれる', async () => {
-    const mockDsxSelfUpdate = vi.spyOn(invoke, 'dsxSelfUpdate').mockResolvedValue({} as never);
+    const mockDsxSelfUpdate = spyOn(invoke, 'dsxSelfUpdate').mockResolvedValue({} as never);
     mockDsxLatestVersion.mockResolvedValue('v0.9.9' as never);
     renderSettings();
     await userEvent.click(await screen.findByRole('button', { name: 'バージョン確認' }));
@@ -336,9 +341,9 @@ describe('Settings — 削除済みリポジトリ検出 (#117)', () => {
   });
 
   it('登録解除確認後に removeRepository が呼ばれ loadRepos が呼ばれる', async () => {
-    const mockLoadRepos = vi.fn();
+    const mockLoadRepos = mock();
     const { useRepoStore } = await import('../stores/repoStore');
-    vi.spyOn(useRepoStore, 'getState').mockReturnValue({ loadRepos: mockLoadRepos } as never);
+    spyOn(useRepoStore, 'getState').mockReturnValue({ loadRepos: mockLoadRepos } as never);
 
     mockScanMissingRepositories.mockResolvedValue([missingRepo] as never);
     renderSettings(true);
