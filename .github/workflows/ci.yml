@@ -24,21 +24,15 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Cache cargo registry (shared)
-        uses: actions/cache@v6
+      # rust-cache はキーに rustc バージョンを自動包含する。job ごとの明示 key で
+      # 並行ジョブ間のキャッシュ共有・上書きを防ぎ、保存は main push 時に限定する
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - name: Cache cargo target (lint)
-        uses: actions/cache@v6
-        with:
-          path: src-tauri/target
-          key: ${{ runner.os }}-cargo-target-lint-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-target-lint-
+          workspaces: src-tauri
+          key: lint
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
@@ -84,21 +78,13 @@ jobs:
         with:
           components: clippy
 
-      - name: Cache cargo registry (shared)
-        uses: actions/cache@v6
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - name: Cache cargo target (platform check)
-        uses: actions/cache@v6
-        with:
-          path: src-tauri/target
-          key: ${{ runner.os }}-cargo-target-platform-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-target-platform-
+          workspaces: src-tauri
+          key: platform-${{ matrix.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: cargo check
         run: cargo check
@@ -145,21 +131,14 @@ jobs:
           Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
           echo $extractPath >> $env:GITHUB_PATH
 
-      - name: Cache cargo registry (shared)
-        uses: actions/cache@v6
+      # instrument-coverage 付き成果物は他ジョブと非互換のため key を分離する
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - name: Cache cargo target (coverage)
-        uses: actions/cache@v6
-        with:
-          path: src-tauri/target
-          key: ${{ runner.os }}-cargo-target-cov-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-target-cov-
+          workspaces: src-tauri
+          key: coverage
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: cargo test with coverage
         run: cargo llvm-cov --lcov --output-path lcov.info

@@ -7,6 +7,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### chore
 
+- CI/release の cargo キャッシュを Swatinem/rust-cache@v2 に移行。キーに rustc バージョンが含まれず toolchain 更新後にキャッシュが恒久的に無効化・再保存されない問題を修正し、ジョブ別 key と main 限定保存で並行ジョブのキャッシュ汚染とスコープ重複を防止 (#202)
 - パッケージマネージャーを pnpm から Bun へ移行し、lockfile、CI、release workflow、Tauri hook、開発ドキュメントを統一 (#195)
 
 ## [0.2.0] — 2026-07-15
