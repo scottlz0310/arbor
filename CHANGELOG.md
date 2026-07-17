@@ -5,8 +5,11 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-07-17
+
 ### chore
 
+- vite を `^8.1.4` → `^8.1.5` に更新 (#205)
 - フロントエンド toolchain から Node.js を撤去（#197 PR 2）。vite / tsc を `bun --bun` で Bun ランタイム実行に切り替え、CI / release workflow の `actions/setup-node` と `engines.node` を削除
 - テストランナーを Vitest から bun test へ移行（#197 PR 1）。jsdom → happy-dom、Tauri IPC 境界モックの preload 集約、zustand ストアのテスト間リセット、`vi.mock` の spyOn 統一を実施。カバレッジは `coverage/lcov.info` 出力を維持
 - CI/release の cargo キャッシュを Swatinem/rust-cache@v2 に移行。キーに rustc バージョンが含まれず toolchain 更新後にキャッシュが恒久的に無効化・再保存されない問題を修正し、ジョブ別 key と main 限定保存で並行ジョブのキャッシュ汚染とスコープ重複を防止 (#202)
