@@ -1,2 +1,18 @@
 [install]
 linker = "isolated"
+
+[test]
+root = "src"
+preload = ["./src/test/happydom.ts", "./src/test/setup.ts"]
+coverageSkipTestFiles = true
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage"
+# vitest の coverage.include (lib / components / views) と揃えるための除外リスト
+coveragePathIgnorePatterns = [
+  "src/App.tsx",
+  "src/main.tsx",
+  "src/stores/**",
+  "src/styles/**",
+  "src/test/**",
+  "src/types/**",
+]

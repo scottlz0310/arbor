@@ -1,19 +1,16 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import { act } from 'react';
 import ToastContainer from './Toast';
 import { useUiStore } from '../stores/uiStore';
 
+// addToast の 4 s auto-dismiss setTimeout は実タイマーのまま許容する。
+// 発火時点でテストは終了しており、store 更新のみで React へは影響しない
+// （setTimeout の no-op 化は React のスケジューリングも壊すため不可）。
 beforeEach(() => {
-  // Use fake timers to prevent the 4 s auto-dismiss setTimeout from leaking.
-  vi.useFakeTimers();
   act(() => {
     useUiStore.setState({ toasts: [] });
   });
-});
-
-afterEach(() => {
-  vi.useRealTimers();
 });
 
 describe('ToastContainer', () => {

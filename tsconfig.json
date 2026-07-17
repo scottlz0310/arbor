@@ -15,7 +15,8 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "allowArbitraryExtensions": true
+    "allowArbitraryExtensions": true,
+    "types": ["bun"]
   },
   "include": ["src"]
 }

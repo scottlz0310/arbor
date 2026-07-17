@@ -1,11 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'bun:test';
 import type { AiInsight, BranchInfo, Insight, RepoInfo } from '../types';
 import { convertAiInsights, fetchInsights } from './aiService';
 import * as invoke from './invoke';
 import * as ruleEngine from './ruleEngine';
 
-vi.mock('./invoke');
-vi.mock('./ruleEngine');
+// module export への spy はプロセス共有のため、ファイル終了時に必ず実体へ戻す
+// （残すと ruleEngine.test.ts 等の実体呼び出しを汚染する）
+const mockOllamaAvailable = spyOn(invoke, 'ollamaAvailable');
+const mockGetAiInsightsCached = spyOn(invoke, 'getAiInsightsCached');
+const mockGenerateInsights = spyOn(ruleEngine, 'generateInsights');
+
+afterAll(() => {
+  mock.restore();
+});
 
 const REPOS: RepoInfo[] = [
   {
@@ -36,8 +43,8 @@ const AI_RAW: AiInsight[] = [
 ];
 
 beforeEach(() => {
-  vi.resetAllMocks();
-  vi.mocked(ruleEngine.generateInsights).mockReturnValue(RULE_INSIGHTS);
+  jest.clearAllMocks();
+  mockGenerateInsights.mockReturnValue(RULE_INSIGHTS);
 });
 
 // ─── convertAiInsights ───────────────────────────────────────────────────────
@@ -86,16 +93,16 @@ describe('convertAiInsights', () => {
 
 describe('fetchInsights', () => {
   it('Ollama 利用不可のとき rule フォールバック', async () => {
-    vi.mocked(invoke.ollamaAvailable).mockResolvedValue(false);
+    mockOllamaAvailable.mockResolvedValue(false);
     const result = await fetchInsights(REPOS, BRANCHES, 14);
     expect(result.source).toBe('rule');
     expect(result.insights).toEqual(RULE_INSIGHTS);
-    expect(invoke.getAiInsightsCached).not.toHaveBeenCalled();
+    expect(mockGetAiInsightsCached).not.toHaveBeenCalled();
   });
 
   it('Ollama 利用可能のとき AI Insight を返す', async () => {
-    vi.mocked(invoke.ollamaAvailable).mockResolvedValue(true);
-    vi.mocked(invoke.getAiInsightsCached).mockResolvedValue(AI_RAW);
+    mockOllamaAvailable.mockResolvedValue(true);
+    mockGetAiInsightsCached.mockResolvedValue(AI_RAW);
     const result = await fetchInsights(REPOS, BRANCHES, 14);
     expect(result.source).toBe('ai');
     expect(result.insights).toHaveLength(3);
@@ -103,23 +110,23 @@ describe('fetchInsights', () => {
   });
 
   it('getAiInsightsCached が例外を投げたとき rule フォールバック', async () => {
-    vi.mocked(invoke.ollamaAvailable).mockResolvedValue(true);
-    vi.mocked(invoke.getAiInsightsCached).mockRejectedValue(new Error('timeout'));
+    mockOllamaAvailable.mockResolvedValue(true);
+    mockGetAiInsightsCached.mockRejectedValue(new Error('timeout'));
     const result = await fetchInsights(REPOS, BRANCHES, 14);
     expect(result.source).toBe('rule');
     expect(result.insights).toEqual(RULE_INSIGHTS);
   });
 
   it('ollamaAvailable が例外を投げたとき rule フォールバック', async () => {
-    vi.mocked(invoke.ollamaAvailable).mockRejectedValue(new Error('network'));
+    mockOllamaAvailable.mockRejectedValue(new Error('network'));
     const result = await fetchInsights(REPOS, BRANCHES, 14);
     expect(result.source).toBe('rule');
     expect(result.insights).toEqual(RULE_INSIGHTS);
   });
 
   it('getAiInsightsCached が [] を返したとき rule フォールバック (cache miss)', async () => {
-    vi.mocked(invoke.ollamaAvailable).mockResolvedValue(true);
-    vi.mocked(invoke.getAiInsightsCached).mockResolvedValue([]);
+    mockOllamaAvailable.mockResolvedValue(true);
+    mockGetAiInsightsCached.mockResolvedValue([]);
     const result = await fetchInsights(REPOS, BRANCHES, 14);
     expect(result.source).toBe('rule');
     expect(result.insights).toEqual(RULE_INSIGHTS);

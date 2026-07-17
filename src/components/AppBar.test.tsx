@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, mock } from 'bun:test';
 import AppBar, { AppBtn } from './AppBar';
 
 describe('AppBar', () => {
@@ -28,7 +28,7 @@ describe('AppBtn', () => {
   });
 
   it('calls onClick when clicked', async () => {
-    const onClick = vi.fn();
+    const onClick = mock();
     render(<AppBtn onClick={onClick}>Go</AppBtn>);
     await userEvent.click(screen.getByRole('button'));
     expect(onClick).toHaveBeenCalledTimes(1);

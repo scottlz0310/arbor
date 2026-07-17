@@ -1,20 +1,25 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'bun:test';
 import { act } from 'react';
 import CommandPalette from './CommandPalette';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import * as invoke from '../lib/invoke';
 
-const mockNavigate            = vi.fn();
-const mockSelectRepo          = vi.fn();
-const mockRefreshRepo         = vi.fn();
-const mockLoadRepos           = vi.fn();
-const mockCloseCommandPalette = vi.fn();
-const mockAddToast            = vi.fn();
-const mockFetchAll            = vi.spyOn(invoke, 'fetchAll');
-const mockRepoUpdate          = vi.spyOn(invoke, 'repoUpdate');
+const mockNavigate            = mock();
+const mockSelectRepo          = mock();
+const mockRefreshRepo         = mock();
+const mockLoadRepos           = mock();
+const mockCloseCommandPalette = mock();
+const mockAddToast            = mock();
+const mockFetchAll            = spyOn(invoke, 'fetchAll');
+const mockRepoUpdate          = spyOn(invoke, 'repoUpdate');
+
+// module export への spy をファイル外へ漏らさない
+afterAll(() => {
+  mock.restore();
+});
 
 function makeRepo(path: string, name: string) {
   return {
@@ -27,7 +32,7 @@ function makeRepo(path: string, name: string) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  jest.clearAllMocks();
   mockFetchAll.mockResolvedValue({ updated_refs: [] });
   mockRepoUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 });
   mockRefreshRepo.mockResolvedValue(undefined);
@@ -102,7 +107,7 @@ describe('CommandPalette — キーボード操作', () => {
   it('Escape で closeCommandPalette が呼ばれる', async () => {
     renderPalette();
     await userEvent.keyboard('{Escape}');
-    expect(mockCloseCommandPalette).toHaveBeenCalledOnce();
+    expect(mockCloseCommandPalette).toHaveBeenCalledTimes(1);
   });
 
   it('Enter でアクティブなコマンドが実行される', async () => {

@@ -1,15 +1,12 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, jest, beforeEach } from 'bun:test';
 import { act } from 'react';
 import Overview from './Overview';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 
-// Tauri invoke は jsdom 環境では使用不可のためモック
-vi.mock('../lib/invoke', () => ({
-  fetchAll: vi.fn(),
-  repoUpdate: vi.fn(),
-}));
+// Tauri IPC は preload (src/test/setup.ts) でモック済みのため、
+// ../lib/invoke は実体のまま使用できる
 
 function makeRepo(overrides: Record<string, unknown> = {}) {
   return {
@@ -29,7 +26,7 @@ function makeRepo(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  jest.clearAllMocks();
   act(() => {
     useRepoStore.setState({ repos: [], selectedRepo: null });
     useUiStore.setState({ toasts: [], dsxProgress: [], dsxRunning: false });

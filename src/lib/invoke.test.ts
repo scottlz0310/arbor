@@ -1,9 +1,7 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock } from 'bun:test';
 import type { CleanupCandidate } from '../types';
 import { cleanupExecute, cleanupPreview } from './invoke';
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 const candidate: CleanupCandidate = {
   repo_path: '/repos/a',
@@ -20,14 +18,15 @@ const candidate: CleanupCandidate = {
   blocked: [],
 };
 
-const mockedTauriInvoke = vi.mocked(tauriInvoke);
+// preload (src/test/setup.ts) の mock.module 済み invoke を Mock として扱う
+const mockedTauriInvoke = tauriInvoke as Mock<typeof tauriInvoke>;
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  mockedTauriInvoke.mockClear();
 });
 
 describe('Cleanup IPC wrappers', () => {
-  it.each([
+  const cases: { name: string; call: () => Promise<unknown>; expectedCall: Parameters<typeof tauriInvoke> }[] = [
     {
       name: 'preview',
       call: () => cleanupPreview(),
@@ -38,7 +37,8 @@ describe('Cleanup IPC wrappers', () => {
       call: () => cleanupExecute([candidate]),
       expectedCall: ['cleanup_execute', { request: { candidates: [candidate] } }],
     },
-  ])('$name は型付き引数を Tauri command へ委譲する', async ({ call, expectedCall }) => {
+  ];
+  it.each(cases)('$name は型付き引数を Tauri command へ委譲する', async ({ call, expectedCall }) => {
     await call();
 
     expect(mockedTauriInvoke).toHaveBeenCalledTimes(1);

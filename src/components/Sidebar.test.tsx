@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { act } from 'react';
 import Sidebar from './Sidebar';
 import { useRepoStore } from '../stores/repoStore';
@@ -19,7 +19,7 @@ function makeRepo(path: string, name: string) {
 beforeEach(() => {
   act(() => {
     useRepoStore.setState({ repos: [], selectedRepo: null });
-    useUiStore.setState({ activeView: 'overview', navigate: vi.fn() });
+    useUiStore.setState({ activeView: 'overview', navigate: mock() });
   });
 });
 
@@ -67,7 +67,7 @@ describe('Sidebar — リポジトリ一覧 ARIA', () => {
   });
 
   it('リポジトリボタンクリックで selectRepo が呼ばれる', async () => {
-    const mockSelectRepo = vi.fn();
+    const mockSelectRepo = mock();
     const repo = makeRepo('/repo/a', 'my-repo');
     act(() => { useRepoStore.setState({ repos: [repo], selectedRepo: null, selectRepo: mockSelectRepo }); });
     render(<Sidebar />);

@@ -41,15 +41,21 @@ cargo test   --manifest-path src-tauri/Cargo.toml   # テスト実行
 bun run dev             # Vite dev server のみ (Tauri なし)
 bun run build           # TypeScript コンパイル + Vite ビルド
 bun run typecheck       # 型チェックのみ（emit なし）
-bun run test            # vitest run（ワンショット）
-bun run test:watch      # vitest ウォッチモード
+bun run test            # bun test（ワンショット）
+bun run test:watch      # bun test ウォッチモード
 bun run test:coverage   # カバレッジ付き（coverage/lcov.info を生成）
 ```
 
 単一テストファイルを実行する場合:
 ```bash
-bun run vitest run src/lib/ruleEngine.test.ts
+bun test src/lib/ruleEngine.test.ts
 ```
+
+テスト基盤は bun test + happy-dom。Tauri IPC（`@tauri-apps/api/core` / `event` / `plugin-dialog`）の
+モックと zustand ストアのテスト間リセットは preload（`src/test/setup.ts`）に集約されている。
+テストファイル内では `mock.module` を使わず、`spyOn` でモジュール関数を差し替え、
+module レベルの spy を作ったファイルには `afterAll(() => mock.restore())` を入れること
+（bun test は全ファイルを 1 プロセスで実行するため、spy がファイル間に漏れる）。
 
 ### Git フック（lefthook）
 
