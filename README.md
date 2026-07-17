@@ -19,8 +19,7 @@
 | ツール | バージョン | 用途 |
 |--------|-----------|------|
 | Rust / rustup | 1.78+ | バックエンドビルド |
-| Node.js | 24 LTS | フロントエンドビルド |
-| Bun | `.bun-version` に準拠 | パッケージ管理 |
+| Bun | `.bun-version` に準拠 | パッケージ管理・フロントエンドツールチェーン実行 |
 | cmake | 最新安定版 | git2 クレートのビルドに必要 |
 | [dsx CLI](https://github.com/scottlz0310/dsx) | 0.2.5+ | git 一括操作 |
 | Ollama | 最新安定版 | AI Insight（任意） |
