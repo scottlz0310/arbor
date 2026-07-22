@@ -15,11 +15,11 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.101.3",
+    "@tanstack/react-query": "^5.101.4",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "zustand": "^5.0.14"
   },
   "trustedDependencies": [
