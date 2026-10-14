@@ -15,7 +15,7 @@ tauri          = { version = "2.12.3", features = [] }
 tauri-plugin-dialog = "2.8.2"
 tauri-plugin-updater = "2.13.3"
 serde          = { version = "1.0.229", features = ["derive"] }
-serde_json     = "1.0.151"
+serde_json     = "1.0.154"
 toml           = "1.1.8"
 git2           = { version = "0.21.0", features = ["ssh", "https"] }
 tokio          = { version = "1.53.2", features = ["full"] }
