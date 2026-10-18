@@ -1,6 +1,8 @@
+use super::runner::{LaunchSpec, RunOutcome, RunnerState};
 use crate::models::DsxOutput;
+use std::path::PathBuf;
 use std::process::Command;
-use tauri::AppHandle;
+use tauri::State;
 
 // ─── dsx_check ───────────────────────────────────────────────────────────────
 
@@ -78,12 +80,14 @@ fn extract_tag_name(json: &serde_json::Value) -> Option<String> {
 
 /// Runs `dsx repo update --no-tui -j 4` in the given repository directory.
 ///
-/// Progress lines from stdout are forwarded to the frontend via the
-/// `dsx_progress` Tauri event so the UI can display real-time status.
+/// Output is streamed to the frontend via the `process_*` events (see `runner`).
 #[tauri::command]
-pub async fn repo_update(app: AppHandle, repo_path: String) -> Result<DsxOutput, String> {
-    run_dsx_with_events(
-        &app,
+pub async fn repo_update(
+    state: State<'_, RunnerState>,
+    repo_path: String,
+) -> Result<DsxOutput, String> {
+    run_dsx(
+        &state,
         &repo_path,
         &["repo", "update", "--no-tui", "--jobs", "4"],
     )
@@ -94,96 +98,73 @@ pub async fn repo_update(app: AppHandle, repo_path: String) -> Result<DsxOutput,
 
 /// Runs `dsx env run -- <cmd>` in the given repository directory.
 ///
-/// Streams stdout back as `dsx_progress` events so the UI can display
+/// Output is streamed via the `process_*` events so the UI can display
 /// real-time output for long-running environment-injected commands.
 #[tauri::command]
 pub async fn env_inject(
-    app: AppHandle,
+    state: State<'_, RunnerState>,
     repo_path: String,
     cmd: String,
 ) -> Result<DsxOutput, String> {
     let cmd_parts: Vec<&str> = cmd.split_whitespace().collect();
     let mut args = vec!["env", "run", "--"];
     args.extend_from_slice(&cmd_parts);
-    run_dsx_with_events(&app, &repo_path, &args).await
+    run_dsx(&state, &repo_path, &args).await
 }
 
 // ─── sys_update ───────────────────────────────────────────────────────────────
 
 /// Runs `dsx sys update --no-tui` to upgrade dsx-managed tools.
 ///
-/// Does not require a specific repository directory. Progress lines are
-/// streamed via `dsx_progress` events the same way as `repo_update`.
+/// Does not require a specific repository directory. Output is streamed via
+/// the `process_*` events the same way as `repo_update`.
 #[tauri::command]
-pub async fn sys_update(app: AppHandle) -> Result<DsxOutput, String> {
-    run_dsx_with_events(&app, ".", &["sys", "update", "--no-tui"]).await
+pub async fn sys_update(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
+    run_dsx(&state, ".", &["sys", "update", "--no-tui"]).await
 }
 
 // ─── dsx_self_update ──────────────────────────────────────────────────────────
 
 /// Runs `dsx self-update` to upgrade the dsx CLI binary itself.
 ///
-/// Progress lines are streamed via `dsx_progress` events.
+/// Output is streamed via the `process_*` events.
 #[tauri::command]
-pub async fn dsx_self_update(app: AppHandle) -> Result<DsxOutput, String> {
-    run_dsx_with_events(&app, ".", &["self-update"]).await
+pub async fn dsx_self_update(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
+    run_dsx(&state, ".", &["self-update"]).await
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Runs a dsx command, streaming stdout lines as `dsx_progress` events to the
-/// frontend. Returns the final aggregated output when the process exits.
-async fn run_dsx_with_events(
-    app: &AppHandle,
-    cwd: &str,
-    args: &[&str],
-) -> Result<DsxOutput, String> {
-    use std::io::{BufRead, BufReader};
-    use tauri::Emitter;
+/// Runs a dsx command through the shared runner and waits for it to finish.
+/// The runner blocks on the child process, so it runs on a blocking thread.
+async fn run_dsx(state: &RunnerState, cwd: &str, args: &[&str]) -> Result<DsxOutput, String> {
+    let runner = state.runner();
+    let spec = LaunchSpec {
+        program: "dsx".to_string(),
+        args: args.iter().map(|a| (*a).to_string()).collect(),
+        cwd: PathBuf::from(cwd),
+    };
+    let label = format!("dsx {}", args.join(" "));
+    let outcome = tauri::async_runtime::spawn_blocking(move || runner.run(&label, spec))
+        .await
+        .map_err(|e| format!("dsx の実行スレッドが異常終了しました: {e}"))??;
+    into_dsx_output(outcome)
+}
 
-    let mut child = Command::new("dsx")
-        .args(args)
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn dsx: {e}"))?;
-
-    let stdout = child.stdout.take().expect("stdout piped");
-    let stderr = child.stderr.take().expect("stderr piped");
-
-    // Drain stderr concurrently on a separate thread to prevent pipe-buffer
-    // deadlock if dsx writes enough stderr to fill the OS buffer.
-    // filter_map(Result::ok) is intentional: we skip unreadable lines but
-    // continue draining so no diagnostics are truncated on mid-stream errors.
-    #[allow(clippy::lines_filter_map_ok)]
-    let stderr_thread = std::thread::spawn(move || {
-        BufReader::new(stderr)
-            .lines()
-            .filter_map(Result::ok)
-            .collect::<Vec<String>>()
-            .join("\n")
-    });
-
-    let mut stdout_lines = Vec::new();
-    let reader = BufReader::new(stdout);
-    for line in reader.lines() {
-        let line = line.map_err(|e| e.to_string())?;
-        let _ = app.emit("dsx_progress", &line);
-        stdout_lines.push(line);
+fn into_dsx_output(outcome: RunOutcome) -> Result<DsxOutput, String> {
+    if outcome.cancelled {
+        return Err("キャンセルされました".to_string());
     }
-
-    let status = child.wait().map_err(|e| e.to_string())?;
-    let exit_code = status.code().unwrap_or(-1);
-    let stderr = stderr_thread.join().unwrap_or_default();
-
+    let exit_code = outcome.exit_code.unwrap_or(-1);
     if exit_code != 0 {
-        return Err(format!("dsx exited with code {exit_code}: {stderr}"));
+        return Err(format!(
+            "dsx exited with code {exit_code}: {}",
+            outcome.stderr
+        ));
     }
-
     Ok(DsxOutput {
-        stdout: stdout_lines.join("\n"),
-        stderr,
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
         exit_code,
     })
 }
@@ -320,5 +301,45 @@ mod tests {
         // 少なくとも stdout/stderr のどちらかに出力があることを確認
         let has_output = !output.stdout.is_empty() || !output.stderr.is_empty();
         assert!(has_output, "dsx --help should produce some output");
+    }
+
+    fn outcome(exit_code: Option<i32>, cancelled: bool) -> RunOutcome {
+        RunOutcome {
+            exit_code,
+            cancelled,
+            stdout: "out".to_string(),
+            stderr: "err".to_string(),
+        }
+    }
+
+    #[test]
+    fn into_dsx_output_maps_outcomes() {
+        let ok = into_dsx_output(outcome(Some(0), false)).expect("exit 0 is success");
+        assert_eq!(
+            (ok.stdout.as_str(), ok.stderr.as_str(), ok.exit_code),
+            ("out", "err", 0)
+        );
+
+        let cases = [
+            (
+                "non-zero exit",
+                outcome(Some(2), false),
+                "dsx exited with code 2: err",
+            ),
+            (
+                "no exit code",
+                outcome(None, false),
+                "dsx exited with code -1: err",
+            ),
+            ("cancelled", outcome(None, true), "キャンセルされました"),
+            (
+                "cancelled takes priority over exit code",
+                outcome(Some(0), true),
+                "キャンセルされました",
+            ),
+        ];
+        for (name, case, expected) in cases {
+            assert_eq!(into_dsx_output(case).unwrap_err(), expected, "{name}");
+        }
     }
 }

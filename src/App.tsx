@@ -10,6 +10,7 @@ import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
 import { useUiStore } from './stores/uiStore';
 import { dsxCheck } from './lib/invoke';
+import type { ProcessOutput } from './types';
 
 export default function App() {
   const { loadRepos } = useRepoStore();
@@ -33,8 +34,8 @@ export default function App() {
       addToast('dsx CLI の確認に失敗しました。Settings を確認してください。', 'error');
     });
 
-    const unlisten = listen<string>('dsx_progress', (e) => {
-      appendDsxLine(e.payload);
+    const unlisten = listen<ProcessOutput>('process_output', (e) => {
+      appendDsxLine(e.payload.text);
     });
 
     return () => {
