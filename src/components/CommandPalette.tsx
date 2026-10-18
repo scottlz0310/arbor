@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import { fetchAll, repoUpdate } from '../lib/invoke';
+import { fetchAllRepositories } from '../lib/fetchRepositories';
 import type { ViewId } from '../types';
 
 interface Command {
@@ -40,6 +41,16 @@ export default function CommandPalette() {
       description: 'ビュー',
       action: () => { navigate(v.id); closeCommandPalette(); },
     })),
+    {
+      id: 'action:fetch-all',
+      icon: '⇣',
+      label: 'Fetch All Repositories',
+      description: 'アクション',
+      action: () => {
+        closeCommandPalette();
+        void fetchAllRepositories();
+      },
+    },
     // 選択リポジトリへのアクション
     ...(selectedRepo ? [
       {

@@ -1,12 +1,16 @@
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, jest, beforeEach } from 'bun:test';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, jest, beforeEach, type Mock } from 'bun:test';
 import { act } from 'react';
 import Overview from './Overview';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
+import { useConsoleStore } from '../stores/consoleStore';
 
 // Tauri IPC は preload (src/test/setup.ts) でモック済みのため、
 // ../lib/invoke は実体のまま使用できる
+const mockedTauriInvoke = tauriInvoke as Mock<typeof tauriInvoke>;
 
 function makeRepo(overrides: Record<string, unknown> = {}) {
   return {
@@ -74,5 +78,32 @@ describe('Overview — リポジトリカードの状態バッジ', () => {
     render(<Overview />);
 
     expect(screen.getByText(label)).toBeTruthy();
+  });
+});
+
+describe('Overview — Fetch All', () => {
+  it('リポジトリを選んでいなくても Fetch All を押せる', async () => {
+    act(() => {
+      useRepoStore.setState({ repos: [makeRepo()], selectedRepo: null });
+    });
+    render(<Overview />);
+
+    const button = screen.getByRole('button', { name: /Fetch All/ });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(button);
+
+    expect(mockedTauriInvoke).toHaveBeenCalledWith('fetch_repositories');
+  });
+
+  it('別のコマンドを実行中は Fetch All を押せない', () => {
+    act(() => {
+      useConsoleStore.getState().handleStarted({
+        runId: 1, label: 'dsx repo update', argv: [], startedAt: 0,
+      });
+    });
+    render(<Overview />);
+
+    const button = screen.getByRole('button', { name: /Fetch All/ });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
   });
 });

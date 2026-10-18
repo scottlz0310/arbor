@@ -49,6 +49,25 @@ pub struct FetchResult {
     pub updated_refs: Vec<String>,
 }
 
+/// 一括 fetch で失敗した 1 件。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FetchFailure {
+    pub path: String,
+    pub name: String,
+    pub error: String,
+}
+
+/// Result returned by fetch_repositories.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FetchSummary {
+    /// fetch の対象にしたリポジトリ数。
+    pub total: usize,
+    pub succeeded: usize,
+    pub failed: Vec<FetchFailure>,
+    /// キャンセルで途中までになった。このとき `succeeded + failed.len()` は `total` に満たない。
+    pub cancelled: bool,
+}
+
 // ─── Cleanup Wizard (Issue #186) ─────────────────────────────────────────────
 
 /// Cleanup の操作種別。local branch 削除と remote-tracking ref の prune は

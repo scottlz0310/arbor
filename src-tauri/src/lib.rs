@@ -9,6 +9,7 @@ use commands::{
         add_repository, get_config, remove_repository, scan_missing_repositories, update_settings,
     },
     dsx::{dsx_check, dsx_latest_version, dsx_self_update, env_inject, repo_update, sys_update},
+    fetch::fetch_repositories,
     repo::{fetch_all, get_repo_status, list_repositories},
     runner::{cancel_run, RunnerState, TauriSink},
 };
@@ -36,6 +37,7 @@ pub fn run() {
             list_repositories,
             get_repo_status,
             fetch_all,
+            fetch_repositories,
             // Cleanup Wizard (Issue #186)
             cleanup_preview,
             cleanup_execute,

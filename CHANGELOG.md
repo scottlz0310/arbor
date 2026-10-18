@@ -7,6 +7,12 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
+- **全リポジトリの一括 fetch**（#294 PR-C-2）。Overview の「Fetch All」とコマンドパレットから、管理対象（workspace root 配下の自動検出 + 手動登録）の全リポジトリを git2 で fetch する（`fetch_repositories`）
+  - runner の job として実行し、dsx と同じ枠・同じ `process_*` イベントを使う。1 件ごとの結果と最後の集計がコンソールに流れ、実行中は `cancel_run` で中断できる（転送中の fetch も打ち切る）
+  - 並列数は 4（dsx の `repo update --jobs 4` と同じ）。1 件が失敗しても残りは続け、失敗したリポジトリは stderr 行と結果に残す。中断された fetch は失敗として数えない
+  - 実行中に別のコマンド（dsx など）を起動しようとすると、従来どおり拒否する。Fetch All のボタンも実行中は押せない
+  - runner に `run_job`（子プロセスを持たない処理を同じ枠で実行。panic しても `process_finished` を送って枠を空ける）を追加
+  - 単一リポジトリの `fetch_all` は、この実装を共有する（挙動は変えない）
 - **Workspace スキャナー**（#294 PR-C-1）。`workspace.root`（既定 `~/src`）の直下を自動で検出し、一覧・Cleanup の対象にする。dsx の `repo.root` と同じ規則（root 自身が git ならそれも、直下の子ディレクトリのみ）なので、dsx の実行対象と常に一致する
   - 手動登録（`repositories`）は残し、root の外のリポジトリの追加と、名前・protected branches の追加に使う。Settings の「Scan Folder」（深さ 4 の再帰検出）は、Workspace の root 設定に置き換えた
   - 状態に `is_detached`・`has_upstream`・`source`（workspace / manual）を追加。Overview のカードに `detached` と `no upstream`（upstream が無く、ahead / behind が 0 になるため「同期済み」と区別する）を表示する

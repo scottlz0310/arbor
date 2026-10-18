@@ -7,6 +7,7 @@
 //!   同じツール・リポジトリを触るコマンドの競合を避ける。
 //! - 実行が終わった時点で、そのコマンドが残した子孫プロセスも止める
 //!   （Arbor が実行したコマンドのプロセスツリーは、実行後に残さない）。
+//! - 子プロセスを持たない処理（git2 の fetch など）も `run_job` で同じ枠・同じイベントに載せる。
 //! - 起動とイベント送信は trait で抽象化し、テストではフェイクに差し替える。
 
 use serde::Serialize;
@@ -345,10 +346,51 @@ pub struct RunOutcome {
     pub stderr: String,
 }
 
+/// `run_job` の結果。
+#[derive(Debug)]
+pub struct JobOutcome<T> {
+    pub value: T,
+    pub cancelled: bool,
+}
+
+/// `run_job` の処理本体に渡す。ログ出力とキャンセルの確認に使う（複数スレッドから共有してよい）。
+pub struct JobContext {
+    run_id: u64,
+    sink: Arc<dyn EventSink>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl JobContext {
+    /// 1 行を `process_output` として送る。
+    pub fn log(&self, stream: Stream, text: impl Into<String>) {
+        self.sink.output(&ProcessOutput {
+            run_id: self.run_id,
+            stream,
+            text: text.into(),
+            overwrite: false,
+        });
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
+
 struct Active {
     run_id: u64,
     terminate: Arc<dyn Fn() + Send + Sync>,
     cancelled: Arc<AtomicBool>,
+}
+
+/// 確保した実行枠。破棄で枠を空ける。
+struct Slot<'a> {
+    runner: &'a Runner,
+}
+
+impl Drop for Slot<'_> {
+    fn drop(&mut self) {
+        *self.runner.lock_active() = None;
+    }
 }
 
 pub struct Runner {
@@ -372,30 +414,73 @@ impl Runner {
         self.active.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// 実行枠を確保する。すでに別のコマンドが実行中のときはエラー。
+    /// 返す `Slot` が破棄されると（panic を含む）枠が空く。
+    fn reserve(&self) -> Result<(u64, Arc<AtomicBool>, Slot<'_>), String> {
+        let run_id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let mut active = self.lock_active();
+        if let Some(running) = active.as_ref() {
+            return Err(format!(
+                "別のコマンドを実行中です（run {}）。完了またはキャンセルしてから再実行してください",
+                running.run_id
+            ));
+        }
+        // 起動の前に枠を確保する。起動中の cancel は、起動後に terminate を呼んで反映する。
+        *active = Some(Active {
+            run_id,
+            terminate: Arc::new(|| {}),
+            cancelled: Arc::clone(&cancelled),
+        });
+        Ok((run_id, cancelled, Slot { runner: self }))
+    }
+
     /// コマンドを実行し、終了まで待つ。実行中は `process_*` イベントを送り続ける。
     /// すでに別のコマンドが実行中のときは、起動せずにエラーを返す。
     pub fn run(&self, label: &str, spec: LaunchSpec) -> Result<RunOutcome, String> {
-        let run_id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let cancelled = Arc::new(AtomicBool::new(false));
-        {
-            let mut active = self.lock_active();
-            if let Some(running) = active.as_ref() {
-                return Err(format!(
-                    "別のコマンドを実行中です（run {}）。完了またはキャンセルしてから再実行してください",
-                    running.run_id
-                ));
-            }
-            // 起動の前に枠を確保する。起動中の cancel は、起動後に terminate を呼んで反映する。
-            *active = Some(Active {
-                run_id,
-                terminate: Arc::new(|| {}),
-                cancelled: Arc::clone(&cancelled),
-            });
-        }
+        let (run_id, cancelled, _slot) = self.reserve()?;
+        self.run_reserved(run_id, label, &spec, &cancelled)
+    }
 
-        let result = self.run_reserved(run_id, label, &spec, &cancelled);
-        *self.lock_active() = None;
-        result
+    /// 子プロセスを持たない処理（git2 の fetch など）を、`run` と同じ枠・同じイベントで実行する。
+    /// `job` は終了コード（0 が成功）と結果を返す。キャンセルは `JobContext::is_cancelled` で検出させる。
+    pub fn run_job<T>(
+        &self,
+        label: &str,
+        job: impl FnOnce(&JobContext) -> (i32, T),
+    ) -> Result<JobOutcome<T>, String> {
+        let (run_id, cancelled, _slot) = self.reserve()?;
+        let started = Instant::now();
+        self.sink.started(&ProcessStarted {
+            run_id,
+            label: label.to_string(),
+            argv: Vec::new(),
+            started_at: unix_millis(),
+        });
+
+        let ctx = JobContext {
+            run_id,
+            sink: Arc::clone(&self.sink),
+            cancelled: Arc::clone(&cancelled),
+        };
+        // job が panic しても finished を送り、UI を「実行中」のまま残さない。
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&ctx)));
+
+        let was_cancelled = cancelled.load(Ordering::SeqCst);
+        self.sink.finished(&ProcessFinished {
+            run_id,
+            exit_code: result.as_ref().ok().map(|(code, _)| *code),
+            duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            cancelled: was_cancelled,
+        });
+
+        match result {
+            Ok((_, value)) => Ok(JobOutcome {
+                value,
+                cancelled: was_cancelled,
+            }),
+            Err(_) => Err(format!("{label} の処理スレッドが異常終了しました")),
+        }
     }
 
     fn run_reserved(
@@ -928,6 +1013,146 @@ mod tests {
         assert!(sink.events().is_empty());
 
         assert_eq!(runner.run("x", spec()).unwrap().stdout, "ok");
+    }
+
+    // ── run_job ───────────────────────────────────────────────────────────────
+
+    fn job_runner(sink: &Arc<RecordingSink>) -> Arc<Runner> {
+        runner(&FakeLauncher::with(vec![]), sink)
+    }
+
+    #[test]
+    fn run_job_streams_logs_between_started_and_finished() {
+        let sink = Arc::new(RecordingSink::default());
+
+        let outcome = job_runner(&sink)
+            .run_job("fetch", |ctx| {
+                ctx.log(Stream::Stdout, "one");
+                ctx.log(Stream::Stderr, "two");
+                (0, 42)
+            })
+            .unwrap();
+
+        assert_eq!(outcome.value, 42);
+        assert!(!outcome.cancelled);
+
+        let events = sink.events();
+        let Some(Event::Started(started)) = events.first() else {
+            panic!("first event must be started: {events:?}");
+        };
+        assert_eq!(started.label, "fetch");
+        assert!(started.argv.is_empty());
+        assert!(matches!(
+            events.last(),
+            Some(Event::Finished(f)) if f.exit_code == Some(0) && !f.cancelled
+        ));
+        let outputs: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Output(o) => Some((o.stream, o.text.as_str(), o.overwrite)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            outputs,
+            [
+                (Stream::Stdout, "one", false),
+                (Stream::Stderr, "two", false)
+            ]
+        );
+    }
+
+    #[test]
+    fn run_job_reports_the_exit_code_chosen_by_the_job() {
+        let sink = Arc::new(RecordingSink::default());
+
+        job_runner(&sink).run_job("x", |_| (1, ())).unwrap();
+
+        assert!(matches!(
+            sink.events().last(),
+            Some(Event::Finished(f)) if f.exit_code == Some(1)
+        ));
+    }
+
+    #[test]
+    fn run_job_shares_the_slot_with_commands() {
+        let sink = Arc::new(RecordingSink::default());
+        let runner = job_runner(&sink);
+
+        let (inside_tx, inside_rx) = mpsc::channel::<()>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let first = {
+            let runner = Arc::clone(&runner);
+            std::thread::spawn(move || {
+                runner.run_job("first", |_| {
+                    inside_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    (0, ())
+                })
+            })
+        };
+        inside_rx.recv().unwrap();
+
+        let rejected_job = runner.run_job("second", |_| (0, ()));
+        assert!(rejected_job.unwrap_err().contains("別のコマンドを実行中"));
+        let rejected_command = runner.run("third", spec());
+        assert!(rejected_command
+            .unwrap_err()
+            .contains("別のコマンドを実行中"));
+
+        release_tx.send(()).unwrap();
+        first.join().unwrap().unwrap();
+        // 終了後は枠が空く。
+        assert!(runner.run_job("fourth", |_| (0, ())).is_ok());
+    }
+
+    #[test]
+    fn cancel_marks_a_running_job_cancelled_and_is_visible_to_it() {
+        let sink = Arc::new(RecordingSink::default());
+        let runner = job_runner(&sink);
+
+        let handle = {
+            let runner = Arc::clone(&runner);
+            std::thread::spawn(move || {
+                runner.run_job("long", |ctx| {
+                    while !ctx.is_cancelled() {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    (1, ())
+                })
+            })
+        };
+        wait_until(|| matches!(sink.events().first(), Some(Event::Started(_))));
+        let Some(Event::Started(started)) = sink.events().first().cloned() else {
+            panic!("started event expected");
+        };
+
+        runner.cancel(started.run_id).unwrap();
+        let outcome = handle.join().unwrap().unwrap();
+
+        assert!(outcome.cancelled);
+        assert!(matches!(
+            sink.events().last(),
+            Some(Event::Finished(f)) if f.cancelled && f.run_id == started.run_id
+        ));
+    }
+
+    #[test]
+    fn run_job_survives_a_panicking_job() {
+        let sink = Arc::new(RecordingSink::default());
+        let runner = job_runner(&sink);
+
+        let err = runner
+            .run_job::<()>("boom", |_| panic!("job failed"))
+            .unwrap_err();
+
+        assert!(err.contains("異常終了"), "{err}");
+        // UI を「実行中」のまま残さず、枠も空ける。
+        assert!(matches!(
+            sink.events().last(),
+            Some(Event::Finished(f)) if f.exit_code.is_none()
+        ));
+        assert!(runner.run_job("again", |_| (0, ())).is_ok());
     }
 
     // ── SystemLauncher（実プロセス）─────────────────────────────────────────────

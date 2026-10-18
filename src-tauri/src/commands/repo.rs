@@ -1,3 +1,4 @@
+use super::fetch::fetch_repository;
 use crate::config::load_config;
 use crate::models::{FetchResult, RepoInfo, RepoSource};
 use crate::workspace::{effective_repos, EffectiveRepo};
@@ -114,29 +115,7 @@ pub fn get_repo_status(repo_path: String) -> Result<RepoInfo, String> {
 /// Full SSH / HTTPS credential UI is deferred to Phase 2.
 #[tauri::command]
 pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
-    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
-    let remotes = repo.remotes().map_err(|e| e.to_string())?;
-    let mut updated_refs = Vec::new();
-
-    for name in remotes.iter() {
-        let Some(name) = name.map_err(|e| e.to_string())? else {
-            continue;
-        };
-        let mut remote = repo.find_remote(name).map_err(|e| e.to_string())?;
-        let mut fo = git2::FetchOptions::new();
-        fo.download_tags(git2::AutotagOption::Unspecified);
-
-        remote
-            .fetch(&[] as &[&str], Some(&mut fo), None)
-            .map_err(|e| format!("fetch {name}: {e}"))?;
-
-        // Collect updated refs.
-        let stats = remote.stats();
-        if stats.received_objects() > 0 {
-            updated_refs.push(name.to_string());
-        }
-    }
-
+    let updated_refs = fetch_repository(&repo_path, &|| false)?;
     Ok(FetchResult { updated_refs })
 }
 

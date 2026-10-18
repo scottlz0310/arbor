@@ -14,6 +14,7 @@ import type {
   DsxOutput,
   DsxStatus,
   FetchResult,
+  FetchSummary,
   RepoConfig,
   RepoInfo,
 } from '../types';
@@ -51,6 +52,10 @@ export const getRepoStatus = (repoPath: string) =>
 
 export const fetchAll = (repoPath: string) =>
   tauriInvoke<FetchResult>('fetch_all', { repoPath });
+
+/** 管理対象の全リポジトリを fetch する。進捗は `process_*` イベントで流れ、`cancelRun` で中断できる。 */
+export const fetchRepositories = () =>
+  tauriInvoke<FetchSummary>('fetch_repositories');
 
 // ─── Cleanup Wizard ─────────────────────────────────────────────────────────
 
