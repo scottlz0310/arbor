@@ -5,11 +5,12 @@ import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { getConfig, addRepository, removeRepository, scanMissingRepositories, updateSettings, dsxCheck, dsxLatestVersion, dsxSelfUpdate, sysUpdate } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
+import { rescan } from '../lib/rescanAfterRun';
 import type { AppConfig, DsxStatus, RepoConfig, RepoSource } from '../types';
 
 export default function Settings() {
   const { addToast } = useUiStore();
-  const { repos, loadRepos } = useRepoStore();
+  const { repos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
   const [dsxStatus, setDsxStatus] = useState<DsxStatus | null>(null);
   const [sysUpdating, setSysUpdating] = useState(false);
@@ -32,7 +33,7 @@ export default function Settings() {
       if (cancelled) return;
       setConfig(cfg);
     }).catch((e) => addToast(String(e), 'error'));
-    dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null }));
+    dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null, supports_run_root: false }));
     scanMissingRepositories()
       .then((missing) => { if (!cancelled) setMissingRepos(missing); })
       .catch(() => {});
@@ -47,7 +48,7 @@ export default function Settings() {
     try {
       const updated = await addRepository({ path, name });
       setConfig(updated);
-      await loadRepos();
+      await rescan();
       addToast(`Added: ${name}`, 'success');
     } catch (e) {
       addToast(String(e), 'error');
@@ -58,7 +59,7 @@ export default function Settings() {
     try {
       const updated = await updateSettings({ workspaceRoot: root });
       setConfig(updated);
-      await loadRepos();
+      await rescan();
       addToast(root ? 'Workspace root を更新しました' : '自動検出を無効にしました', 'success');
     } catch (e) {
       addToast(String(e), 'error');
@@ -121,7 +122,7 @@ export default function Settings() {
       const updated = await removeRepository(path);
       setConfig(updated);
       setMissingRepos((prev) => prev.filter((r) => r.path !== path));
-      await loadRepos();
+      await rescan();
       addToast('Repository removed', 'success');
     } catch (e) {
       addToast(String(e), 'error');
@@ -149,7 +150,7 @@ export default function Settings() {
     setMissingPanelOpen(false);
     setConfirmDeregister(false);
     setDeregistering(false);
-    await loadRepos();
+    await rescan();
     if (removedPaths.size > 0) addToast(`${removedPaths.size} 件のリポジトリを登録解除しました`, 'success');
   };
 

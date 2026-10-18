@@ -2,12 +2,10 @@ import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'b
 import { act } from 'react';
 import { describeFetch, fetchAllRepositories } from './fetchRepositories';
 import * as invoke from './invoke';
-import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import type { FetchSummary } from '../types';
 
 const mockFetchRepositories = spyOn(invoke, 'fetchRepositories');
-const mockLoadRepos = mock();
 const mockAddToast = mock();
 
 // module export への spy をファイル外へ漏らさない
@@ -23,9 +21,7 @@ const failure = { path: '/r/x', name: 'x', error: 'fetch origin: boom' };
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockLoadRepos.mockResolvedValue(undefined);
   act(() => {
-    useRepoStore.setState({ loadRepos: mockLoadRepos });
     useUiStore.setState({ addToast: mockAddToast });
   });
 });
@@ -58,22 +54,20 @@ describe('describeFetch', () => {
 });
 
 describe('fetchAllRepositories', () => {
-  it('fetch の後に一覧を読み直し、結果を Toast で知らせる', async () => {
+  it('fetch の結果を Toast で知らせる（一覧の読み直しは run の終了時に行う）', async () => {
     mockFetchRepositories.mockResolvedValue(summary());
 
     await fetchAllRepositories();
 
     expect(mockFetchRepositories).toHaveBeenCalledTimes(1);
-    expect(mockLoadRepos).toHaveBeenCalledTimes(1);
     expect(mockAddToast).toHaveBeenCalledWith('Fetch 完了: 3 件', 'success');
   });
 
-  it('実行できなかったとき（別のコマンドが実行中など）は、一覧を読み直さずエラーを出す', async () => {
+  it('実行できなかったとき（別のコマンドが実行中など）はエラーを出す', async () => {
     mockFetchRepositories.mockRejectedValue('別のコマンドを実行中です（run 3）');
 
     await fetchAllRepositories();
 
-    expect(mockLoadRepos).not.toHaveBeenCalled();
     expect(mockAddToast).toHaveBeenCalledWith('別のコマンドを実行中です（run 3）', 'error');
   });
 });

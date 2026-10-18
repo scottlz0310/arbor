@@ -1,4 +1,3 @@
-import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import { fetchRepositories } from './invoke';
 import type { FetchSummary, Toast } from '../types';
@@ -15,12 +14,11 @@ export function describeFetch(summary: FetchSummary): { message: string; kind: T
   return { message: `Fetch 完了: ${summary.succeeded} 件`, kind: 'success' };
 }
 
-/** 全リポジトリを fetch し、一覧を読み直して結果を Toast で知らせる。 */
+/** 全リポジトリを fetch し、結果を Toast で知らせる。一覧の読み直しは、run の終了で自動的に行われる（rescanAfterRun）。 */
 export async function fetchAllRepositories(): Promise<void> {
   const { addToast } = useUiStore.getState();
   try {
     const summary = await fetchRepositories();
-    await useRepoStore.getState().loadRepos();
     const { message, kind } = describeFetch(summary);
     addToast(message, kind);
   } catch (e) {

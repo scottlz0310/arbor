@@ -1,10 +1,8 @@
 import { useMemo } from 'react';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
-import { useConsoleStore } from '../stores/consoleStore';
 import AppBar, { AppBtn } from '../components/AppBar';
-import { fetchAll, repoUpdate } from '../lib/invoke';
-import { fetchAllRepositories } from '../lib/fetchRepositories';
+import { fetchAll } from '../lib/invoke';
 import { generateInsights } from '../lib/ruleEngine';
 import type { Insight, RepoInfo } from '../types';
 
@@ -26,8 +24,6 @@ function statusBadge(repo: RepoInfo) {
 export default function Overview() {
   const { repos, selectedRepo, selectRepo, refreshRepo } = useRepoStore();
   const { addToast } = useUiStore();
-  // 実行枠は 1 つだけ。実行中は backend が拒否するので、押せないようにしておく。
-  const busy = useConsoleStore((s) => s.run?.status === 'running');
 
   const insights = useMemo(() => generateInsights(repos), [repos]);
 
@@ -44,17 +40,6 @@ export default function Overview() {
     }
   };
 
-  const handleUpdate = async () => {
-    if (!repo) return;
-    try {
-      await repoUpdate(repo.path);
-      await refreshRepo(repo.path);
-      addToast('Update complete', 'success');
-    } catch (e) {
-      addToast(String(e), 'error');
-    }
-  };
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <AppBar
@@ -63,17 +48,7 @@ export default function Overview() {
             ? <><span style={{ color: 'var(--text2)' }}>{repo.name}</span> · {repo.current_branch}</>
             : 'No repository selected'
         }
-        actions={(
-          <>
-            <AppBtn onClick={fetchAllRepositories} disabled={busy}>⇣ Fetch All</AppBtn>
-            {repo && (
-              <>
-                <AppBtn onClick={handleFetch}>↓ Fetch</AppBtn>
-                <AppBtn variant="primary" onClick={handleUpdate}>⟳ Update</AppBtn>
-              </>
-            )}
-          </>
-        )}
+        actions={repo && <AppBtn onClick={handleFetch}>↓ Fetch</AppBtn>}
       />
 
       <div style={{ flex: 1, padding: 16, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>

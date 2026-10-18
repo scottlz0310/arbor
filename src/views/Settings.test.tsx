@@ -6,6 +6,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import Settings from './Settings';
 import ToastContainer from '../components/Toast';
 import * as invoke from '../lib/invoke';
+import { useEnvStore } from '../stores/envStore';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 
@@ -21,6 +22,8 @@ const mockScanMissingRepositories = spyOn(invoke, 'scanMissingRepositories');
 const mockRemoveRepository = spyOn(invoke, 'removeRepository');
 const mockUpdateSettings = spyOn(invoke, 'updateSettings');
 const mockLoadRepos = mock(() => Promise.resolve());
+const mockEnvRefresh = mock(() => Promise.resolve());
+const mockAddRepository = spyOn(invoke, 'addRepository');
 
 // module export への spy をファイル外へ漏らさない
 afterAll(() => {
@@ -28,7 +31,7 @@ afterAll(() => {
 });
 
 const availableDsxStatus = { available: true, version: 'v0.2.3', path: '/usr/local/bin/dsx' };
-const unavailableDsxStatus = { available: false, version: null, path: null };
+const unavailableDsxStatus = { available: false, version: null, path: null, supports_run_root: false };
 
 const mockConfig = {
   repositories: [],
@@ -56,13 +59,18 @@ function renderSettings(withToast = false) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  act(() => { useUiStore.setState({ toasts: [] }); });
+  act(() => {
+    useUiStore.setState({ toasts: [] });
+    // Header の pill が使う環境の状態。Settings での変更後に読み直されることを確かめる。
+    useEnvStore.setState({ refresh: mockEnvRefresh });
+  });
   mockGetConfig.mockResolvedValue(mockConfig as never);
   mockDsxCheck.mockResolvedValue(availableDsxStatus as never);
   mockDsxLatestVersion.mockResolvedValue(null as never);
   mockSysUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 } as never);
   mockScanMissingRepositories.mockResolvedValue([] as never);
   mockRemoveRepository.mockResolvedValue(mockConfig as never);
+  mockAddRepository.mockResolvedValue(mockConfig as never);
   mockUpdateSettings.mockResolvedValue(mockConfig as never);
 });
 
@@ -80,6 +88,18 @@ describe('Settings — Repositories section', () => {
     // AppBar 内（section 外）には存在しないことも確認
     const allBtns = screen.getAllByRole('button', { name: '+ Add Repository' });
     expect(allBtns).toHaveLength(1);
+  });
+
+  it('+ Add Repository で選んだフォルダを登録し、一覧と環境の状態を読み直す', async () => {
+    mockOpen.mockResolvedValue('D:/other/new-tool');
+    setRepos([]);
+    renderSettings();
+
+    await userEvent.click(await screen.findByRole('button', { name: '+ Add Repository' }));
+
+    await waitFor(() => expect(mockAddRepository).toHaveBeenCalledWith({ path: 'D:/other/new-tool', name: 'new-tool' }));
+    await waitFor(() => expect(mockLoadRepos).toHaveBeenCalled());
+    expect(mockEnvRefresh).toHaveBeenCalled();
   });
 });
 
@@ -249,6 +269,7 @@ describe('Settings — RepoCard', () => {
     await userEvent.click(removeButtons[0]);
 
     expect(mockRemoveRepository).toHaveBeenCalledWith('D:/other/tool');
+    await waitFor(() => expect(mockEnvRefresh).toHaveBeenCalled());
   });
 
   it('リポジトリが無いときは、設定を促すメッセージを表示する', async () => {
@@ -285,6 +306,7 @@ describe('Settings — Workspace section', () => {
 
     await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalledWith({ workspaceRoot: '/new/root' }));
     expect(mockLoadRepos).toHaveBeenCalled();
+    expect(mockEnvRefresh).toHaveBeenCalled();
     expect(await screen.findByText('/new/root')).toBeInTheDocument();
     expect(await screen.findByText('Workspace root を更新しました')).toBeInTheDocument();
   });
@@ -307,6 +329,7 @@ describe('Settings — Workspace section', () => {
 
     await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalledWith({ workspaceRoot: '' }));
     expect(await screen.findByText('自動検出を無効にしました')).toBeInTheDocument();
+    expect(mockEnvRefresh).toHaveBeenCalled();
   });
 
   it('保存に失敗したらエラーを通知し、表示中の root を変えない', async () => {
@@ -380,11 +403,8 @@ describe('Settings — 削除済みリポジトリ検出 (#117)', () => {
     expect(screen.getByRole('button', { name: /0 件を登録解除/ })).toBeDisabled();
   });
 
-  it('登録解除確認後に removeRepository が呼ばれ loadRepos が呼ばれる', async () => {
-    const mockLoadRepos = mock();
-    const { useRepoStore } = await import('../stores/repoStore');
-    spyOn(useRepoStore, 'getState').mockReturnValue({ loadRepos: mockLoadRepos } as never);
-
+  it('登録解除確認後に removeRepository が呼ばれ、一覧と環境の状態を読み直す', async () => {
+    setRepos([]);
     mockScanMissingRepositories.mockResolvedValue([missingRepo] as never);
     renderSettings(true);
     const banner = await screen.findByText(/1 件の無効なリポジトリを検出/);
@@ -397,6 +417,8 @@ describe('Settings — 削除済みリポジトリ検出 (#117)', () => {
     await waitFor(() => {
       expect(mockRemoveRepository).toHaveBeenCalledWith('/missing/repo');
     });
+    await waitFor(() => expect(mockEnvRefresh).toHaveBeenCalled());
+    expect(mockLoadRepos).toHaveBeenCalled();
   });
 
 });

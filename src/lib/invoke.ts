@@ -8,6 +8,7 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type {
   AppConfig,
+  BitwardenState,
   CleanupCandidate,
   CleanupExecutionResult,
   CleanupPreview,
@@ -17,6 +18,7 @@ import type {
   FetchSummary,
   RepoConfig,
   RepoInfo,
+  WorkspaceStatus,
 } from '../types';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -41,6 +43,9 @@ export const updateSettings = (args: {
   /** 自動検出の root。空文字列で無効化。 */
   workspaceRoot?: string;
 }) => tauriInvoke<AppConfig>('update_settings', args);
+
+export const getWorkspaceStatus = () =>
+  tauriInvoke<WorkspaceStatus>('get_workspace_status');
 
 // ─── Repo / git2 ─────────────────────────────────────────────────────────────
 
@@ -73,8 +78,16 @@ export const dsxCheck = () =>
 export const dsxLatestVersion = () =>
   tauriInvoke<string | null>('dsx_latest_version');
 
-export const repoUpdate = (repoPath: string) =>
-  tauriInvoke<DsxOutput>('repo_update', { repoPath });
+/** workspace root 配下の全リポジトリを `dsx repo update --root` で更新する。 */
+export const repoUpdate = () =>
+  tauriInvoke<DsxOutput>('repo_update');
+
+/** `dsx run --root`: Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新。dsx v0.11.0 以上が必要。 */
+export const dailyRefresh = () =>
+  tauriInvoke<DsxOutput>('daily_refresh');
+
+export const bitwardenStatus = () =>
+  tauriInvoke<BitwardenState>('bitwarden_status');
 
 export const envInject = (repoPath: string, cmd: string) =>
   tauriInvoke<DsxOutput>('env_inject', { repoPath, cmd });

@@ -3,14 +3,16 @@ import Sidebar from './components/Sidebar';
 import ToastContainer from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import CommandPalette from './components/CommandPalette';
+import Header from './components/Header';
 import LogConsole from './components/LogConsole';
 import Overview from './views/Overview';
 import Cleanup from './views/Cleanup';
 import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
 import { useUiStore } from './stores/uiStore';
-import { dsxCheck } from './lib/invoke';
+import { useEnvStore } from './stores/envStore';
 import { subscribeProcessEvents } from './lib/processEvents';
+import { subscribeRescanAfterRun } from './lib/rescanAfterRun';
 
 export default function App() {
   const { loadRepos } = useRepoStore();
@@ -22,17 +24,15 @@ export default function App() {
 
     let cancelled = false;
 
-    dsxCheck().then((status) => {
+    useEnvStore.getState().refresh().then(() => {
       if (cancelled) return;
-      if (!status.available) {
+      if (!useEnvStore.getState().dsx?.available) {
         navigate('settings');
         addToast('dsx CLI が見つかりません。Settings からインストール手順を確認してください。', 'error');
       }
-    }).catch(() => {
-      if (cancelled) return;
-      navigate('settings');
-      addToast('dsx CLI の確認に失敗しました。Settings を確認してください。', 'error');
     });
+
+    const unsubscribeRescan = subscribeRescanAfterRun();
 
     const unsubscribe = subscribeProcessEvents().catch((e) => {
       addToast(`実行ログの購読に失敗しました: ${String(e)}`, 'error');
@@ -41,6 +41,7 @@ export default function App() {
 
     return () => {
       cancelled = true;
+      unsubscribeRescan();
       unsubscribe.then((fn) => fn());
     };
   }, []);
@@ -68,24 +69,27 @@ export default function App() {
   }, [repos.length, activeView, navigate]);
 
   return (
-    <div className="app-shell">
-      <Sidebar />
-      <main className="main-content">
-        <div style={{ flex: 1, minHeight: 0 }}>
-          {activeView === 'overview' && (
-            <ErrorBoundary key="overview" viewName="Overview"><Overview /></ErrorBoundary>
-          )}
-          {activeView === 'cleanup' && (
-            <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
-          )}
-          {activeView === 'settings' && (
-            <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>
-          )}
-        </div>
-        <LogConsole />
-      </main>
-      <ToastContainer />
-      {commandPaletteOpen && <CommandPalette />}
+    <div className="app-root">
+      <Header />
+      <div className="app-shell">
+        <Sidebar />
+        <main className="main-content">
+          <div style={{ flex: 1, minHeight: 0 }}>
+            {activeView === 'overview' && (
+              <ErrorBoundary key="overview" viewName="Overview"><Overview /></ErrorBoundary>
+            )}
+            {activeView === 'cleanup' && (
+              <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
+            )}
+            {activeView === 'settings' && (
+              <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>
+            )}
+          </div>
+          <LogConsole />
+        </main>
+        <ToastContainer />
+        {commandPaletteOpen && <CommandPalette />}
+      </div>
     </div>
   );
 }

@@ -180,6 +180,14 @@ pub trait Launcher: Send + Sync {
     fn launch(&self, spec: &LaunchSpec) -> io::Result<Launched>;
 }
 
+/// 同期で起動する短いコマンド（バージョン確認など）でも、リリースビルドでコンソール窓が出ないようにする。
+pub fn hide_console(command: &mut Command) {
+    #[cfg(windows)]
+    tree::prepare(command);
+    #[cfg(not(windows))]
+    let _ = command;
+}
+
 /// OS のプロセスとして起動する。
 pub struct SystemLauncher;
 
