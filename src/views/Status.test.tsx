@@ -159,6 +159,20 @@ describe('Status — リポジトリカード', () => {
     expect(useRepoStore.getState().selectedRepo?.name).toBe('pick-me');
   });
 
+  it('選択を切り替えても、状態色の左ボーダーは消えず、スタイルの競合警告も出ない', async () => {
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+    setRepos([makeRepo({ name: 'a', behind: 2 }), makeRepo({ path: '/r/b', name: 'b' })]);
+    render(<Status />);
+    const before = cardOf('a').style.borderLeftColor;
+
+    await userEvent.click(cardOf('a'));
+
+    expect(before).toBe('var(--purple)');
+    expect(cardOf('a').style.borderLeftColor).toBe(before);
+    expect(errorSpy.mock.calls.map((call) => String(call[0])).join(' ')).not.toMatch(/border/i);
+    errorSpy.mockRestore();
+  });
+
   it('Fetch は、そのリポジトリだけを fetch して状態を読み直し、選択は変えない', async () => {
     setRepos([makeRepo({ path: '/r/a', name: 'a' }), makeRepo({ path: '/r/b', name: 'b' })]);
     render(<Status />);

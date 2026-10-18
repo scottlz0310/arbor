@@ -80,4 +80,20 @@ describe('App — 起動時の画面', () => {
 
     await waitFor(() => expect(useUiStore.getState().activeView).toBe('settings'));
   });
+
+  it('誘導は 1 回だけ。0 件のままでも、Status へ戻れる', async () => {
+    mockListRepositories.mockResolvedValue([]);
+    render(<App />);
+    await waitFor(() => expect(useUiStore.getState().activeView).toBe('settings'));
+
+    act(() => useUiStore.getState().navigate('status'));
+
+    // 戻した後に、再び Settings へ押し戻されない
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(useUiStore.getState().activeView).toBe('status');
+    expect(screen.getByRole('tablist')).toBeTruthy();
+    expect(screen.getByText(/Settings で workspace root を設定/)).toBeTruthy();
+  });
 });

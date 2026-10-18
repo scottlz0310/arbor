@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import ToastContainer from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import CommandPalette from './components/CommandPalette';
@@ -62,11 +62,13 @@ export default function App() {
   }, [commandPaletteOpen, openCommandPalette, closeCommandPalette]);
 
   // 初回の読み込みが終わってもリポジトリが 0 件なら、Settings へ誘導する（読み込み前の空の一覧では判定しない）。
+  // 誘導は 1 回だけ。以後は、0 件のままでも Status へ戻れるようにする。
   const { repos, loaded } = useRepoStore();
+  const guided = useRef(false);
   useEffect(() => {
-    if (loaded && repos.length === 0 && activeView === 'status') {
-      navigate('settings');
-    }
+    if (!loaded || guided.current) return;
+    guided.current = true;
+    if (repos.length === 0 && activeView === 'status') navigate('settings');
   }, [loaded, repos.length, activeView, navigate]);
 
   return (

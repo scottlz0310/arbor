@@ -112,6 +112,7 @@ interface RepoCardProps {
 function RepoCard({ repo, selected, onSelect, onFetch, onOpenFolder }: RepoCardProps) {
   const badge = statusBadge(repo);
   const dirty = repo.modified_count + repo.untracked_count;
+  const edge = selected ? '#818cf850' : 'var(--border)';
   return (
     // カード全体のクリックは選択（コマンドパレットの Fetch の対象）。操作はボタンで行うため、キー操作は不要。
     <div
@@ -120,7 +121,10 @@ function RepoCard({ repo, selected, onSelect, onFetch, onOpenFolder }: RepoCardP
       onClick={onSelect}
       style={{
         background: selected ? 'var(--indigo-bg)' : 'var(--bg3)',
-        border: `1px solid ${selected ? '#818cf850' : 'var(--border)'}`,
+        // shorthand の border と borderLeft を混ぜると、再描画で borderLeft が上書きされるため、辺ごとに指定する。
+        borderTop: `1px solid ${edge}`,
+        borderRight: `1px solid ${edge}`,
+        borderBottom: `1px solid ${edge}`,
         borderLeft: `3px solid ${badge.color}`,
         borderRadius: 'var(--r2)',
         padding: '12px 14px',
