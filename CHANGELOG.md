@@ -7,6 +7,12 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
+- **Header と Daily Refresh**（#294 PR-D1）。画面上部に、dsx の版・Bitwarden の状態・workspace root（リポジトリ数）の pill と、Scan / Fetch All / dsx sys update / Daily Refresh のボタンを追加
+  - Daily Refresh は `dsx run --root <workspace root>` を実行する。dsx v0.11.0 未満・root 未設定・root を読めない場合は無効にし、理由をツールチップに出す。Bitwarden が未解錠なら、確認してから実行する（Arbor では解錠しない）
+  - `repo_update` は、リポジトリ 1 件ではなく workspace root 配下の全リポジトリを `--root` つきで更新する（従来は dsx 自身の設定の root を更新していて、選択中のリポジトリとずれていた）。リポジトリごとの Update ボタンとコマンドパレットの項目は削除し、「Update All Repositories」を追加
+  - run（dsx の実行・fetch）が終わると、一覧と環境の状態を自動で読み直す。中断された run も対象
+  - `dsx_check` は `supports_run_root` を返す。`bitwarden_status`（`dsx env status --quiet` の終了コード）と `get_workspace_status`（root・検出数・読めない理由）を追加
+  - 同期で起動する `dsx` の確認コマンドでも、Windows のリリースビルドでコンソール窓が出ないようにした
 - **全リポジトリの一括 fetch**（#294 PR-C-2）。Overview の「Fetch All」とコマンドパレットから、管理対象（workspace root 配下の自動検出 + 手動登録）の全リポジトリを git2 で fetch する（`fetch_repositories`）
   - runner の job として実行し、dsx と同じ枠・同じ `process_*` イベントを使う。1 件ごとの結果と最後の集計がコンソールに流れ、実行中は `cancel_run` で中断できる（転送中の fetch も打ち切る）
   - 並列数は 4（dsx の `repo update --jobs 4` と同じ）。1 件が失敗しても残りは続け、失敗したリポジトリは stderr 行と結果に残す。中断された fetch は失敗として数えない

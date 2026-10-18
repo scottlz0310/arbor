@@ -10,11 +10,12 @@ import * as invoke from '../lib/invoke';
 const mockNavigate            = mock();
 const mockSelectRepo          = mock();
 const mockRefreshRepo         = mock();
-const mockLoadRepos           = mock();
 const mockCloseCommandPalette = mock();
 const mockAddToast            = mock();
 const mockFetchAll            = spyOn(invoke, 'fetchAll');
 const mockRepoUpdate          = spyOn(invoke, 'repoUpdate');
+const mockDailyRefresh        = spyOn(invoke, 'dailyRefresh');
+const mockSysUpdate           = spyOn(invoke, 'sysUpdate');
 const mockFetchRepositories   = spyOn(invoke, 'fetchRepositories');
 
 // module export への spy をファイル外へ漏らさない
@@ -37,12 +38,13 @@ beforeEach(() => {
   mockFetchAll.mockResolvedValue({ updated_refs: [] });
   mockFetchRepositories.mockResolvedValue({ total: 2, succeeded: 2, failed: [], cancelled: false });
   mockRepoUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 });
+  mockDailyRefresh.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 });
+  mockSysUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 });
   mockRefreshRepo.mockResolvedValue(undefined);
-  mockLoadRepos.mockResolvedValue(undefined);
   act(() => {
     useRepoStore.setState({
       repos: [], selectedRepo: null,
-      selectRepo: mockSelectRepo, refreshRepo: mockRefreshRepo, loadRepos: mockLoadRepos,
+      selectRepo: mockSelectRepo, refreshRepo: mockRefreshRepo,
     });
     useUiStore.setState({
       navigate: mockNavigate,
@@ -208,10 +210,6 @@ describe('CommandPalette — アクションコマンド', () => {
     expect(screen.getByText('Fetch: my-repo')).toBeTruthy();
   });
 
-  it('selectedRepo があるとき dsx Update コマンドが表示される', () => {
-    renderPalette();
-    expect(screen.getByText('dsx Update: my-repo')).toBeTruthy();
-  });
 
   it('Fetch コマンドクリックで fetchAll と refreshRepo が呼ばれる', async () => {
     renderPalette();
@@ -221,36 +219,32 @@ describe('CommandPalette — アクションコマンド', () => {
     expect(mockRefreshRepo).toHaveBeenCalledWith('/repo/a');
   });
 
-  it('dsx Update コマンドクリックで repoUpdate と loadRepos が呼ばれる', async () => {
-    renderPalette();
-    await userEvent.click(screen.getByText('dsx Update: my-repo'));
-    expect(mockCloseCommandPalette).toHaveBeenCalled();
-    expect(mockRepoUpdate).toHaveBeenCalledWith('/repo/a');
-    expect(mockLoadRepos).toHaveBeenCalled();
-  });
 
-  it('selectedRepo がないとき Fetch/Update コマンドは表示されない', () => {
+  it('selectedRepo がないとき Fetch コマンドは表示されない', () => {
     act(() => { useRepoStore.setState({ selectedRepo: null }); });
     renderPalette();
     expect(screen.queryByText(/Fetch:/)).toBeNull();
-    expect(screen.queryByText(/dsx Update:/)).toBeNull();
   });
 });
 
 
-describe('CommandPalette — Fetch All', () => {
-  it('リポジトリを選んでいなくても Fetch All Repositories が表示される', () => {
+describe('CommandPalette — 全体アクション', () => {
+  beforeEach(() => {
     act(() => { useRepoStore.setState({ selectedRepo: null }); });
-    renderPalette();
-    expect(screen.getByText('Fetch All Repositories')).toBeTruthy();
   });
 
-  it('クリックで fetchRepositories が呼ばれ、一覧が読み直される', async () => {
+  it.each([
+    { label: 'Fetch All Repositories', mock: mockFetchRepositories, toast: 'Fetch 完了: 2 件' },
+    { label: 'Daily Refresh (dsx run)', mock: mockDailyRefresh, toast: 'Daily Refresh 完了' },
+    { label: 'dsx sys update', mock: mockSysUpdate, toast: 'sys update 完了' },
+    { label: 'Update All Repositories (dsx repo update)', mock: mockRepoUpdate, toast: 'Update All 完了' },
+  ])('$label はリポジトリを選んでいなくても実行できる', async ({ label, mock, toast }) => {
     renderPalette();
-    await userEvent.click(screen.getByText('Fetch All Repositories'));
+
+    await userEvent.click(screen.getByText(label));
+
     expect(mockCloseCommandPalette).toHaveBeenCalled();
-    expect(mockFetchRepositories).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(mockLoadRepos).toHaveBeenCalled());
-    expect(mockAddToast).toHaveBeenCalledWith('Fetch 完了: 2 件', 'success');
+    expect(mock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(toast, 'success'));
   });
 });

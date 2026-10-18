@@ -32,7 +32,7 @@ export default function Settings() {
       if (cancelled) return;
       setConfig(cfg);
     }).catch((e) => addToast(String(e), 'error'));
-    dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null }));
+    dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null, supports_run_root: false }));
     scanMissingRepositories()
       .then((missing) => { if (!cancelled) setMissingRepos(missing); })
       .catch(() => {});

@@ -93,8 +93,8 @@ Rust backend (Tauri commands)
 | `config.rs` | `AppConfig` の読み書き。`dirs::config_dir()` で OS ごとのパスを解決。未設定の `workspace.root` は、あれば `~/src` で補う |
 | `workspace.rs` | 管理対象リポジトリの決定。`workspace.root` 直下（深さ 1。dsx の `repo.root` と同じ規則）の自動検出と、手動登録の和集合（`effective_repos`）。protected branches は、全体の既定（main / master / develop / dev）に、手動登録の設定を追加して解決する |
 | `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories` は実効リポジトリを最大 8 並列でスキャン、`get_repo_status`）と `fetch_all` |
-| `commands/config_cmd.rs` | config.toml CRUD（手動登録の追加・削除、`update_settings`、存在しない手動登録の検出） |
-| `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する |
+| `commands/config_cmd.rs` | config.toml CRUD（手動登録の追加・削除、`update_settings`、存在しない手動登録の検出）と `get_workspace_status`（Header の root 表示用） |
+| `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する。`dsx_check`（版と `supports_run_root`）、`bitwarden_status`、`repo_update` / `daily_refresh`（どちらも Arbor の `workspace.root` を `--root` で渡す。Daily Refresh は dsx v0.11.0 以上が必要） |
 | `commands/fetch.rs` | 管理対象リポジトリの一括 fetch（`fetch_repositories`）。git2 で最大 4 並列に fetch し、1 件ごとの結果を runner の job としてコンソールへ流す。`cancel_run` で転送中の fetch も中断できる |
 | `commands/runner.rs` | 外部コマンドの実行基盤（子プロセスを持たない処理は `run_job` で同じ枠に載せる）。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
 
@@ -112,8 +112,11 @@ Rust backend (Tauri commands)
 | `stores/repoStore.ts` | リポジトリ一覧と選択状態（Zustand） |
 | `stores/uiStore.ts` | ナビゲーション状態・Toast（Zustand） |
 | `stores/consoleStore.ts` | 実行ログ（リングバッファ 10,000 行）と実行状態（Zustand） |
+| `stores/envStore.ts` | dsx の版・Bitwarden の状態・workspace root の現況（Header の pill 用。Zustand） |
+| `lib/dsxActions.ts` | Daily Refresh / sys update / Update All の実行と Toast、Daily Refresh を実行できない理由の判定 |
+| `lib/rescanAfterRun.ts` | run の終了を検知して、一覧と環境の状態を自動で読み直す |
 | `views/` | ページコンポーネント（Overview / Cleanup / Settings） |
-| `components/` | 共通 UI（Sidebar, AppBar, ConfirmDialog, Toast, LogConsole） |
+| `components/` | 共通 UI（Header, Sidebar, AppBar, ConfirmDialog, Toast, LogConsole） |
 
 **データフロー:** Rust コマンド → `lib/invoke.ts` → Zustand store → React コンポーネント
 **イベント:** Rust `runner.rs` が `process_started` / `process_output` / `process_finished` を emit → `lib/processEvents.ts`（`App.tsx` が購読）→ `consoleStore` → `LogConsole`（App 下部のドック）（ペイロードは `camelCase`。型は `types/index.ts` の `Process*`）
@@ -130,7 +133,8 @@ Rust backend (Tauri commands)
 
 | Tauri コマンド | バックエンド処理 | 備考 |
 |---------------|-----------------|------|
-| `repo_update` | `dsx repo update --no-tui --jobs 4` | stdout / stderr を `process_output` イベントでストリーム |
+| `repo_update` | `dsx repo update --root <workspace root> --no-tui --jobs 4` | root 配下の全リポジトリを更新。stdout / stderr を `process_output` イベントでストリーム |
+| `daily_refresh` | `dsx run --root <workspace root> --no-tui --jobs 4` | Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新。dsx v0.11.0 未満では拒否する |
 | `cleanup_preview` | git2 | 管理対象（自動検出 + 手動登録）の全リポジトリの削除候補を読み取り専用で列挙 |
 | `cleanup_execute` | git2 | 選択候補を再検証して local branch 削除または remote-tracking ref prune を実行 |
 | `fetch_repositories` | git2（`commands/fetch.rs`） | 全管理対象を最大 4 並列で fetch。進捗は `process_*` イベント、結果は `FetchSummary`。実行枠は dsx と共有（同時に 1 件） |

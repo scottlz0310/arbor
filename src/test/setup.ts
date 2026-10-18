@@ -30,13 +30,16 @@ mock.module('@tauri-apps/plugin-dialog', () => ({
 const { useRepoStore } = await import('../stores/repoStore');
 const { useUiStore } = await import('../stores/uiStore');
 const { useConsoleStore } = await import('../stores/consoleStore');
+const { useEnvStore } = await import('../stores/envStore');
 
 const initialRepoState = useRepoStore.getInitialState();
 const initialUiState = useUiStore.getInitialState();
 const initialConsoleState = useConsoleStore.getInitialState();
+const initialEnvState = useEnvStore.getInitialState();
 
 afterEach(() => {
   useRepoStore.setState(initialRepoState, true);
   useUiStore.setState(initialUiState, true);
   useConsoleStore.setState(initialConsoleState, true);
+  useEnvStore.setState(initialEnvState, true);
 });

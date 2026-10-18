@@ -28,7 +28,7 @@ afterAll(() => {
 });
 
 const availableDsxStatus = { available: true, version: 'v0.2.3', path: '/usr/local/bin/dsx' };
-const unavailableDsxStatus = { available: false, version: null, path: null };
+const unavailableDsxStatus = { available: false, version: null, path: null, supports_run_root: false };
 
 const mockConfig = {
   repositories: [],

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
-import { fetchAll, repoUpdate } from '../lib/invoke';
+import { fetchAll } from '../lib/invoke';
+import { runDailyRefresh, runRepoUpdate, runSysUpdate } from '../lib/dsxActions';
 import { fetchAllRepositories } from '../lib/fetchRepositories';
 import type { ViewId } from '../types';
 
@@ -20,7 +21,7 @@ const VIEW_COMMANDS: { id: ViewId; icon: string; label: string }[] = [
 ];
 
 export default function CommandPalette() {
-  const { repos, selectedRepo, selectRepo, refreshRepo, loadRepos } = useRepoStore();
+  const { repos, selectedRepo, selectRepo, refreshRepo } = useRepoStore();
   const { navigate, closeCommandPalette, addToast } = useUiStore();
 
   const [query, setQuery] = useState('');
@@ -51,6 +52,36 @@ export default function CommandPalette() {
         void fetchAllRepositories();
       },
     },
+    {
+      id: 'action:daily-refresh',
+      icon: '▶',
+      label: 'Daily Refresh (dsx run)',
+      description: 'アクション',
+      action: () => {
+        closeCommandPalette();
+        void runDailyRefresh();
+      },
+    },
+    {
+      id: 'action:sys-update',
+      icon: '⟳',
+      label: 'dsx sys update',
+      description: 'アクション',
+      action: () => {
+        closeCommandPalette();
+        void runSysUpdate();
+      },
+    },
+    {
+      id: 'action:repo-update',
+      icon: '⟳',
+      label: 'Update All Repositories (dsx repo update)',
+      description: 'アクション',
+      action: () => {
+        closeCommandPalette();
+        void runRepoUpdate();
+      },
+    },
     // 選択リポジトリへのアクション
     ...(selectedRepo ? [
       {
@@ -64,21 +95,6 @@ export default function CommandPalette() {
             .then(() => {
               addToast(`${selectedRepo.name}: fetch 完了`, 'success');
               refreshRepo(selectedRepo.path);
-            })
-            .catch((e) => addToast(String(e), 'error'));
-        },
-      },
-      {
-        id: 'action:update',
-        icon: '⟳',
-        label: `dsx Update: ${selectedRepo.name}`,
-        description: 'アクション',
-        action: () => {
-          closeCommandPalette();
-          repoUpdate(selectedRepo.path)
-            .then(() => {
-              addToast(`${selectedRepo.name}: update 完了`, 'success');
-              loadRepos();
             })
             .catch((e) => addToast(String(e), 'error'));
         },

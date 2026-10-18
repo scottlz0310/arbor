@@ -16,6 +16,8 @@
   - [x] C-1: スキャン（`workspace.root`（1 つ）、自動検出、状態フラグ、protected branches の既定、一覧・cleanup の切り替え）
   - [x] C-2: fetch（runner の job 化。git2 fetch を並列実行し、進捗をコンソールへ。キャンセル対応）
 - [ ] PR-D: Refresher Dashboard
+  - [x] D1: Header（dsx / Bitwarden / root の pill、Scan・Fetch All・sys update・Daily Refresh）、`dsx run --root`（dsx v0.11.0 以上を必須）、`repo_update` を root 全体の `--root` つきに、実行後の自動再スキャン
+  - [ ] D2: ダッシュボード（サイドバー廃止、Status / Cleanup / dsx Tools のタブ、Summary strip、All / Needs Action / Clean フィルタ、カードの Fetch とフォルダを開く操作）
 - [ ] PR-E: 実機検証・ドキュメント更新
 
 ---
