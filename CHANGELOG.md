@@ -69,12 +69,6 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
-- **全リポジトリの一括 fetch**（#294 PR-C-2）。Overview の「Fetch All」とコマンドパレットから、管理対象（workspace root 配下の自動検出 + 手動登録）の全リポジトリを git2 で fetch する（`fetch_repositories`）
-  - runner の job として実行し、dsx と同じ枠・同じ `process_*` イベントを使う。1 件ごとの結果と最後の集計がコンソールに流れ、実行中は `cancel_run` で中断できる（転送中の fetch も打ち切る）
-  - 並列数は 4（dsx の `repo update --jobs 4` と同じ）。1 件が失敗しても残りは続け、失敗したリポジトリは stderr 行と結果に残す。中断された fetch は失敗として数えない
-  - 実行中に別のコマンド（dsx など）を起動しようとすると、従来どおり拒否する。Fetch All のボタンも実行中は押せない
-  - runner に `run_job`（子プロセスを持たない処理を同じ枠で実行。panic しても `process_finished` を送って枠を空ける）を追加
-  - 単一リポジトリの `fetch_all` は、この実装を共有する（挙動は変えない）
 - **Cleanup Wizard 強化 (PR-C): repo 横断 UI と型付き実行結果表示** (#186)
   - Rust の `cleanup_preview` / `cleanup_execute` を利用する typed frontend API を追加
   - 全登録 repo の local branch / remote-tracking ref をカテゴリ・repo 単位で表示
