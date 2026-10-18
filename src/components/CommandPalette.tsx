@@ -17,6 +17,7 @@ interface Command {
 const VIEW_COMMANDS: { id: ViewId; icon: string; label: string }[] = [
   { id: 'status',    icon: '◈', label: 'Status' },
   { id: 'cleanup',   icon: '✦', label: 'Cleanup' },
+  { id: 'tools',     icon: '⚒', label: 'dsx Tools' },
   { id: 'settings',  icon: '⚙', label: 'Settings' },
 ];
 

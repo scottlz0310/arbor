@@ -7,6 +7,7 @@ import type { ViewId } from '../types';
 const TABS: { id: Exclude<ViewId, 'settings'>; label: string }[] = [
   { id: 'status', label: 'Repository Status' },
   { id: 'cleanup', label: 'Branch Cleanup' },
+  { id: 'tools', label: 'dsx Tools' },
 ];
 
 export default function TabBar() {
@@ -18,6 +19,7 @@ export default function TabBar() {
   const badges: Record<(typeof TABS)[number]['id'], { value: number | null; amber: boolean }> = {
     status: { value: attention, amber: attention > 0 },
     cleanup: { value: candidateCount, amber: (candidateCount ?? 0) > 0 },
+    tools: { value: null, amber: false },
   };
 
   return (

@@ -3,22 +3,15 @@ import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { getConfig, addRepository, removeRepository, scanMissingRepositories, updateSettings, dsxCheck, dsxLatestVersion, dsxSelfUpdate, sysUpdate } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, scanMissingRepositories, updateSettings } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import { rescan } from '../lib/rescanAfterRun';
-import type { AppConfig, DsxStatus, RepoConfig, RepoSource } from '../types';
+import type { AppConfig, RepoConfig, RepoSource } from '../types';
 
 export default function Settings() {
   const { addToast } = useUiStore();
   const { repos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
-  const [dsxStatus, setDsxStatus] = useState<DsxStatus | null>(null);
-  const [sysUpdating, setSysUpdating] = useState(false);
-  const [showSysUpdateConfirm, setShowSysUpdateConfirm] = useState(false);
-  const [selfUpdating, setSelfUpdating] = useState(false);
-  const [showSelfUpdateConfirm, setShowSelfUpdateConfirm] = useState(false);
-  const [dsxUpdateState, setDsxUpdateState] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
-  const [latestDsxVersion, setLatestDsxVersion] = useState<string | null>(null);
 
   // 削除済みリポジトリ検出
   const [missingRepos, setMissingRepos] = useState<RepoConfig[]>([]);
@@ -33,7 +26,6 @@ export default function Settings() {
       if (cancelled) return;
       setConfig(cfg);
     }).catch((e) => addToast(String(e), 'error'));
-    dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null, supports_run_root: false }));
     scanMissingRepositories()
       .then((missing) => { if (!cancelled) setMissingRepos(missing); })
       .catch(() => {});
@@ -70,51 +62,6 @@ export default function Settings() {
     const selected = await open({ directory: true, multiple: false, title: 'Workspace のルートフォルダを選択' });
     if (!selected) return;
     await saveWorkspaceRoot(typeof selected === 'string' ? selected : selected[0]);
-  };
-
-  const handleCheckDsxUpdate = async () => {
-    setDsxUpdateState('checking');
-    setLatestDsxVersion(null);
-    try {
-      const latest = await dsxLatestVersion();
-      setLatestDsxVersion(latest);
-      setDsxUpdateState('done');
-    } catch {
-      setDsxUpdateState('error');
-    }
-  };
-
-  const handleSysUpdate = async () => {
-    setSysUpdating(true);
-    try {
-      await sysUpdate();
-      addToast('dsx sys update 完了', 'success');
-      // バージョンを再取得して表示を更新し、古い確認結果をリセットする
-      const status = await dsxCheck();
-      setDsxStatus(status);
-      setDsxUpdateState('idle');
-      setLatestDsxVersion(null);
-    } catch (e) {
-      addToast(String(e), 'error');
-    } finally {
-      setSysUpdating(false);
-    }
-  };
-
-  const handleDsxSelfUpdate = async () => {
-    setSelfUpdating(true);
-    try {
-      await dsxSelfUpdate();
-      addToast('dsx self-update 完了', 'success');
-      const status = await dsxCheck();
-      setDsxStatus(status);
-      setDsxUpdateState('idle');
-      setLatestDsxVersion(null);
-    } catch (e) {
-      addToast(String(e), 'error');
-    } finally {
-      setSelfUpdating(false);
-    }
   };
 
   const handleRemoveRepo = async (path: string) => {
@@ -162,69 +109,6 @@ export default function Settings() {
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
       <div style={{ padding: 24, maxWidth: 680 }}>
-
-        {/* dsx status */}
-        <section style={{ marginBottom: 32 }}>
-          <SectionTitle>dsx CLI</SectionTitle>
-          {dsxStatus ? (
-            dsxStatus.available ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ fontSize: 12, color: 'var(--green)', flex: 1 }}>
-                    ✓ dsx {dsxStatus.version} &nbsp;·&nbsp;
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
-                      {dsxStatus.path}
-                    </span>
-                  </div>
-                  <AppBtn
-                    onClick={handleCheckDsxUpdate}
-                    disabled={dsxUpdateState === 'checking'}
-                  >
-                    {dsxUpdateState === 'checking' ? '確認中…' : 'バージョン確認'}
-                  </AppBtn>
-                  <AppBtn
-                    onClick={() => setShowSysUpdateConfirm(true)}
-                    disabled={sysUpdating}
-                    title="dsx sys update — dsx が管理するツール群を一括更新"
-                  >
-                    {sysUpdating ? 'Updating…' : 'Sys Update'}
-                  </AppBtn>
-                </div>
-                {dsxUpdateState === 'done' && (
-                  <DsxUpdateResult
-                    current={dsxStatus.version ?? ''}
-                    latest={latestDsxVersion}
-                    selfUpdating={selfUpdating}
-                    onSelfUpdate={() => setShowSelfUpdateConfirm(true)}
-                  />
-                )}
-                {dsxUpdateState === 'error' && (
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    バージョン情報を取得できませんでした
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div style={{
-                padding: '12px 16px',
-                background: 'var(--amber-bg)',
-                border: '1px solid #fbbf2425',
-                borderRadius: 'var(--r)',
-                fontSize: 12,
-                color: 'var(--amber)',
-                lineHeight: 1.65,
-              }}>
-                ⚡ dsx が見つかりません。以下のコマンドでインストールしてください:<br />
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--indigo-l)', display: 'block', marginTop: 8 }}>
-                  go install github.com/scottlz0310/dsx@latest
-                </span>
-                インストール後、Arbor を再起動してください。
-              </div>
-            )
-          ) : (
-            <div style={{ fontSize: 12, color: 'var(--text3)' }}>Checking…</div>
-          )}
-        </section>
 
         {/* Workspace */}
         <section style={{ marginBottom: 32 }}>
@@ -375,26 +259,6 @@ export default function Settings() {
       </div>
       </div>
 
-      {showSelfUpdateConfirm && (
-        <ConfirmDialog
-          title="dsx self-update を実行しますか？"
-          message={'dsx CLI 自体を最新版に更新します。\n完了まで少し時間がかかることがあります。'}
-          confirmLabel="実行"
-          onConfirm={() => { setShowSelfUpdateConfirm(false); handleDsxSelfUpdate(); }}
-          onCancel={() => setShowSelfUpdateConfirm(false)}
-        />
-      )}
-
-      {showSysUpdateConfirm && (
-        <ConfirmDialog
-          title="dsx sys update — システム全体の更新"
-          message={'dsx が管理するすべてのツールを最新版に更新します（dsx CLI 自体の更新ではありません）。\n完了まで数分かかることがあります。'}
-          confirmLabel="実行"
-          onConfirm={() => { setShowSysUpdateConfirm(false); handleSysUpdate(); }}
-          onCancel={() => setShowSysUpdateConfirm(false)}
-        />
-      )}
-
       {confirmDeregister && (
         <ConfirmDialog
           title="リポジトリの登録解除"
@@ -438,67 +302,6 @@ function RepoCard({
       {!auto && (
         <AppBtn variant="danger" onClick={() => onRemove(repo.path)}>Remove</AppBtn>
       )}
-    </div>
-  );
-}
-
-// "dsx v0.2.10" や "v0.3.0" から [major, minor, patch] を抽出する。
-// 解析できない場合は null を返す。
-function parseSemverLike(value: string): [number, number, number] | null {
-  const m = value.match(/v?(\d+)\.(\d+)\.(\d+)/);
-  if (!m) return null;
-  return [Number(m[1]), Number(m[2]), Number(m[3])];
-}
-
-// a >= b なら正数または 0、a < b なら負数、比較不能なら null を返す。
-export function compareSemverLike(a: string, b: string): number | null {
-  const av = parseSemverLike(a);
-  const bv = parseSemverLike(b);
-  if (!av || !bv) return null;
-  for (let i = 0; i < 3; i++) {
-    if (av[i] !== bv[i]) return av[i] - bv[i];
-  }
-  return 0;
-}
-
-function DsxUpdateResult({
-  current,
-  latest,
-  selfUpdating,
-  onSelfUpdate,
-}: {
-  current: string;
-  latest: string | null;
-  selfUpdating: boolean;
-  onSelfUpdate: () => void;
-}) {
-  if (!latest) {
-    return (
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-        取得できませんでした。ネットワークまたは GitHub API を確認してください。
-      </div>
-    );
-  }
-  const cmp = compareSemverLike(current, latest);
-  if (cmp === null) {
-    return (
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-        バージョンを比較できませんでした（current: {current}, latest: {latest}）
-      </div>
-    );
-  }
-  return cmp >= 0 ? (
-    <div style={{ fontSize: 11, color: 'var(--green)' }}>
-      ✓ 最新版です（{latest}）
-    </div>
-  ) : (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ fontSize: 11, color: 'var(--amber)' }}>
-        ↑ {latest} が利用可能です
-      </div>
-      <AppBtn onClick={onSelfUpdate} disabled={selfUpdating}>
-        {selfUpdating ? 'Updating…' : 'Self Update'}
-      </AppBtn>
     </div>
   );
 }

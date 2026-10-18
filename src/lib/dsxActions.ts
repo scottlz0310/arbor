@@ -1,20 +1,25 @@
 import { useUiStore } from '../stores/uiStore';
-import { dailyRefresh, repoUpdate, sysUpdate } from './invoke';
+import { dailyRefresh, dsxDoctor, dsxSelfUpdate, repoUpdate, sysUpdate, sysUpdateDryRun } from './invoke';
 import type { DsxOutput, DsxStatus, WorkspaceStatus } from '../types';
 
-/** dsx の実行を始め、終了を Toast で知らせる。出力は実行ログコンソールに流れる。 */
-async function runAction(label: string, action: () => Promise<DsxOutput>): Promise<void> {
+/** dsx の実行を始め、終了を Toast で知らせる。出力は実行ログコンソールに流れる。成功したかを返す。 */
+async function runAction(label: string, action: () => Promise<DsxOutput>): Promise<boolean> {
   const { addToast } = useUiStore.getState();
   try {
     await action();
     addToast(`${label} 完了`, 'success');
+    return true;
   } catch (e) {
     addToast(`${label}: ${String(e)}`, 'error');
+    return false;
   }
 }
 
 export const runDailyRefresh = () => runAction('Daily Refresh', dailyRefresh);
 export const runSysUpdate = () => runAction('sys update', sysUpdate);
+export const runSysUpdateDryRun = () => runAction('sys update -n', sysUpdateDryRun);
+export const runDoctor = () => runAction('dsx doctor', dsxDoctor);
+export const runSelfUpdate = () => runAction('dsx self-update', dsxSelfUpdate);
 export const runRepoUpdate = () => runAction('Update All', repoUpdate);
 
 /** `dsx --version` の出力（例: `dsx version 0.10.2`）から、表示用の版（`v0.10.2`）を取り出す。 */

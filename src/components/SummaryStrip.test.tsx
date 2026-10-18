@@ -133,7 +133,7 @@ describe('SummaryStrip — 移動', () => {
 
   it.each([
     { label: /CLEANUP CANDIDATES/, view: 'cleanup' },
-    { label: /DSX ENVIRONMENT/, view: 'settings' },
+    { label: /DSX ENVIRONMENT/, view: 'tools' },
   ])('$label を押すと $view を開く', async ({ label, view }) => {
     act(() => useUiStore.setState({ activeView: 'status' }));
     render(<SummaryStrip />);

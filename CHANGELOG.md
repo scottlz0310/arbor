@@ -7,6 +7,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
+- **dsx Tools タブ**（#294 PR-D3）。Repository Status / Branch Cleanup に並ぶタブとして、dsx の管理を集約した。これで PR-D（Refresher Dashboard）は完了
+  - dsx の版と場所、最新版の確認（バージョン確認）、Self Update。Settings にあった dsx の管理（版の確認・Sys Update・Self Update）を、ここへ移した
+  - 実行ボタン: Update All Tools（`dsx sys update`。確認ダイアログつき）、Dry Run（`dsx sys update -n`。計画だけを表示）、Update Repositories（`dsx repo update --root`）、Doctor（`dsx doctor`）。出力は解析せず、実行ログコンソールに流す。別の run の実行中、または dsx が無いときは押せない
+  - `sys_update_dry_run`・`dsx_doctor` を追加
+  - MSIX 版の dsx は `dsx self-update` では更新されない（.appinstaller による自動更新）。self-update が成功しても版が上がらなかった場合は、公式の `install.ps1` を実行する手順を案内する
+  - Summary の「DSX ENVIRONMENT」カードは、Settings ではなくこのタブへ移動する
+  - 修正: Settings の dsx 表示が「dsx dsx version 0.11.0」と重複していた（版は `v0.11.0` に整形して表示する）
 - **ダッシュボード**（#294 PR-D2）。サイドバーをやめ、Header の下に Summary strip と、Repository Status / Branch Cleanup のタブを置いた。Settings は Header から開く
   - Summary: リポジトリ数（クリーンの数）・要対応の数・Cleanup 候補数・dsx 環境（Ready / Attention / Missing）。クリックで該当のビューへ移動する。Cleanup 候補数は、プレビューが全リポジトリの remote へ接続して遅いため、Cleanup を開いたときだけ集計し、run の終了や Scan で破棄する
   - Status: All / Needs Action / Clean の絞り込み（件数つき）。要対応を先頭に並べる。リポジトリごとに Fetch（git2）とフォルダを開く操作。状態に `dirty`（未コミット・未追跡の変更）を追加。要対応の判定は branch-chk の DETACHED / DIRTY / AHEAD / BEHIND / DIVERGED / no-upstream
