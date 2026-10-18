@@ -3,13 +3,13 @@ import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { getConfig, addRepository, removeRepository, scanDirectory, scanMissingRepositories, dsxCheck, dsxLatestVersion, dsxSelfUpdate, sysUpdate } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, scanMissingRepositories, updateSettings, dsxCheck, dsxLatestVersion, dsxSelfUpdate, sysUpdate } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { AppConfig, DsxStatus, RepoConfig } from '../types';
+import type { AppConfig, DsxStatus, RepoConfig, RepoSource } from '../types';
 
 export default function Settings() {
   const { addToast } = useUiStore();
-  const { loadRepos } = useRepoStore();
+  const { repos, loadRepos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
   const [dsxStatus, setDsxStatus] = useState<DsxStatus | null>(null);
   const [sysUpdating, setSysUpdating] = useState(false);
@@ -18,9 +18,6 @@ export default function Settings() {
   const [showSelfUpdateConfirm, setShowSelfUpdateConfirm] = useState(false);
   const [dsxUpdateState, setDsxUpdateState] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
   const [latestDsxVersion, setLatestDsxVersion] = useState<string | null>(null);
-  const [scanResults, setScanResults] = useState<string[] | null>(null);
-  const [scanSelected, setScanSelected] = useState<Set<string>>(new Set());
-  const [scanning, setScanning] = useState(false);
 
   // 削除済みリポジトリ検出
   const [missingRepos, setMissingRepos] = useState<RepoConfig[]>([]);
@@ -57,55 +54,21 @@ export default function Settings() {
     }
   };
 
-  const handleScanAndAdd = async () => {
-    const selected = await open({ directory: true, multiple: false, title: 'スキャンするフォルダを選択' });
-    if (!selected) return;
-    const root = typeof selected === 'string' ? selected : selected[0];
-    setScanning(true);
+  const saveWorkspaceRoot = async (root: string) => {
     try {
-      const found = await scanDirectory(root);
-      // 既登録パスを除外する
-      const registered = new Set(config?.repositories.map((r) => r.path) ?? []);
-      const newPaths = found.filter((p) => !registered.has(p));
-      // Scan Folder 後は新規 repo 件数に関わらず必ず missing repo を再確認する
-      scanMissingRepositories().then(setMissingRepos).catch(() => {});
-      if (newPaths.length === 0) {
-        addToast('新しいリポジトリは見つかりませんでした', 'success');
-        return;
-      }
-      setScanResults(newPaths);
-      setScanSelected(new Set(newPaths));
+      const updated = await updateSettings({ workspaceRoot: root });
+      setConfig(updated);
+      await loadRepos();
+      addToast(root ? 'Workspace root を更新しました' : '自動検出を無効にしました', 'success');
     } catch (e) {
       addToast(String(e), 'error');
-    } finally {
-      setScanning(false);
     }
   };
 
-  const handleBulkRegister = async () => {
-    if (!scanResults) return;
-    const targets = scanResults.filter((p) => scanSelected.has(p));
-    let added = 0;
-    let lastConfig: AppConfig | null = null;
-    for (const path of targets) {
-      const name = path.split(/[\\/]/).pop() ?? path;
-      try {
-        lastConfig = await addRepository({ path, name });
-        added++;
-      } catch (e) {
-        // already registered は skip、その他はトーストへ
-        if (!String(e).includes('already registered')) {
-          addToast(`${name}: ${String(e)}`, 'error');
-        }
-      }
-    }
-    if (added > 0) {
-      if (lastConfig) setConfig(lastConfig);
-      await loadRepos();
-      addToast(`${added} 件のリポジトリを追加しました`, 'success');
-    }
-    setScanResults(null);
-    setScanSelected(new Set());
+  const handleChangeWorkspaceRoot = async () => {
+    const selected = await open({ directory: true, multiple: false, title: 'Workspace のルートフォルダを選択' });
+    if (!selected) return;
+    await saveWorkspaceRoot(typeof selected === 'string' ? selected : selected[0]);
   };
 
   const handleCheckDsxUpdate = async () => {
@@ -261,16 +224,39 @@ export default function Settings() {
           )}
         </section>
 
+        {/* Workspace */}
+        <section style={{ marginBottom: 32 }}>
+          <SectionTitle>Workspace</SectionTitle>
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.65 }}>
+            root 直下（深さ 1）の git リポジトリを、自動で一覧に加えます。dsx の repo.root と同じ規則です。
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              flex: 1,
+              minWidth: 0,
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              color: config?.workspace.root ? 'var(--text1)' : 'var(--text3)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {config?.workspace.root || '（自動検出は無効）'}
+            </span>
+            <AppBtn onClick={handleChangeWorkspaceRoot}>Change…</AppBtn>
+            {config?.workspace.root && (
+              <AppBtn onClick={() => saveWorkspaceRoot('')}>Disable</AppBtn>
+            )}
+          </div>
+        </section>
+
         {/* Repositories */}
         <section style={{ marginBottom: 32 }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.12em', flex: 1 }}>
               REPOSITORIES
             </div>
-            <AppBtn onClick={handleScanAndAdd} disabled={scanning} style={{ marginRight: 6 }}>
-              {scanning ? 'Scanning…' : '⊕ Scan Folder'}
-            </AppBtn>
-            <AppBtn variant="primary" onClick={handleAddRepo}>+ Add Repository</AppBtn>
+            <AppBtn variant="primary" onClick={handleAddRepo} title="Workspace root の外にあるリポジトリを追加します">+ Add Repository</AppBtn>
           </div>
 
           {/* 削除済みリポジトリ検出バナー (#117) */}
@@ -370,80 +356,16 @@ export default function Settings() {
             </div>
           )}
 
-          {/* スキャン結果確認 UI (#43) */}
-          {scanResults && (
-            <div style={{
-              background: 'var(--bg3)',
-              border: '1px solid var(--border2)',
-              borderRadius: 'var(--r2)',
-              padding: '14px 16px',
-              marginBottom: 12,
-            }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)', marginBottom: 4 }}>
-                {scanResults.length} 件のリポジトリが見つかりました
-              </div>
-              <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 10 }}>
-                ※ 最大 4 階層まで探索。登録するリポジトリを選択してください。
-              </div>
-              <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 10 }}>
-                {scanResults.map((p) => {
-                  const name = p.split(/[\\/]/).pop() ?? p;
-                  const checked = scanSelected.has(p);
-                  return (
-                    <label
-                      key={p}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        padding: '4px 2px',
-                        cursor: 'pointer',
-                        fontSize: 12,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {
-                          setScanSelected((prev) => {
-                            const next = new Set(prev);
-                            checked ? next.delete(p) : next.add(p);
-                            return next;
-                          });
-                        }}
-                      />
-                      <span style={{ color: 'var(--text1)', fontWeight: 600 }}>{name}</span>
-                      <span style={{ flex: 1, minWidth: 0, color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {p}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <AppBtn onClick={() => { setScanResults(null); setScanSelected(new Set()); }}>
-                  Cancel
-                </AppBtn>
-                <AppBtn
-                  variant="primary"
-                  onClick={handleBulkRegister}
-                  disabled={scanSelected.size === 0}
-                >
-                  {scanSelected.size} 件を追加
-                </AppBtn>
-              </div>
-            </div>
-          )}
-          {config?.repositories.map((r) => (
+          {repos.map((r) => (
             <RepoCard
               key={r.path}
               repo={r}
               onRemove={handleRemoveRepo}
             />
           ))}
-          {config?.repositories.length === 0 && (
+          {repos.length === 0 && (
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-              No repositories registered.
+              No repositories found. Workspace root を設定するか、リポジトリを追加してください。
             </div>
           )}
         </section>
@@ -487,9 +409,10 @@ function RepoCard({
   repo,
   onRemove,
 }: {
-  repo: RepoConfig;
+  repo: { path: string; name: string; source: RepoSource };
   onRemove: (path: string) => void;
 }) {
+  const auto = repo.source === 'workspace';
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
@@ -498,10 +421,20 @@ function RepoCard({
       marginBottom: 6,
     }}>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)' }}>{repo.name}</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)' }}>
+          {repo.name}
+          <span
+            title={auto ? 'Workspace root から自動検出' : 'Workspace root の外から手動で追加'}
+            style={{ marginLeft: 8, fontSize: 9, fontWeight: 500, color: 'var(--text3)', border: '1px solid var(--border2)', borderRadius: 4, padding: '1px 5px' }}
+          >
+            {auto ? 'auto' : 'manual'}
+          </span>
+        </div>
         <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{repo.path}</div>
       </div>
-      <AppBtn variant="danger" onClick={() => onRemove(repo.path)}>Remove</AppBtn>
+      {!auto && (
+        <AppBtn variant="danger" onClick={() => onRemove(repo.path)}>Remove</AppBtn>
+      )}
     </div>
   );
 }

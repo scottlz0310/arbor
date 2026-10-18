@@ -1,9 +1,16 @@
 // ─── Mirror of src-tauri/src/models.rs ─────────────────────────────────────
 
+export type RepoSource = 'workspace' | 'manual';
+
 export interface RepoInfo {
   path: string;
   name: string;
   current_branch: string;
+  /** HEAD がブランチを指していない（detached HEAD）。 */
+  is_detached: boolean;
+  /** 現在のブランチに upstream が設定されている。false のとき ahead / behind は 0。 */
+  has_upstream: boolean;
+  source: RepoSource;
   ahead: number;
   behind: number;
   modified_count: number;
@@ -120,12 +127,20 @@ export interface CleanupExecutionResult {
 
 export interface AppConfig {
   settings: Settings;
+  workspace: Workspace;
   repositories: RepoConfig[];
+}
+
+export interface Workspace {
+  /** 自動検出の root。空文字列は自動検出の無効化。 */
+  root: string | null;
 }
 
 export interface Settings {
   stale_threshold_days: number;
   fetch_on_startup: boolean;
+  /** 全リポジトリ共通の protected branches。 */
+  protected_branches: string[];
 }
 
 export interface RepoConfig {

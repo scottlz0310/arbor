@@ -1,11 +1,26 @@
 use serde::{Deserialize, Serialize};
 
+/// リポジトリが一覧に入った経路。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoSource {
+    /// workspace root 配下から自動検出した。
+    Workspace,
+    /// root の外にある、手動で登録したリポジトリ。
+    Manual,
+}
+
 /// Overall status of a registered repository.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoInfo {
     pub path: String,
     pub name: String,
     pub current_branch: String,
+    /// HEAD がブランチを指していない（detached HEAD）。
+    pub is_detached: bool,
+    /// 現在のブランチに upstream が設定されている。false のとき ahead / behind は 0 になる。
+    pub has_upstream: bool,
+    pub source: RepoSource,
     /// Commits ahead of the remote tracking branch.
     pub ahead: u32,
     /// Commits behind the remote tracking branch.

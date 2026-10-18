@@ -6,6 +6,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import Settings from './Settings';
 import ToastContainer from '../components/Toast';
 import * as invoke from '../lib/invoke';
+import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 
 // @tauri-apps/plugin-dialog は preload (src/test/setup.ts) でモック済み
@@ -18,7 +19,8 @@ const mockGetConfig = spyOn(invoke, 'getConfig');
 const mockSysUpdate = spyOn(invoke, 'sysUpdate');
 const mockScanMissingRepositories = spyOn(invoke, 'scanMissingRepositories');
 const mockRemoveRepository = spyOn(invoke, 'removeRepository');
-const mockScanDirectory = spyOn(invoke, 'scanDirectory');
+const mockUpdateSettings = spyOn(invoke, 'updateSettings');
+const mockLoadRepos = mock(() => Promise.resolve());
 
 // module export への spy をファイル外へ漏らさない
 afterAll(() => {
@@ -30,15 +32,18 @@ const unavailableDsxStatus = { available: false, version: null, path: null };
 
 const mockConfig = {
   repositories: [],
+  workspace: { root: 'C:/src' },
   settings: { stale_threshold_days: 30, fetch_on_startup: false },
 };
 
-const mockConfigWithRepos = {
-  repositories: [
-    { path: '/repo/arbor', name: 'arbor' },
-  ],
-  settings: { stale_threshold_days: 30, fetch_on_startup: false },
-};
+const workspaceRepo = { path: 'C:/src/arbor', name: 'arbor', source: 'workspace' };
+const manualRepo = { path: 'D:/other/tool', name: 'tool', source: 'manual' };
+
+function setRepos(repos: unknown[]) {
+  act(() => {
+    useRepoStore.setState({ repos: repos as never, loadRepos: mockLoadRepos });
+  });
+}
 
 function renderSettings(withToast = false) {
   return render(
@@ -58,7 +63,7 @@ beforeEach(() => {
   mockSysUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 } as never);
   mockScanMissingRepositories.mockResolvedValue([] as never);
   mockRemoveRepository.mockResolvedValue(mockConfig as never);
-  mockScanDirectory.mockResolvedValue([] as never);
+  mockUpdateSettings.mockResolvedValue(mockConfig as never);
 });
 
 afterEach(() => {
@@ -223,18 +228,96 @@ describe('Settings — dsx CLI section', () => {
 });
 
 describe('Settings — RepoCard', () => {
-  it('登録済みリポジトリの名前とパスが表示される', async () => {
-    mockGetConfig.mockResolvedValue(mockConfigWithRepos as never);
+  it('自動検出と手動追加のリポジトリを、名前・パス・種別つきで表示する', async () => {
+    setRepos([workspaceRepo, manualRepo]);
     renderSettings();
+
     expect(await screen.findByText('arbor')).toBeInTheDocument();
-    expect(screen.getByText('/repo/arbor')).toBeInTheDocument();
+    expect(screen.getByText('C:/src/arbor')).toBeInTheDocument();
+    expect(screen.getByText('tool')).toBeInTheDocument();
+    expect(screen.getByText('D:/other/tool')).toBeInTheDocument();
+    expect(screen.getByText('auto')).toBeInTheDocument();
+    expect(screen.getByText('manual')).toBeInTheDocument();
   });
 
-  it('Remove ボタンをクリックすると removeRepository がリポジトリのパスで呼ばれる', async () => {
-    mockGetConfig.mockResolvedValue(mockConfigWithRepos as never);
+  it('Remove は手動追加のリポジトリにだけ表示し、そのパスで removeRepository を呼ぶ', async () => {
+    setRepos([workspaceRepo, manualRepo]);
     renderSettings();
-    await userEvent.click(await screen.findByRole('button', { name: 'Remove' }));
-    expect(mockRemoveRepository).toHaveBeenCalledWith('/repo/arbor');
+
+    const removeButtons = await screen.findAllByRole('button', { name: 'Remove' });
+    expect(removeButtons).toHaveLength(1);
+    await userEvent.click(removeButtons[0]);
+
+    expect(mockRemoveRepository).toHaveBeenCalledWith('D:/other/tool');
+  });
+
+  it('リポジトリが無いときは、設定を促すメッセージを表示する', async () => {
+    setRepos([]);
+    renderSettings();
+
+    expect(await screen.findByText(/No repositories found/)).toBeInTheDocument();
+  });
+});
+
+describe('Settings — Workspace section', () => {
+  it('設定済みの root を表示し、Disable を出す', async () => {
+    renderSettings();
+
+    expect(await screen.findByText('C:/src')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Disable' })).toBeInTheDocument();
+  });
+
+  it('root が空（無効）のときは、その旨を表示し、Disable を出さない', async () => {
+    mockGetConfig.mockResolvedValue({ ...mockConfig, workspace: { root: '' } } as never);
+    renderSettings();
+
+    expect(await screen.findByText('（自動検出は無効）')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
+  });
+
+  it('Change… で選んだフォルダを root として保存し、一覧を再読み込みする', async () => {
+    mockOpen.mockResolvedValue('/new/root');
+    mockUpdateSettings.mockResolvedValue({ ...mockConfig, workspace: { root: '/new/root' } } as never);
+    setRepos([]);
+    renderSettings(true);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Change…' }));
+
+    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalledWith({ workspaceRoot: '/new/root' }));
+    expect(mockLoadRepos).toHaveBeenCalled();
+    expect(await screen.findByText('/new/root')).toBeInTheDocument();
+    expect(await screen.findByText('Workspace root を更新しました')).toBeInTheDocument();
+  });
+
+  it('フォルダ選択を取り消したら、何も保存しない', async () => {
+    mockOpen.mockResolvedValue(null);
+    renderSettings();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Change…' }));
+
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
+  });
+
+  it('Disable は空文字列を保存して自動検出を無効にする', async () => {
+    mockUpdateSettings.mockResolvedValue({ ...mockConfig, workspace: { root: '' } } as never);
+    setRepos([]);
+    renderSettings(true);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Disable' }));
+
+    await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalledWith({ workspaceRoot: '' }));
+    expect(await screen.findByText('自動検出を無効にしました')).toBeInTheDocument();
+  });
+
+  it('保存に失敗したらエラーを通知し、表示中の root を変えない', async () => {
+    mockOpen.mockResolvedValue('/not/a/dir');
+    mockUpdateSettings.mockRejectedValue('workspace root がディレクトリではありません: /not/a/dir' as never);
+    renderSettings(true);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Change…' }));
+
+    expect(await screen.findByText(/ディレクトリではありません/)).toBeInTheDocument();
+    expect(screen.getByText('C:/src')).toBeInTheDocument();
   });
 });
 
@@ -316,20 +399,4 @@ describe('Settings — 削除済みリポジトリ検出 (#117)', () => {
     });
   });
 
-  it('Scan Folder で新規 repo が 0 件でも scanMissingRepositories が呼ばれる', async () => {
-    mockOpen.mockResolvedValue('/some/folder');
-    mockScanDirectory.mockResolvedValue([] as never);
-    mockGetConfig.mockResolvedValue(mockConfig as never);
-
-    renderSettings();
-    await screen.findByText('REPOSITORIES');
-
-    const scanBtn = screen.getByRole('button', { name: /Scan Folder/ });
-    await userEvent.click(scanBtn);
-
-    await waitFor(() => {
-      // mount 時 1 回 + Scan Folder 後 1 回 = 計 2 回
-      expect(mockScanMissingRepositories).toHaveBeenCalledTimes(2);
-    });
-  });
 });

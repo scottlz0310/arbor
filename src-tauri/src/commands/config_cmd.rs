@@ -35,7 +35,7 @@ pub fn remove_repository(path: String) -> Result<AppConfig, String> {
     Ok(config)
 }
 
-// ─── scan_directory / scan_missing_repositories ──────────────────────────────
+// ─── scan_missing_repositories ───────────────────────────────────────────────
 
 /// Filters `repos` to those whose path does not exist on disk.
 fn filter_missing_repos(repos: Vec<RepoConfig>) -> Vec<RepoConfig> {
@@ -43,6 +43,17 @@ fn filter_missing_repos(repos: Vec<RepoConfig>) -> Vec<RepoConfig> {
         .into_iter()
         .filter(|r| !std::path::Path::new(&r.path).exists())
         .collect()
+}
+
+/// `update_settings` に渡された workspace root を検証する。空文字列は自動検出の無効化。
+fn validate_workspace_root(root: &str) -> Result<String, String> {
+    let trimmed = root.trim();
+    if !trimmed.is_empty() && !std::path::Path::new(trimmed).is_dir() {
+        return Err(format!(
+            "workspace root がディレクトリではありません: {trimmed}"
+        ));
+    }
+    Ok(trimmed.to_string())
 }
 
 /// Returns repositories registered in config whose path no longer exists on disk.
@@ -53,44 +64,15 @@ pub fn scan_missing_repositories() -> Result<Vec<RepoConfig>, String> {
 }
 
 #[tauri::command]
-pub fn scan_directory(root: String) -> Result<Vec<String>, String> {
-    use std::path::Path;
-
-    let mut found = Vec::new();
-    scan_recursive(Path::new(&root), &mut found, 0);
-    Ok(found)
-}
-
-fn scan_recursive(dir: &std::path::Path, found: &mut Vec<String>, depth: u32) {
-    if depth > 4 {
-        return;
-    }
-    let git_dir = dir.join(".git");
-    if git_dir.exists() {
-        found.push(dir.to_string_lossy().into_owned());
-        return; // Don't descend into sub-repos.
-    }
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                // Skip hidden directories (e.g. .git, node_modules handled above).
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if !name_str.starts_with('.') && name_str != "node_modules" {
-                    scan_recursive(&path, found, depth + 1);
-                }
-            }
-        }
-    }
-}
-
-#[tauri::command]
 pub fn update_settings(
     stale_threshold_days: Option<u32>,
     fetch_on_startup: Option<bool>,
+    workspace_root: Option<String>,
 ) -> Result<AppConfig, String> {
     let mut config = load_config()?;
+    if let Some(root) = workspace_root {
+        config.workspace.root = Some(validate_workspace_root(&root)?);
+    }
     if let Some(v) = stale_threshold_days {
         config.settings.stale_threshold_days = v;
     }
@@ -105,7 +87,7 @@ pub fn update_settings(
 
 #[cfg(test)]
 mod tests {
-    use super::filter_missing_repos;
+    use super::{filter_missing_repos, validate_workspace_root};
     use crate::config::RepoConfig;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -142,6 +124,42 @@ mod tests {
             path: path.into(),
             name: path.split('/').next_back().unwrap_or(path).into(),
             protected_branches: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn validate_workspace_root_cases() {
+        let dir = TempDir::new("workspace-root");
+        let file = dir.path.join("file.txt");
+        std::fs::write(&file, "x").unwrap();
+        let padded = format!("  {}  ", dir.path_str());
+
+        let ok_cases = [
+            ("空文字列は自動検出の無効化", String::new(), String::new()),
+            ("空白だけも無効化", "   ".to_string(), String::new()),
+            (
+                "存在するディレクトリ（前後の空白は除く）",
+                padded,
+                dir.path_str().to_string(),
+            ),
+        ];
+        for (name, input, expected) in ok_cases {
+            assert_eq!(validate_workspace_root(&input), Ok(expected), "{name}");
+        }
+
+        let err_cases = [
+            (
+                "存在しないパス",
+                dir.path.join("missing").to_string_lossy().into_owned(),
+            ),
+            ("ファイル", file.to_string_lossy().into_owned()),
+        ];
+        for (name, input) in err_cases {
+            let error = validate_workspace_root(&input).expect_err(name);
+            assert!(
+                error.contains("ディレクトリではありません"),
+                "{name}: {error}"
+            );
         }
     }
 

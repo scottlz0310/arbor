@@ -14,6 +14,9 @@ function makeRepo(overrides: Partial<RepoInfo> = {}): RepoInfo {
     modified_count: 0,
     untracked_count: 0,
     stash_count: 0,
+    is_detached: false,
+    has_upstream: true,
+    source: 'workspace' as const,
     last_fetched_at: null,
     ...overrides,
   };

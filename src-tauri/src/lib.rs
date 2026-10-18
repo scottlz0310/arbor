@@ -1,12 +1,12 @@
 mod commands;
 mod config;
 mod models;
+mod workspace;
 
 use commands::{
     cleanup::{cleanup_execute, cleanup_preview},
     config_cmd::{
-        add_repository, get_config, remove_repository, scan_directory, scan_missing_repositories,
-        update_settings,
+        add_repository, get_config, remove_repository, scan_missing_repositories, update_settings,
     },
     dsx::{dsx_check, dsx_latest_version, dsx_self_update, env_inject, repo_update, sys_update},
     repo::{fetch_all, get_repo_status, list_repositories},
@@ -30,7 +30,6 @@ pub fn run() {
             get_config,
             add_repository,
             remove_repository,
-            scan_directory,
             scan_missing_repositories,
             update_settings,
             // Repo / git2

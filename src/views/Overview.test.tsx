@@ -18,6 +18,9 @@ function makeRepo(overrides: Record<string, unknown> = {}) {
     modified_count: 0,
     untracked_count: 0,
     stash_count: 0,
+    is_detached: false,
+    has_upstream: true,
+    source: 'workspace' as const,
     last_fetched_at: null,
     ...overrides,
   };
@@ -50,5 +53,26 @@ describe('Overview — Recommended Actions', () => {
     });
     render(<Overview />);
     expect(screen.queryByText('RECOMMENDED ACTIONS')).toBeNull();
+  });
+});
+
+describe('Overview — リポジトリカードの状態バッジ', () => {
+  it.each([
+    { name: 'detached HEAD', repo: { is_detached: true }, label: '⎇ detached' },
+    { name: 'diverged', repo: { ahead: 1, behind: 2 }, label: '⇕ diverged' },
+    { name: 'ahead', repo: { ahead: 2 }, label: '↑ ahead' },
+    { name: 'behind', repo: { behind: 3 }, label: '↓ behind' },
+    { name: 'upstream が無い', repo: { has_upstream: false }, label: '○ no upstream' },
+    { name: '同期済み', repo: {}, label: '✓ clean' },
+    // detached は upstream の有無より優先する
+    { name: 'detached かつ upstream なし', repo: { is_detached: true, has_upstream: false }, label: '⎇ detached' },
+  ])('$name → $label', ({ repo, label }) => {
+    act(() => {
+      useRepoStore.setState({ repos: [makeRepo(repo)], selectedRepo: null });
+    });
+
+    render(<Overview />);
+
+    expect(screen.getByText(label)).toBeTruthy();
   });
 });

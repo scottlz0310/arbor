@@ -31,15 +31,14 @@ export const addRepository = (args: {
 export const removeRepository = (path: string) =>
   tauriInvoke<AppConfig>('remove_repository', { path });
 
-export const scanDirectory = (root: string) =>
-  tauriInvoke<string[]>('scan_directory', { root });
-
 export const scanMissingRepositories = () =>
   tauriInvoke<RepoConfig[]>('scan_missing_repositories');
 
 export const updateSettings = (args: {
   staleThresholdDays?: number;
   fetchOnStartup?: boolean;
+  /** 自動検出の root。空文字列で無効化。 */
+  workspaceRoot?: string;
 }) => tauriInvoke<AppConfig>('update_settings', args);
 
 // ─── Repo / git2 ─────────────────────────────────────────────────────────────
