@@ -24,9 +24,9 @@ const output = (text: string, overrides: Partial<ProcessOutput> = {}): ProcessOu
   ...overrides,
 });
 
-function startRun(outputs: ProcessOutput[] = []) {
+function startRun(outputs: ProcessOutput[] = [], runId = 1) {
   act(() => {
-    useConsoleStore.getState().handleStarted({ runId: 1, label: 'dsx sys update', argv: ['dsx'], startedAt: 0 });
+    useConsoleStore.getState().handleStarted({ runId, label: 'dsx sys update', argv: ['dsx'], startedAt: 0 });
     useConsoleStore.getState().appendOutputs(outputs);
   });
 }
@@ -216,6 +216,47 @@ describe('LogConsole — キャンセル', () => {
 
     expect(mockCancelRun).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { name: '成功', overrides: { exitCode: 0 } },
+    { name: '失敗', overrides: { exitCode: 2 } },
+  ])('確認中にコマンドが自然終了（$name）したら、ダイアログを閉じて cancel_run を呼ばない', async ({ overrides }) => {
+    render(<LogConsole />);
+    startRun();
+    await userEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    finishRun(overrides);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockCancelRun).not.toHaveBeenCalled();
+  });
+
+  it('確認中に終了した後、次の実行が始まっても、確認ダイアログは持ち越されない', async () => {
+    render(<LogConsole />);
+    startRun();
+    await userEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+    finishRun();
+
+    startRun([], 2);
+
+    expect(screen.getByRole('button', { name: 'キャンセル' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockCancelRun).not.toHaveBeenCalled();
+  });
+
+  it('取り消した後に、同じ実行をもう一度キャンセルできる', async () => {
+    render(<LogConsole />);
+    startRun();
+
+    await userEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    await userEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '強制終了' }));
+
+    expect(mockCancelRun).toHaveBeenCalledTimes(1);
+    expect(mockCancelRun).toHaveBeenCalledWith(1);
   });
 
   it('キャンセルに失敗したらエラーを通知する', async () => {

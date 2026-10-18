@@ -73,7 +73,9 @@ export default function LogConsole() {
 
   const [filter, setFilter] = useState('');
   const [follow, setFollow] = useState(true);
-  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  // キャンセルの確認中の run。boolean ではなく runId で持ち、確認中にコマンドが終了しても、
+  // 次の実行に確認状態を持ち越さない（ID が異なれば、確認中とはみなされない）。
+  const [confirmingRunId, setConfirmingRunId] = useState<number | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   const visible = useMemo(() => {
@@ -83,6 +85,8 @@ export default function LogConsole() {
 
   const running = run?.status === 'running';
   const summary = runSummary(run);
+  // 確認中の run がまだ実行中のときだけ、確認ダイアログを出す。終了したら閉じる。
+  const confirmingRun = run !== null && running && run.runId === confirmingRunId ? run : null;
 
   // 追従中は、行が増えるたびに最下部へ寄せる。
   useLayoutEffect(() => {
@@ -107,10 +111,11 @@ export default function LogConsole() {
   };
 
   const handleCancel = async () => {
-    setConfirmingCancel(false);
-    if (!run) return;
+    const target = confirmingRun;
+    setConfirmingRunId(null);
+    if (!target) return;
     try {
-      await cancelRun(run.runId);
+      await cancelRun(target.runId);
     } catch (e) {
       addToast(String(e), 'error');
     }
@@ -187,8 +192,8 @@ export default function LogConsole() {
             <AppBtn onClick={clear} disabled={lines.length === 0}>Clear</AppBtn>
           </>
         )}
-        {running && (
-          <AppBtn variant="danger" onClick={() => setConfirmingCancel(true)}>キャンセル</AppBtn>
+        {run && running && (
+          <AppBtn variant="danger" onClick={() => setConfirmingRunId(run.runId)}>キャンセル</AppBtn>
         )}
         <button
           type="button"
@@ -229,13 +234,13 @@ export default function LogConsole() {
         </div>
       )}
 
-      {confirmingCancel && run && (
+      {confirmingRun && (
         <ConfirmDialog
           title="実行中のコマンドを強制終了しますか？"
-          message={`「${run.label}」を強制終了します。リポジトリの更新やパッケージの更新が途中で止まり、元に戻らない場合があります。`}
+          message={`「${confirmingRun.label}」を強制終了します。リポジトリの更新やパッケージの更新が途中で止まり、元に戻らない場合があります。`}
           confirmLabel="強制終了"
           onConfirm={handleCancel}
-          onCancel={() => setConfirmingCancel(false)}
+          onCancel={() => setConfirmingRunId(null)}
         />
       )}
     </section>
