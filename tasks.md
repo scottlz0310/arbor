@@ -4,6 +4,18 @@
 
 ---
 
+## Issue #294: dsx 実行・表示基盤 兼 開発環境リフレッシュナーへのピボット
+
+設計合意と PR 構成は `Dropbox/src/arbor-dsx/handoff/arbor.md` を参照。
+
+- [x] PR-A: スコープ外の機能（AI Assistant / Graph / PR・Issues / Stash / Branches）と依存の削除
+- [ ] PR-B: プロセス実行基盤 + Live Log Console
+- [ ] PR-C: Workspace scanner（`workspace.roots`、状態スキャン）
+- [ ] PR-D: Refresher Dashboard
+- [ ] PR-E: 実機検証・ドキュメント更新
+
+---
+
 ## レビューノート & 改善提案 (spec v0.3 → 実装差分)
 
 ### 仕様の明確化が必要な点

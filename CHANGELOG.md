@@ -5,6 +5,21 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### refactor
+
+- **Arbor のピボット（#294）の第一段階: スコープ外の機能を削除**。dsx の実行・表示基盤 兼 開発環境リフレッシュナーへ向けて、次の画面とその裏側（Rust コマンド・モデル・テスト・依存）を削除
+  - AI Assistant / Ollama（`get_ai_insights` などの AI コマンド、AI 設定）
+  - PR / Issues（GitHub REST API 連携、GitHub PAT の保存と、リポジトリごとの GitHub 設定）
+  - Commit Graph、Stash、Branches（`get_commit_graph`、stash 系、`get_branches`、`delete_branches`）
+  - 依存: `@tanstack/react-query`、`keyring-core` 系（macOS / Linux）、`windows-sys`（DPAPI）、未使用の `tokio`
+  - Overview の Recommended Actions は、ルールベース（diverged / far behind）のみに簡素化
+  - ナビゲーションは Overview / Cleanup / Settings の 3 つ
+
+### 互換性に関する注意
+
+- 旧バージョンの `config.toml`（`[ai]`、GitHub PAT、リポジトリごとの GitHub 設定を含む）は、そのまま読み込める。未知のフィールドは無視され、次回の保存時に削除される
+- macOS / Linux の OS キーチェーンに保存済みの GitHub PAT（サービス名 `arbor_github_pat`）は、自動では削除されない。不要であればキーチェーンから手動で削除すること。Windows の暗号化済み PAT は `config.toml` の保存時に削除される
+
 ## [0.2.1] — 2026-07-17
 
 ### chore

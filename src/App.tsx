@@ -5,12 +5,7 @@ import ToastContainer from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import CommandPalette from './components/CommandPalette';
 import Overview from './views/Overview';
-import Branches from './views/Branches';
-import Graph from './views/Graph';
-import PullRequests from './views/PullRequests';
 import Cleanup from './views/Cleanup';
-import Stash from './views/Stash';
-import AiAssistant from './views/AiAssistant';
 import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
 import { useUiStore } from './stores/uiStore';
@@ -77,23 +72,8 @@ export default function App() {
         {activeView === 'overview' && (
           <ErrorBoundary key="overview" viewName="Overview"><Overview /></ErrorBoundary>
         )}
-        {activeView === 'branches' && (
-          <ErrorBoundary key="branches" viewName="Branches"><Branches /></ErrorBoundary>
-        )}
-        {activeView === 'graph'   && (
-          <ErrorBoundary key="graph" viewName="Commit Graph"><Graph /></ErrorBoundary>
-        )}
-        {activeView === 'prs'     && (
-          <ErrorBoundary key="prs" viewName="PR / Issues"><PullRequests /></ErrorBoundary>
-        )}
         {activeView === 'cleanup' && (
           <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
-        )}
-        {activeView === 'stash' && (
-          <ErrorBoundary key="stash" viewName="Stash Manager"><Stash /></ErrorBoundary>
-        )}
-        {activeView === 'ai' && (
-          <ErrorBoundary key="ai" viewName="AI Assistant"><AiAssistant /></ErrorBoundary>
         )}
         {activeView === 'settings' && (
           <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>

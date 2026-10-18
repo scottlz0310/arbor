@@ -1,22 +1,17 @@
 import { useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useUiStore } from '../stores/uiStore';
 import { useRepoStore } from '../stores/repoStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { getConfig, addRepository, removeRepository, updateRepositoryGithub, detectGithubRemote, scanDirectory, scanMissingRepositories, dsxCheck, dsxLatestVersion, dsxSelfUpdate, hasGithubPat, setGithubPat, deleteGithubPat, sysUpdate, updateAiConfig, testAiConnection } from '../lib/invoke';
+import { getConfig, addRepository, removeRepository, scanDirectory, scanMissingRepositories, dsxCheck, dsxLatestVersion, dsxSelfUpdate, sysUpdate } from '../lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
 export default function Settings() {
-  const queryClient = useQueryClient();
   const { addToast, setDsxRunning } = useUiStore();
   const { loadRepos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
   const [dsxStatus, setDsxStatus] = useState<DsxStatus | null>(null);
-  const [patStored, setPatStored] = useState<boolean | null>(null);
-  const [patInput, setPatInput]   = useState('');
-  const [patLoading, setPatLoading] = useState(false);
   const [sysUpdating, setSysUpdating] = useState(false);
   const [showSysUpdateConfirm, setShowSysUpdateConfirm] = useState(false);
   const [selfUpdating, setSelfUpdating] = useState(false);
@@ -34,35 +29,13 @@ export default function Settings() {
   const [confirmDeregister, setConfirmDeregister] = useState(false);
   const [deregistering, setDeregistering] = useState(false);
 
-  // AI 設定フォームのローカルステート
-  const [aiForm, setAiForm] = useState({
-    provider: 'ollama',
-    ollamaUrl: 'http://localhost:11434',
-    model: 'qwen3.5:latest',
-    enabled: true,
-    timeoutSecs: '30',
-  });
-  const [aiSaving, setAiSaving] = useState(false);
-  const [aiTesting, setAiTesting] = useState(false);
-  const [aiTestResult, setAiTestResult] = useState<boolean | null>(null);
-
   useEffect(() => {
     let cancelled = false;
     getConfig().then((cfg) => {
       if (cancelled) return;
       setConfig(cfg);
-      setAiForm({
-        provider: cfg.ai.provider,
-        ollamaUrl: cfg.ai.ollama_url,
-        model: cfg.ai.model,
-        enabled: cfg.ai.enabled,
-        timeoutSecs: String(cfg.ai.timeout_secs),
-      });
     }).catch((e) => addToast(String(e), 'error'));
     dsxCheck().then(setDsxStatus).catch(() => setDsxStatus({ available: false, version: null, path: null }));
-    hasGithubPat()
-      .then((v) => { if (!cancelled) setPatStored(v); })
-      .catch(() => { if (!cancelled) setPatStored(false); });
     scanMissingRepositories()
       .then((missing) => { if (!cancelled) setMissingRepos(missing); })
       .catch(() => {});
@@ -135,37 +108,6 @@ export default function Settings() {
     setScanSelected(new Set());
   };
 
-  const handleSavePat = async () => {
-    const trimmed = patInput.trim();
-    if (!trimmed) return;
-    setPatLoading(true);
-    try {
-      await setGithubPat(trimmed);
-      setPatStored(true);
-      setPatInput('');
-      queryClient.invalidateQueries({ queryKey: ['has_pat'] });
-      addToast('GitHub PAT を保存しました', 'success');
-    } catch (e) {
-      addToast(String(e), 'error');
-    } finally {
-      setPatLoading(false);
-    }
-  };
-
-  const handleClearPat = async () => {
-    setPatLoading(true);
-    try {
-      await deleteGithubPat();
-      setPatStored(false);
-      queryClient.invalidateQueries({ queryKey: ['has_pat'] });
-      addToast('GitHub PAT を削除しました', 'success');
-    } catch (e) {
-      addToast(String(e), 'error');
-    } finally {
-      setPatLoading(false);
-    }
-  };
-
   const handleCheckDsxUpdate = async () => {
     setDsxUpdateState('checking');
     setLatestDsxVersion(null);
@@ -215,53 +157,6 @@ export default function Settings() {
     }
   };
 
-  const handleSaveAiConfig = async () => {
-    const timeoutNum = parseInt(aiForm.timeoutSecs, 10);
-    if (isNaN(timeoutNum) || timeoutNum < 1 || timeoutNum > 300) {
-      addToast('タイムアウトは 1〜300 秒の範囲で入力してください', 'error');
-      return;
-    }
-    setAiSaving(true);
-    try {
-      const updated = await updateAiConfig({
-        provider: aiForm.provider,
-        ollamaUrl: aiForm.ollamaUrl,
-        model: aiForm.model,
-        enabled: aiForm.enabled,
-        timeoutSecs: timeoutNum,
-      });
-      setConfig(updated);
-      // Rust 側で trim() した値が返るので aiForm をサーバー値に再同期して dirty state をリセット
-      setAiForm({
-        provider: updated.ai.provider,
-        ollamaUrl: updated.ai.ollama_url,
-        model: updated.ai.model,
-        enabled: updated.ai.enabled,
-        timeoutSecs: String(updated.ai.timeout_secs),
-      });
-      setAiTestResult(null);
-      addToast('AI 設定を保存しました', 'success');
-    } catch (e) {
-      addToast(String(e), 'error');
-    } finally {
-      setAiSaving(false);
-    }
-  };
-
-  const handleTestAiConnection = async () => {
-    setAiTesting(true);
-    setAiTestResult(null);
-    try {
-      // 保存済み config ではなく、フォームに入力中の URL で疎通確認する
-      const ok = await testAiConnection(aiForm.ollamaUrl);
-      setAiTestResult(ok);
-    } catch {
-      setAiTestResult(false);
-    } finally {
-      setAiTesting(false);
-    }
-  };
-
   const handleRemoveRepo = async (path: string) => {
     try {
       const updated = await removeRepository(path);
@@ -297,26 +192,6 @@ export default function Settings() {
     setDeregistering(false);
     await loadRepos();
     if (removedPaths.size > 0) addToast(`${removedPaths.size} 件のリポジトリを登録解除しました`, 'success');
-  };
-
-  const aiDirty = config !== null && (
-    aiForm.provider !== config.ai.provider ||
-    aiForm.ollamaUrl !== config.ai.ollama_url ||
-    aiForm.model !== config.ai.model ||
-    aiForm.enabled !== config.ai.enabled ||
-    aiForm.timeoutSecs !== String(config.ai.timeout_secs)
-  );
-
-  const aiInputStyle: React.CSSProperties = {
-    width: '100%',
-    background: 'var(--bg3)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--r)',
-    color: 'var(--text1)',
-    fontSize: 12,
-    padding: '6px 10px',
-    outline: 'none',
-    boxSizing: 'border-box',
   };
 
   return (
@@ -388,56 +263,6 @@ export default function Settings() {
           ) : (
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>Checking…</div>
           )}
-        </section>
-
-        {/* GitHub PAT */}
-        <section style={{ marginBottom: 32 }}>
-          <SectionTitle>GitHub</SectionTitle>
-          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.65 }}>
-            Personal Access Token (PAT) を保存します。PR / Issue 連携に使用されます。
-          </div>
-          {patStored === null && (
-            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Checking…</div>
-          )}
-          {patStored === true && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              marginBottom: 10, fontSize: 12, color: 'var(--green)',
-            }}>
-              <span>✓ PAT が保存されています</span>
-              <AppBtn variant="danger" onClick={handleClearPat} disabled={patLoading}>
-                Clear
-              </AppBtn>
-            </div>
-          )}
-          {patStored === false && (
-            <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 10 }}>
-              ⚠ PAT が設定されていません
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              type="password"
-              placeholder={patStored ? '新しい PAT で上書き…' : 'ghp_xxxxxxxxxxxx'}
-              value={patInput}
-              onChange={(e) => setPatInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSavePat()}
-              style={{
-                flex: 1,
-                background: 'var(--bg3)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--r)',
-                color: 'var(--text1)',
-                fontSize: 12,
-                fontFamily: 'var(--font-mono)',
-                padding: '6px 10px',
-                outline: 'none',
-              }}
-            />
-            <AppBtn variant="primary" onClick={handleSavePat} disabled={patLoading || !patInput.trim()}>
-              Save
-            </AppBtn>
-          </div>
         </section>
 
         {/* Repositories */}
@@ -618,14 +443,6 @@ export default function Settings() {
               key={r.path}
               repo={r}
               onRemove={handleRemoveRepo}
-              onSaveGithub={async (path, owner, repo) => {
-                try {
-                  const updated = await updateRepositoryGithub({ path, githubOwner: owner || null, githubRepo: repo || null });
-                  setConfig(updated);
-                  await loadRepos();
-                  addToast('GitHub 設定を保存しました', 'success');
-                } catch (e) { addToast(String(e), 'error'); }
-              }}
             />
           ))}
           {config?.repositories.length === 0 && (
@@ -633,91 +450,6 @@ export default function Settings() {
               No repositories registered.
             </div>
           )}
-        </section>
-
-        {/* AI Engine settings (P3-09) */}
-        <section>
-          <SectionTitle>AI Engine</SectionTitle>
-
-          {/* enabled toggle */}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={aiForm.enabled}
-              onChange={(e) => setAiForm((f) => ({ ...f, enabled: e.target.checked }))}
-              style={{ accentColor: 'var(--indigo-l)', cursor: 'pointer', width: 13, height: 13 }}
-            />
-            <span style={{ fontSize: 12, color: 'var(--text1)' }}>AI Insight を有効化</span>
-          </label>
-
-          {/* Provider / Model row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-            <div>
-              <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4, fontWeight: 600 }}>PROVIDER</div>
-              <input
-                style={aiInputStyle}
-                value={aiForm.provider}
-                onChange={(e) => setAiForm((f) => ({ ...f, provider: e.target.value }))}
-                placeholder="ollama"
-              />
-            </div>
-            <div>
-              <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4, fontWeight: 600 }}>MODEL</div>
-              <input
-                style={{ ...aiInputStyle, fontFamily: 'var(--font-mono)', color: 'var(--indigo-l)' }}
-                value={aiForm.model}
-                onChange={(e) => setAiForm((f) => ({ ...f, model: e.target.value }))}
-                placeholder="qwen3.5:latest"
-              />
-            </div>
-          </div>
-
-          {/* Ollama URL row */}
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4, fontWeight: 600 }}>OLLAMA URL</div>
-            <input
-              style={aiInputStyle}
-              value={aiForm.ollamaUrl}
-              onChange={(e) => setAiForm((f) => ({ ...f, ollamaUrl: e.target.value }))}
-              placeholder="http://localhost:11434"
-            />
-          </div>
-
-          {/* Timeout row */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4, fontWeight: 600 }}>TIMEOUT (sec)</div>
-            <input
-              type="number"
-              min={1}
-              max={300}
-              style={{ ...aiInputStyle, width: 80 }}
-              value={aiForm.timeoutSecs}
-              onChange={(e) => setAiForm((f) => ({ ...f, timeoutSecs: e.target.value }))}
-            />
-          </div>
-
-          {/* Actions row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <AppBtn onClick={handleTestAiConnection} disabled={aiTesting}>
-              {aiTesting ? 'Testing…' : 'Test Connection'}
-            </AppBtn>
-            {aiTestResult !== null && (
-              <span style={{
-                fontSize: 11,
-                color: aiTestResult ? 'var(--green)' : 'var(--red)',
-              }}>
-                {aiTestResult ? '✓ Ollama 接続成功' : '✗ Ollama に接続できません'}
-              </span>
-            )}
-            <div style={{ flex: 1 }} />
-            <AppBtn
-              variant="primary"
-              onClick={handleSaveAiConfig}
-              disabled={!aiDirty || aiSaving}
-            >
-              {aiSaving ? 'Saving…' : 'Save'}
-            </AppBtn>
-          </div>
         </section>
 
       </div>
@@ -758,92 +490,22 @@ export default function Settings() {
 function RepoCard({
   repo,
   onRemove,
-  onSaveGithub,
 }: {
   repo: RepoConfig;
   onRemove: (path: string) => void;
-  onSaveGithub: (path: string, owner: string, repoName: string) => Promise<void>;
 }) {
-  const { addToast } = useUiStore();
-  const [owner, setOwner] = useState(repo.github_owner ?? '');
-  const [repoName, setRepoName] = useState(repo.github_repo ?? '');
-  const [saving, setSaving] = useState(false);
-  const [detecting, setDetecting] = useState(false);
-
-  const ownerTrimmed = owner.trim();
-  const repoTrimmed = repoName.trim();
-  const dirty = ownerTrimmed !== (repo.github_owner ?? '') || repoTrimmed !== (repo.github_repo ?? '');
-  const bothSet = ownerTrimmed !== '' && repoTrimmed !== '';
-  const bothEmpty = ownerTrimmed === '' && repoTrimmed === '';
-  const validCombo = bothSet || bothEmpty;
-
-  const handleSave = async () => {
-    setSaving(true);
-    try { await onSaveGithub(repo.path, ownerTrimmed, repoTrimmed); }
-    finally { setSaving(false); }
-  };
-
-  const handleDetect = async () => {
-    setDetecting(true);
-    try {
-      const [detectedOwner, detectedRepo] = await detectGithubRemote(repo.path);
-      if (detectedOwner) setOwner(detectedOwner);
-      if (detectedRepo) setRepoName(detectedRepo);
-    } catch (e) {
-      addToast(String(e), 'error');
-    } finally {
-      setDetecting(false);
-    }
-  };
-
-  const inputStyle: React.CSSProperties = {
-    background: 'var(--bg2)', border: '1px solid var(--border)',
-    borderRadius: 'var(--r)', color: 'var(--text1)',
-    fontSize: 11, fontFamily: 'var(--font-mono)',
-    padding: '4px 8px', outline: 'none', width: '100%',
-  };
-
   return (
     <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
       padding: '10px 14px', background: 'var(--bg3)',
       border: '1px solid var(--border)', borderRadius: 'var(--r)',
       marginBottom: 6,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)' }}>{repo.name}</div>
-          <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{repo.path}</div>
-        </div>
-        <AppBtn onClick={handleDetect} disabled={detecting}>
-          {detecting ? '…' : 'Detect'}
-        </AppBtn>
-        <AppBtn variant="danger" onClick={() => onRemove(repo.path)}>Remove</AppBtn>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text1)' }}>{repo.name}</div>
+        <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{repo.path}</div>
       </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input
-          style={inputStyle}
-          placeholder="owner"
-          value={owner}
-          onChange={(e) => setOwner(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && dirty && handleSave()}
-        />
-        <span style={{ color: 'var(--text3)', fontSize: 12 }}>/</span>
-        <input
-          style={inputStyle}
-          placeholder="repo"
-          value={repoName}
-          onChange={(e) => setRepoName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && dirty && handleSave()}
-        />
-        <AppBtn variant="primary" onClick={handleSave} disabled={!dirty || saving || !validCombo}>
-          {saving ? '…' : 'Save'}
-        </AppBtn>
-      </div>
-      {!validCombo && (
-        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>
-          owner と repo は両方設定するか、両方空にしてください
-        </div>
-      )}
+      <AppBtn variant="danger" onClick={() => onRemove(repo.path)}>Remove</AppBtn>
     </div>
   );
 }

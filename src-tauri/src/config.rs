@@ -7,8 +7,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub settings: Settings,
     #[serde(default)]
-    pub ai: AiConfig,
-    #[serde(default)]
     pub repositories: Vec<RepoConfig>,
 }
 
@@ -16,13 +14,6 @@ pub struct AppConfig {
 pub struct Settings {
     pub stale_threshold_days: u32,
     pub fetch_on_startup: bool,
-    pub github_keychain_key: String,
-    /// PAT stored as a DPAPI-encrypted, base64-encoded blob on Windows.
-    /// On Windows this is tied to the current user account — not readable on other machines.
-    /// On macOS/Linux the keyring-core crate stores the PAT; this field holds an empty-string
-    /// sentinel (`Some("")`) as a presence marker, and may be `None` for pre-migration installs.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub github_pat_enc: Option<String>,
 }
 
 impl Default for Settings {
@@ -30,30 +21,6 @@ impl Default for Settings {
         Self {
             stale_threshold_days: 14,
             fetch_on_startup: true,
-            github_keychain_key: "arbor_github_pat".to_string(),
-            github_pat_enc: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AiConfig {
-    pub provider: String,
-    pub ollama_url: String,
-    /// Model name to use. Verify with `ollama list` before use.
-    pub model: String,
-    pub enabled: bool,
-    pub timeout_secs: u64,
-}
-
-impl Default for AiConfig {
-    fn default() -> Self {
-        Self {
-            provider: "ollama".to_string(),
-            ollama_url: "http://localhost:11434".to_string(),
-            model: "qwen3.5:latest".to_string(),
-            enabled: true,
-            timeout_secs: 120,
         }
     }
 }
@@ -62,8 +29,6 @@ impl Default for AiConfig {
 pub struct RepoConfig {
     pub path: String,
     pub name: String,
-    pub github_owner: Option<String>,
-    pub github_repo: Option<String>,
     /// Cleanup Wizard で削除対象から除外する branch/ref 名 (Issue #186)。
     #[serde(default)]
     pub protected_branches: Vec<String>,
@@ -122,7 +87,6 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.stale_threshold_days, 14);
         assert!(s.fetch_on_startup);
-        assert_eq!(s.github_keychain_key, "arbor_github_pat");
     }
 
     #[test]
@@ -159,16 +123,6 @@ mod tests {
     }
 
     #[test]
-    fn default_ai_config_values() {
-        let ai = AiConfig::default();
-        assert_eq!(ai.provider, "ollama");
-        assert_eq!(ai.ollama_url, "http://localhost:11434");
-        assert_eq!(ai.model, "qwen3.5:latest");
-        assert!(ai.enabled);
-        assert_eq!(ai.timeout_secs, 120);
-    }
-
-    #[test]
     fn default_app_config_has_no_repositories() {
         let cfg = AppConfig::default();
         assert!(cfg.repositories.is_empty());
@@ -179,10 +133,44 @@ mod tests {
         let original = AppConfig::default();
         let serialized = toml::to_string_pretty(&original).expect("serialize");
         let deserialized: AppConfig = toml::from_str(&serialized).expect("deserialize");
-        assert_eq!(deserialized.ai.model, original.ai.model);
         assert_eq!(
             deserialized.settings.stale_threshold_days,
             original.settings.stale_threshold_days
         );
+    }
+
+    /// GitHub 連携 / AI Insight の削除前に保存された config.toml が、そのまま読み込めること。
+    /// 未知のフィールド（[ai]・PAT・リポジトリごとの GitHub 設定）は無視され、残りは保持される。
+    #[test]
+    fn legacy_config_with_removed_fields_still_loads() {
+        let legacy = r#"
+[settings]
+stale_threshold_days = 30
+fetch_on_startup = false
+github_keychain_key = "arbor_github_pat"
+github_pat_enc = "AQAAANCMnd8BFdERjHoAwE"
+
+[ai]
+provider = "ollama"
+ollama_url = "http://localhost:11434"
+model = "qwen3.5:latest"
+enabled = true
+timeout_secs = 120
+
+[[repositories]]
+path = "/src/arbor"
+name = "arbor"
+github_owner = "scottlz0310"
+github_repo = "arbor"
+protected_branches = ["release"]
+"#;
+
+        let cfg: AppConfig = toml::from_str(legacy).expect("legacy config should load");
+
+        assert_eq!(cfg.settings.stale_threshold_days, 30);
+        assert!(!cfg.settings.fetch_on_startup);
+        assert_eq!(cfg.repositories.len(), 1);
+        assert_eq!(cfg.repositories[0].name, "arbor");
+        assert_eq!(cfg.repositories[0].protected_branches, vec!["release"]);
     }
 }

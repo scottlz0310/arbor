@@ -6,13 +6,9 @@
 
 ## 機能
 
-- **Overview** — 全リポジトリの状態（ahead/behind/modified/stash）をカード形式で俯瞰
-- **Branches** — ブランチ一覧・フィルタ・マージ済みブランチの一括削除
+- **Overview** — 全リポジトリの状態（ahead/behind/modified/stash）をカード形式で俯瞰し、要対応のリポジトリを提示
 - **Cleanup Wizard** — 全登録リポジトリの local branch 削除と remote-tracking ref prune を、実行直前の再検証付きで一括管理
-- **Pull Requests** — GitHub REST API で PR / Issue / CI ステータスを表示
-- **Commit Graph** — d3 製 SVG コミットグラフ
-- **AI Insight** — Ollama (qwen3.5:latest) でリポジトリの優先度・リスクを分析
-- **Settings** — リポジトリ登録・GitHub PAT・AI エンジン設定
+- **Settings** — リポジトリ登録・dsx CLI の確認と更新
 
 ## 前提ツール
 
@@ -22,7 +18,6 @@
 | Bun | `.bun-version` に準拠 | パッケージ管理・フロントエンドツールチェーン実行 |
 | cmake | 最新安定版 | git2 クレートのビルドに必要 |
 | [dsx CLI](https://github.com/scottlz0310/dsx) | 0.2.5+ | git 一括操作 |
-| Ollama | 最新安定版 | AI Insight（任意） |
 
 > **Windows**: MSVC Build Tools または Visual Studio が必要
 >
@@ -70,8 +65,7 @@ Frontend (React 19 + Zustand)
 Rust backend (Tauri commands)
     ├── git2         — 状態取得・可視化・Cleanup の単一リポジトリ操作
     ├── dsx CLI      — repo update など複数リポジトリの一括操作
-    ├── reqwest      — GitHub REST API v3
-    └── reqwest      — Ollama API（AI Insight）
+    └── reqwest      — dsx の最新バージョン確認（GitHub Releases）
 ```
 
 設定ファイルの保存先:
@@ -80,17 +74,6 @@ Rust backend (Tauri commands)
 |----|------|
 | Windows | `%APPDATA%\arbor\config.toml` |
 | macOS | `~/Library/Application Support/arbor/config.toml` |
-
-## AI Insight のセットアップ（任意）
-
-```bash
-# Ollama のインストール後
-ollama pull qwen3.5:latest
-
-# Arbor を起動し Settings › AI Engine で接続確認
-```
-
-Ollama が未起動の場合はルールベース Insight にフォールバックします。
 
 ## ライセンス
 

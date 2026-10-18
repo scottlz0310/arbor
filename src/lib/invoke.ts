@@ -7,23 +7,15 @@
  */
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type {
-  AiInsight,
   AppConfig,
-  BranchInfo,
-  CheckRun,
   CleanupCandidate,
   CleanupExecutionResult,
   CleanupPreview,
-  CommitNode,
-  DeleteResult,
   DsxOutput,
   DsxStatus,
   FetchResult,
-  Issue,
-  PullRequest,
   RepoConfig,
   RepoInfo,
-  StashInfo,
 } from '../types';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -34,21 +26,10 @@ export const getConfig = () =>
 export const addRepository = (args: {
   path: string;
   name: string;
-  githubOwner?: string;
-  githubRepo?: string;
 }) => tauriInvoke<AppConfig>('add_repository', args);
 
 export const removeRepository = (path: string) =>
   tauriInvoke<AppConfig>('remove_repository', { path });
-
-export const updateRepositoryGithub = (args: {
-  path: string;
-  githubOwner: string | null;
-  githubRepo: string | null;
-}) => tauriInvoke<AppConfig>('update_repository_github', args);
-
-export const detectGithubRemote = (path: string) =>
-  tauriInvoke<[string | null, string | null]>('detect_github_remote', { path });
 
 export const scanDirectory = (root: string) =>
   tauriInvoke<string[]>('scan_directory', { root });
@@ -61,14 +42,6 @@ export const updateSettings = (args: {
   fetchOnStartup?: boolean;
 }) => tauriInvoke<AppConfig>('update_settings', args);
 
-export const updateAiConfig = (args: {
-  provider?: string;
-  ollamaUrl?: string;
-  model?: string;
-  enabled?: boolean;
-  timeoutSecs?: number;
-}) => tauriInvoke<AppConfig>('update_ai_config', args);
-
 // ─── Repo / git2 ─────────────────────────────────────────────────────────────
 
 export const listRepositories = () =>
@@ -77,26 +50,8 @@ export const listRepositories = () =>
 export const getRepoStatus = (repoPath: string) =>
   tauriInvoke<RepoInfo>('get_repo_status', { repoPath });
 
-export const getBranches = (repoPath: string) =>
-  tauriInvoke<BranchInfo[]>('get_branches', { repoPath });
-
-export const deleteBranches = (repoPath: string, names: string[]) =>
-  tauriInvoke<DeleteResult[]>('delete_branches', { repoPath, names });
-
 export const fetchAll = (repoPath: string) =>
   tauriInvoke<FetchResult>('fetch_all', { repoPath });
-
-export const getCommitGraph = (repoPath: string, limit?: number) =>
-  tauriInvoke<CommitNode[]>('get_commit_graph', { repoPath, limit });
-
-export const listStashes = (repoPath: string) =>
-  tauriInvoke<StashInfo[]>('list_stashes', { repoPath });
-
-export const applyStash = (repoPath: string, index: number) =>
-  tauriInvoke<void>('apply_stash', { repoPath, index });
-
-export const dropStash = (repoPath: string, index: number) =>
-  tauriInvoke<void>('drop_stash', { repoPath, index });
 
 // ─── Cleanup Wizard ─────────────────────────────────────────────────────────
 
@@ -105,32 +60,6 @@ export const cleanupPreview = () =>
 
 export const cleanupExecute = (candidates: CleanupCandidate[]) =>
   tauriInvoke<CleanupExecutionResult>('cleanup_execute', { request: { candidates } });
-
-// ─── GitHub PAT ──────────────────────────────────────────────────────────────
-
-export const setGithubPat = (pat: string) =>
-  tauriInvoke<void>('set_github_pat', { pat });
-
-/** Returns true if a PAT is stored. The secret value never crosses the IPC boundary. */
-export const hasGithubPat = () =>
-  tauriInvoke<boolean>('has_github_pat');
-
-export const deleteGithubPat = () =>
-  tauriInvoke<void>('delete_github_pat');
-
-// ─── GitHub API ──────────────────────────────────────────────────────────────
-
-/** `state`: "open" | "closed" | "all" (default: "open") */
-export const getPullRequests = (owner: string, repo: string, state?: string) =>
-  tauriInvoke<PullRequest[]>('get_pull_requests', { owner, repo, state });
-
-/** `state`: "open" | "closed" | "all" (default: "open"). PRs are excluded. */
-export const getIssues = (owner: string, repo: string, state?: string) =>
-  tauriInvoke<Issue[]>('get_issues', { owner, repo, state });
-
-/** Returns check runs for the given branch name or commit SHA. */
-export const getCheckRuns = (owner: string, repo: string, gitRef: string) =>
-  tauriInvoke<CheckRun[]>('get_check_runs', { owner, repo, gitRef });
 
 // ─── dsx ─────────────────────────────────────────────────────────────────────
 
@@ -151,29 +80,3 @@ export const sysUpdate = () =>
 
 export const dsxSelfUpdate = () =>
   tauriInvoke<DsxOutput>('dsx_self_update');
-
-// ─── AI / Ollama ─────────────────────────────────────────────────────────────
-
-/** Returns true if Ollama is running and reachable. Never throws; returns false on failure. */
-export const ollamaAvailable = () =>
-  tauriInvoke<boolean>('ollama_available');
-
-/**
- * Tests connectivity to the given Ollama URL without saving it.
- * Use this in Settings to validate form input before saving.
- * Never throws; returns false on failure.
- */
-export const testAiConnection = (ollamaUrl: string) =>
-  tauriInvoke<boolean>('test_ai_connection', { ollamaUrl });
-
-/** Generates AI insights for the given repositories. Throws on Ollama error — caller should fall back to rule-based engine. */
-export const getAiInsights = (repos: RepoInfo[]) =>
-  tauriInvoke<AiInsight[]>('get_ai_insights', { repos });
-
-/**
- * Generates AI insights with stale-while-revalidate caching.
- * On cache hit: returns the cached value immediately and emits "ai_insights_updated" when a fresh value is ready.
- * On cache miss: fetches synchronously and returns the result.
- */
-export const getAiInsightsCached = (repos: RepoInfo[]) =>
-  tauriInvoke<AiInsight[]>('get_ai_insights_cached', { repos });

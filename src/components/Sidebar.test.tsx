@@ -12,7 +12,7 @@ function makeRepo(path: string, name: string) {
     current_branch: 'main',
     ahead: 0, behind: 0,
     modified_count: 0, untracked_count: 0, stash_count: 0,
-    github_owner: null, github_repo: null, last_fetched_at: null,
+    last_fetched_at: null,
   };
 }
 
@@ -30,16 +30,16 @@ describe('Sidebar — ナビゲーション ARIA', () => {
   });
 
   it('アクティブなビューのボタンに aria-current="page" が付与されている', () => {
-    act(() => { useUiStore.setState({ activeView: 'branches' }); });
+    act(() => { useUiStore.setState({ activeView: 'cleanup' }); });
     render(<Sidebar />);
-    const activeBtn = screen.getByRole('button', { name: 'Branches' });
+    const activeBtn = screen.getByRole('button', { name: 'Cleanup' });
     expect(activeBtn).toHaveAttribute('aria-current', 'page');
   });
 
   it('非アクティブなビューのボタンには aria-current が付与されない', () => {
     act(() => { useUiStore.setState({ activeView: 'overview' }); });
     render(<Sidebar />);
-    const inactiveBtn = screen.getByRole('button', { name: 'Branches' });
+    const inactiveBtn = screen.getByRole('button', { name: 'Cleanup' });
     expect(inactiveBtn).not.toHaveAttribute('aria-current');
   });
 });

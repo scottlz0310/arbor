@@ -972,8 +972,6 @@ mod tests {
                 .map(|(dir, name)| RepoConfig {
                     path: dir.path_str().to_string(),
                     name: (*name).to_string(),
-                    github_owner: None,
-                    github_repo: None,
                     protected_branches: Vec::new(),
                 })
                 .collect(),
