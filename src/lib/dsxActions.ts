@@ -37,7 +37,7 @@ export function dailyRefreshBlockReason(
   if (!dsx || !workspace) return '状態を確認しています';
   if (!dsx.available) return 'dsx が見つかりません';
   if (!dsx.supports_run_root) {
-    return `Daily Refresh には dsx v0.11.0 以上が必要です（現在 ${shortVersion(dsx.version) ?? '不明'}）。Settings から dsx self-update を実行してください`;
+    return `Daily Refresh には dsx v0.11.0 以上が必要です（現在 ${shortVersion(dsx.version) ?? '不明'}）。dsx Tools タブから self-update を実行してください`;
   }
   if (workspace.root === null) return 'workspace root が未設定です。Settings で設定してください';
   if (workspace.root_error !== null) return workspace.root_error;

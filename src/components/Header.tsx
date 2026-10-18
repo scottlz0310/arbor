@@ -28,7 +28,7 @@ interface Pill {
 function dsxPill(dsx: DsxStatus | null): Pill {
   if (!dsx) return { label: 'dsx: 確認中', tone: 'neutral', title: 'dsx を確認しています' };
   if (!dsx.available) {
-    return { label: 'dsx: 未検出', tone: 'error', title: 'dsx が PATH にありません。Settings を確認してください' };
+    return { label: 'dsx: 未検出', tone: 'error', title: 'dsx が PATH にありません。dsx Tools タブでインストール手順を確認してください' };
   }
   const version = shortVersion(dsx.version) ?? '版不明';
   return dsx.supports_run_root

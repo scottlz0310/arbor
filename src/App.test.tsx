@@ -96,4 +96,15 @@ describe('App — 起動時の画面', () => {
     expect(screen.getByRole('tablist')).toBeTruthy();
     expect(screen.getByText(/Settings で workspace root を設定/)).toBeTruthy();
   });
+
+  it('dsx が見つからないときは、dsx Tools タブへ誘導する（インストール手順はそこにある）', async () => {
+    mockListRepositories.mockResolvedValue([repo]);
+    mockDsxCheck.mockResolvedValue({ available: false, version: null, path: null, supports_run_root: false });
+
+    render(<App />);
+
+    await waitFor(() => expect(useUiStore.getState().activeView).toBe('tools'));
+    expect(await screen.findByText(/go install github.com\/scottlz0310\/dsx@latest/)).toBeTruthy();
+    expect(useUiStore.getState().toasts.some((t) => t.message.includes('dsx Tools タブ'))).toBe(true);
+  });
 });

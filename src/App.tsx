@@ -29,8 +29,8 @@ export default function App() {
     useEnvStore.getState().refresh().then(() => {
       if (cancelled) return;
       if (!useEnvStore.getState().dsx?.available) {
-        navigate('settings');
-        addToast('dsx CLI が見つかりません。Settings からインストール手順を確認してください。', 'error');
+        navigate('tools');
+        addToast('dsx CLI が見つかりません。dsx Tools タブからインストール手順を確認してください。', 'error');
       }
     });
 

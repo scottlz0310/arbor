@@ -123,6 +123,14 @@ describe('Header — 状態の pill', () => {
 
     expect(screen.getByText('Root: 読み取れません (/home/src)').getAttribute('title')).toBe(reason);
   });
+
+  it('dsx が無いときは、pill のツールチップで dsx Tools タブへ案内する', () => {
+    setEnv(dsxMissing, 'unavailable', workspaceOk);
+
+    render(<Header />);
+
+    expect(screen.getByText('dsx: 未検出').getAttribute('title')).toMatch(/dsx Tools タブ/);
+  });
 });
 
 describe('Header — Daily Refresh', () => {
