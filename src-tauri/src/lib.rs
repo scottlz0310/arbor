@@ -10,13 +10,21 @@ use commands::{
     },
     dsx::{dsx_check, dsx_latest_version, dsx_self_update, env_inject, repo_update, sys_update},
     repo::{fetch_all, get_repo_status, list_repositories},
+    runner::{cancel_run, RunnerState, TauriSink},
 };
+use std::sync::Arc;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            let sink = Arc::new(TauriSink::new(app.handle().clone()));
+            app.manage(RunnerState::new(sink));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // Config
             get_config,
@@ -39,6 +47,7 @@ pub fn run() {
             env_inject,
             sys_update,
             dsx_self_update,
+            cancel_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Arbor");

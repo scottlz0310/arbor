@@ -22,6 +22,33 @@ export interface FetchResult {
   updated_refs: string[];
 }
 
+/** Mirror of the `process_started` event payload (commands/runner.rs). */
+export interface ProcessStarted {
+  runId: number;
+  label: string;
+  argv: string[];
+  /** Unix epoch milliseconds. */
+  startedAt: number;
+}
+
+/** Mirror of the `process_output` event payload. */
+export interface ProcessOutput {
+  runId: number;
+  stream: 'stdout' | 'stderr';
+  text: string;
+  /** true replaces the previous in-progress line (a line that ended with `\r`). */
+  overwrite: boolean;
+}
+
+/** Mirror of the `process_finished` event payload. */
+export interface ProcessFinished {
+  runId: number;
+  /** null when the process ended without an exit code (e.g. killed). */
+  exitCode: number | null;
+  durationMs: number;
+  cancelled: boolean;
+}
+
 export interface DsxStatus {
   available: boolean;
   version: string | null;

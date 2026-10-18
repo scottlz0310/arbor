@@ -5,6 +5,17 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### feat
+
+- **外部コマンドの実行基盤を追加**（#294 PR-B-1）。`commands/runner.rs` が dsx の実行を担い、`dsx_progress` イベントを `process_started` / `process_output` / `process_finished` に置き換えた
+  - stdout に加えて stderr も行単位で逐次送信する（従来は stderr を終了時にまとめて返していた）
+  - `\r` で上書きされる進捗行を区別して送る（`overwrite`）。不正な UTF-8 は置換文字にして読み取りを続ける（従来は不正なバイトで実行全体が失敗していた）
+  - 同時に実行できるコマンドは 1 件。実行中の 2 件目は起動せずエラーにする
+  - `cancel_run` を追加。Windows は Job Object、Unix はプロセスグループで、子孫プロセスまで強制終了する。実行が終わった時点で残った子孫プロセスも止める
+  - Windows のリリースビルドで、dsx 実行時にコンソール窓が出ないようにした（`CREATE_NO_WINDOW`）
+  - 標準入力を閉じて起動する（対話入力を待つコマンドが止まらず、失敗するようにする）
+- 依存: Windows に `windows-sys`（Job Object）、Unix に `libc` を追加
+
 ### refactor
 
 - **Arbor のピボット（#294）の第一段階: スコープ外の機能を削除**。dsx の実行・表示基盤 兼 開発環境リフレッシュナーへ向けて、次の画面とその裏側（Rust コマンド・モデル・テスト・依存）を削除

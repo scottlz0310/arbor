@@ -93,7 +93,8 @@ Rust backend (Tauri commands)
 | `config.rs` | `AppConfig` の読み書き。`dirs::config_dir()` で OS ごとのパスを解決 |
 | `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories`, `get_repo_status`）と `fetch_all` |
 | `commands/config_cmd.rs` | config.toml CRUD + `scan_directory`（再帰的 git リポジトリ検索） |
-| `commands/dsx.rs` | dsx CLI ラッパー。長時間処理は `app_handle.emit("dsx_progress", line)` でフロントにストリーム送信 |
+| `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する |
+| `commands/runner.rs` | 外部コマンドの実行基盤。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
 
 新しい Tauri コマンドを追加したら `lib.rs` の `invoke_handler!` に登録する。
 
@@ -110,7 +111,7 @@ Rust backend (Tauri commands)
 | `components/` | 共通 UI（Sidebar, AppBar, ConfirmDialog, Toast） |
 
 **データフロー:** Rust コマンド → `lib/invoke.ts` → Zustand store → React コンポーネント
-**イベント:** Rust `emit("dsx_progress", line)` → `App.tsx` の `listen()` → `uiStore.appendDsxLine()`
+**イベント:** Rust `runner.rs` が `process_started` / `process_output` / `process_finished` を emit → `App.tsx` の `listen()` → `uiStore.appendDsxLine()`（ペイロードは `camelCase`。型は `types/index.ts` の `Process*`）
 
 ### 設定ファイル
 
@@ -122,11 +123,11 @@ Rust backend (Tauri commands)
 
 | Tauri コマンド | バックエンド処理 | 備考 |
 |---------------|-----------------|------|
-| `repo_update` | `dsx repo update --no-tui --jobs 4` | stdout を `dsx_progress` イベントでストリーム |
+| `repo_update` | `dsx repo update --no-tui --jobs 4` | stdout / stderr を `process_output` イベントでストリーム |
 | `cleanup_preview` | git2 | 登録済み全リポジトリの削除候補を読み取り専用で列挙 |
 | `cleanup_execute` | git2 | 選択候補を再検証して local branch 削除または remote-tracking ref prune を実行 |
 
-`repo_update` は `run_dsx_with_events` を使いストリーミングする。Cleanup コマンドは
+`repo_update` などの dsx コマンドは `runner` 経由でストリーミングする。Cleanup コマンドは
 `commands/cleanup.rs` で実装し、dsx を呼び出さない。
 
 ### 認証の制約（Phase 1）
