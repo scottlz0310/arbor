@@ -7,12 +7,17 @@ import { generateInsights } from '../lib/ruleEngine';
 import type { Insight, RepoInfo } from '../types';
 
 function statusBadge(repo: RepoInfo) {
+  if (repo.is_detached)
+    return { label: '⎇ detached', bg: 'var(--amber-bg)', color: 'var(--amber)' };
   if (repo.ahead > 0 && repo.behind > 0)
     return { label: '⇕ diverged', bg: 'var(--red-bg)',    color: 'var(--red)' };
   if (repo.ahead > 0)
     return { label: '↑ ahead',    bg: 'var(--green-bg)',   color: 'var(--green)' };
   if (repo.behind > 0)
     return { label: '↓ behind',   bg: 'var(--purple-bg)',  color: 'var(--purple)' };
+  // upstream が無いと ahead / behind は 0 になり、「同期済み」と区別できないため、clean とは別に示す。
+  if (!repo.has_upstream)
+    return { label: '○ no upstream', bg: '#1e2336', color: 'var(--text3)' };
   return   { label: '✓ clean',    bg: '#1e2336',           color: 'var(--text3)' };
 }
 

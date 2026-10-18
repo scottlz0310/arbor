@@ -90,9 +90,10 @@ Rust backend (Tauri commands)
 |---------|------|
 | `lib.rs` | Tauri Builder + 全コマンドの `invoke_handler` 登録 |
 | `models.rs` | `RepoInfo` / `BranchInfo` / `CommitNode` / `DsxOutput` 等の共有データ型 |
-| `config.rs` | `AppConfig` の読み書き。`dirs::config_dir()` で OS ごとのパスを解決 |
-| `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories`, `get_repo_status`）と `fetch_all` |
-| `commands/config_cmd.rs` | config.toml CRUD + `scan_directory`（再帰的 git リポジトリ検索） |
+| `config.rs` | `AppConfig` の読み書き。`dirs::config_dir()` で OS ごとのパスを解決。未設定の `workspace.root` は、あれば `~/src` で補う |
+| `workspace.rs` | 管理対象リポジトリの決定。`workspace.root` 直下（深さ 1。dsx の `repo.root` と同じ規則）の自動検出と、手動登録の和集合（`effective_repos`）。protected branches は、全体の既定（main / master / develop / dev）に、手動登録の設定を追加して解決する |
+| `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories` は実効リポジトリを最大 8 並列でスキャン、`get_repo_status`）と `fetch_all` |
+| `commands/config_cmd.rs` | config.toml CRUD（手動登録の追加・削除、`update_settings`、存在しない手動登録の検出） |
 | `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する |
 | `commands/runner.rs` | 外部コマンドの実行基盤。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
 
@@ -121,13 +122,15 @@ Rust backend (Tauri commands)
 - **実行時設定**: `dirs::config_dir()/arbor/config.toml`
   - Windows: `%APPDATA%\arbor\config.toml`
   - macOS: `~/Library/Application Support/arbor/config.toml`
+- **リポジトリの範囲**: `workspace.root`（既定 `~/src`。空文字列で自動検出を無効化）の直下を自動検出し、`repositories`（手動登録）を足す。手動登録は root の外のリポジトリの追加と、名前・protected branches の追加に使う。
+- **protected branches**: `settings.protected_branches`（既定 main / master / develop / dev）に、手動登録の `protected_branches` を追加して Cleanup に適用する
 
 ### 主要 Tauri コマンドマッピング
 
 | Tauri コマンド | バックエンド処理 | 備考 |
 |---------------|-----------------|------|
 | `repo_update` | `dsx repo update --no-tui --jobs 4` | stdout / stderr を `process_output` イベントでストリーム |
-| `cleanup_preview` | git2 | 登録済み全リポジトリの削除候補を読み取り専用で列挙 |
+| `cleanup_preview` | git2 | 管理対象（自動検出 + 手動登録）の全リポジトリの削除候補を読み取り専用で列挙 |
 | `cleanup_execute` | git2 | 選択候補を再検証して local branch 削除または remote-tracking ref prune を実行 |
 
 `repo_update` などの dsx コマンドは `runner` 経由でストリーミングする。Cleanup コマンドは

@@ -4,6 +4,7 @@ use crate::models::{
     CleanupExecutionResult, CleanupExecutionStatus, CleanupOperation, CleanupPreview,
     RemoteFetchError, RepoCleanupPreview, SafetyBlock, UpstreamState,
 };
+use crate::workspace::effective_repos;
 use git2::{BranchType, Direction, Repository};
 use std::collections::{HashMap, HashSet};
 
@@ -18,8 +19,12 @@ pub fn cleanup_preview() -> Result<CleanupPreview, String> {
     let config = load_config()?;
     let now_ts = unix_timestamp()?;
 
-    let repos = config
-        .repositories
+    let (managed, root_error) = effective_repos(&config);
+    if let Some(error) = root_error {
+        eprintln!("Warning: {error}");
+    }
+
+    let repos = managed
         .iter()
         .map(|rc| {
             let params = PreviewParams {
@@ -65,6 +70,7 @@ fn execute_cleanup(
 
     let mut results = vec![None; candidates.len()];
     let now_ts = unix_timestamp()?;
+    let (managed, _) = effective_repos(config);
 
     for repo_path in repo_order {
         let mut requested = grouped
@@ -73,16 +79,12 @@ fn execute_cleanup(
         // local branch が stale remote-tracking ref を upstream に持つ場合でも、
         // この batch 自身の prune で upstream 状態を先に変えない。
         requested.sort_by_key(|(_, candidate)| candidate.operation as u8);
-        let Some(repo_config) = config
-            .repositories
-            .iter()
-            .find(|repo| repo.path == repo_path)
-        else {
+        let Some(repo_config) = managed.iter().find(|repo| repo.path == repo_path) else {
             for (index, candidate) in requested {
                 results[index] = Some(item_result(
                     &candidate,
                     CleanupExecutionStatus::Skipped,
-                    Some("repository is no longer registered".to_string()),
+                    Some("repository is no longer managed".to_string()),
                     None,
                 ));
             }
@@ -1479,7 +1481,7 @@ mod tests {
     #[test]
     fn execute_skips_invalid_batch_items() {
         for (case, expected_reason) in [
-            ("unregistered", "repository is no longer registered"),
+            ("unregistered", "repository is no longer managed"),
             ("duplicate", "duplicate cleanup target"),
         ] {
             let dir = init_repo_with_commit("base");
@@ -1529,6 +1531,24 @@ mod tests {
             let repo = git2::Repository::open(dir.path_str()).expect("open");
             assert!(repo.find_branch("feature", BranchType::Local).is_ok());
         }
+    }
+
+    #[test]
+    fn execute_rejects_branch_protected_by_the_global_setting() {
+        let dir = init_repo_with_commit("base");
+        let candidate = merged_feature_candidate(&dir);
+        let mut config = config_for_repos(&[(&dir, "repo")]);
+        config.settings.protected_branches = vec!["feature".to_string()];
+
+        let result = execute_cleanup(&config, vec![candidate]).expect("execute");
+
+        assert_eq!(result.items[0].status, CleanupExecutionStatus::Skipped);
+        assert!(result.items[0]
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("ProtectedBranch")));
+        let repo = git2::Repository::open(dir.path_str()).expect("open");
+        assert!(repo.find_branch("feature", BranchType::Local).is_ok());
     }
 
     #[test]

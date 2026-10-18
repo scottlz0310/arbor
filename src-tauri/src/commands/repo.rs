@@ -1,56 +1,107 @@
-use crate::config::{load_config, RepoConfig};
-use crate::models::{FetchResult, RepoInfo};
+use crate::config::load_config;
+use crate::models::{FetchResult, RepoInfo, RepoSource};
+use crate::workspace::{effective_repos, EffectiveRepo};
 use git2::{Repository, StatusOptions};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
-// ─── apply_repo_cfg ──────────────────────────────────────────────────────────
+/// 同時に走らせるスキャンの上限。status の取得は I/O 主体で、リポジトリが多いほど逐次だと遅い。
+const MAX_SCAN_THREADS: usize = 8;
 
-/// Overlays the display `name` from a registered `RepoConfig` onto a live
+// ─── apply_effective ─────────────────────────────────────────────────────────
+
+/// Overlays the display `name` and `source` from the resolved repository list onto a live
 /// `RepoInfo`. Used by both `list_repositories` and `get_repo_status` so the two
 /// code paths cannot drift.
-fn apply_repo_cfg(info: &mut RepoInfo, cfg: &RepoConfig) {
-    info.name = cfg.name.clone();
+fn apply_effective(info: &mut RepoInfo, repo: &EffectiveRepo) {
+    info.name.clone_from(&repo.name);
+    info.source = repo.source;
 }
 
 // ─── list_repositories ───────────────────────────────────────────────────────
 
-#[tauri::command]
-pub fn list_repositories() -> Result<Vec<RepoInfo>, String> {
-    let config = load_config()?;
-    let mut result = Vec::new();
-    for repo_cfg in &config.repositories {
-        match repo_info_for_path(&repo_cfg.path) {
-            Ok(mut info) => {
-                apply_repo_cfg(&mut info, repo_cfg);
-                result.push(info);
-            }
-            Err(e) => {
-                // Return a degraded entry so the sidebar still shows the repo.
-                result.push(RepoInfo {
-                    path: repo_cfg.path.clone(),
-                    name: repo_cfg.name.clone(),
-                    current_branch: "unknown".to_string(),
-                    ahead: 0,
-                    behind: 0,
-                    modified_count: 0,
-                    untracked_count: 0,
-                    stash_count: 0,
-                    last_fetched_at: None,
-                });
-                eprintln!("Warning: could not open repo {}: {e}", repo_cfg.path);
+/// Scans one repository. An unreadable repository becomes a degraded entry so the
+/// sidebar still shows it.
+fn scan_one(repo: &EffectiveRepo) -> RepoInfo {
+    match repo_info_for_path(&repo.path) {
+        Ok(mut info) => {
+            apply_effective(&mut info, repo);
+            info
+        }
+        Err(e) => {
+            eprintln!("Warning: could not open repo {}: {e}", repo.path);
+            RepoInfo {
+                path: repo.path.clone(),
+                name: repo.name.clone(),
+                current_branch: "unknown".to_string(),
+                is_detached: false,
+                has_upstream: false,
+                source: repo.source,
+                ahead: 0,
+                behind: 0,
+                modified_count: 0,
+                untracked_count: 0,
+                stash_count: 0,
+                last_fetched_at: None,
             }
         }
     }
-    Ok(result)
+}
+
+/// Scans repositories in parallel and returns the results in input order.
+fn scan_repositories(repos: &[EffectiveRepo]) -> Vec<RepoInfo> {
+    let results: Vec<Mutex<Option<RepoInfo>>> = repos.iter().map(|_| Mutex::new(None)).collect();
+    let next = AtomicUsize::new(0);
+    let workers = repos
+        .len()
+        .min(MAX_SCAN_THREADS)
+        .min(std::thread::available_parallelism().map_or(4, std::num::NonZero::get));
+
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| loop {
+                let index = next.fetch_add(1, Ordering::Relaxed);
+                let Some(repo) = repos.get(index) else {
+                    break;
+                };
+                let info = scan_one(repo);
+                *results[index]
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(info);
+            });
+        }
+    });
+
+    results
+        .into_iter()
+        .filter_map(|slot| {
+            slot.into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        })
+        .collect()
+}
+
+/// Lists every managed repository (workspace root + manual registrations) with its local status.
+/// Local only: no network access. Runs on a worker thread so a large workspace does not block the UI.
+#[tauri::command(async)]
+pub fn list_repositories() -> Result<Vec<RepoInfo>, String> {
+    let config = load_config()?;
+    let (repos, root_error) = effective_repos(&config);
+    if let Some(error) = root_error {
+        eprintln!("Warning: {error}");
+    }
+    Ok(scan_repositories(&repos))
 }
 
 // ─── get_repo_status ─────────────────────────────────────────────────────────
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_repo_status(repo_path: String) -> Result<RepoInfo, String> {
     let config = load_config()?;
     let mut info = repo_info_for_path(&repo_path)?;
-    if let Some(repo_cfg) = config.repositories.iter().find(|r| r.path == repo_path) {
-        apply_repo_cfg(&mut info, repo_cfg);
+    let (repos, _) = effective_repos(&config);
+    if let Some(repo) = repos.iter().find(|r| r.path == repo_path) {
+        apply_effective(&mut info, repo);
     }
     Ok(info)
 }
@@ -94,12 +145,25 @@ pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
 fn repo_info_for_path(path: &str) -> Result<RepoInfo, String> {
     let mut repo = Repository::open(path).map_err(|e| e.to_string())?;
 
+    // HEAD がブランチを指していない。未生成（初回コミット前）の HEAD は detached ではない。
+    let is_detached = repo.head_detached().unwrap_or(false);
+
     // Current branch name.
-    let current_branch = repo
+    let current_branch = if is_detached {
+        "HEAD (detached)".to_string()
+    } else {
+        repo.head()
+            .ok()
+            .and_then(|h| h.shorthand().ok().map(|s| s.to_string()))
+            .unwrap_or_else(|| "HEAD (detached)".to_string())
+    };
+
+    // 現在のブランチに upstream があるか。無いと ahead / behind は常に 0 で、「同期済み」と区別できない。
+    let has_upstream = repo
         .head()
         .ok()
-        .and_then(|h| h.shorthand().ok().map(|s| s.to_string()))
-        .unwrap_or_else(|| "HEAD (detached)".to_string());
+        .filter(git2::Reference::is_branch)
+        .is_some_and(|head| git2::Branch::wrap(head).upstream().is_ok());
 
     // Ahead / behind for the current branch vs its upstream.
     let (ahead, behind) = current_ahead_behind(&repo);
@@ -144,6 +208,9 @@ fn repo_info_for_path(path: &str) -> Result<RepoInfo, String> {
         path: path.to_string(),
         name,
         current_branch,
+        is_detached,
+        has_upstream,
+        source: RepoSource::Manual,
         ahead,
         behind,
         modified_count,
@@ -179,9 +246,9 @@ fn upstream_ahead_behind(repo: &Repository, branch: &git2::Branch) -> (u32, u32)
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_repo_cfg, fetch_all, repo_info_for_path};
-    use crate::config::RepoConfig;
-    use crate::models::RepoInfo;
+    use super::{apply_effective, fetch_all, repo_info_for_path, scan_repositories};
+    use crate::models::{RepoInfo, RepoSource};
+    use crate::workspace::EffectiveRepo;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -236,15 +303,16 @@ mod tests {
         dir
     }
 
-    // ── apply_repo_cfg ────────────────────────────────────────────────────────
-
-    // ── apply_repo_cfg ────────────────────────────────────────────────────────
+    // ── apply_effective ───────────────────────────────────────────────────────
 
     fn stub_info() -> RepoInfo {
         RepoInfo {
             path: "/tmp/repo".to_string(),
             name: "derived-name".to_string(),
             current_branch: "main".to_string(),
+            is_detached: false,
+            has_upstream: true,
+            source: RepoSource::Manual,
             ahead: 0,
             behind: 0,
             modified_count: 0,
@@ -254,31 +322,133 @@ mod tests {
         }
     }
 
-    fn stub_cfg() -> RepoConfig {
-        RepoConfig {
-            path: "/tmp/repo".to_string(),
-            name: "configured-name".to_string(),
+    fn effective(path: &str, name: &str, source: RepoSource) -> EffectiveRepo {
+        EffectiveRepo {
+            path: path.to_string(),
+            name: name.to_string(),
             protected_branches: Vec::new(),
+            source,
         }
     }
 
     #[test]
-    fn apply_repo_cfg_sets_name() {
+    fn apply_effective_sets_name_and_source() {
         let mut info = stub_info();
-        apply_repo_cfg(&mut info, &stub_cfg());
+        apply_effective(
+            &mut info,
+            &effective("/tmp/repo", "configured-name", RepoSource::Workspace),
+        );
         assert_eq!(info.name, "configured-name");
+        assert_eq!(info.source, RepoSource::Workspace);
     }
 
     #[test]
-    fn apply_repo_cfg_does_not_touch_git_fields() {
+    fn apply_effective_does_not_touch_git_fields() {
         let mut info = stub_info();
         info.ahead = 3;
         info.behind = 1;
         info.modified_count = 2;
-        apply_repo_cfg(&mut info, &stub_cfg());
+        apply_effective(
+            &mut info,
+            &effective("/tmp/repo", "x", RepoSource::Workspace),
+        );
         assert_eq!(info.ahead, 3);
         assert_eq!(info.behind, 1);
         assert_eq!(info.modified_count, 2);
+    }
+
+    // ── detached / upstream ───────────────────────────────────────────────────
+
+    #[test]
+    fn repo_info_for_path_flags_branch_without_upstream() {
+        let repo = init_repo_with_commit("init");
+
+        let info = repo_info_for_path(repo.path_str()).expect("repo info");
+
+        assert!(!info.is_detached);
+        assert!(
+            !info.has_upstream,
+            "clone ではない repo は upstream を持たない"
+        );
+        assert_eq!((info.ahead, info.behind), (0, 0));
+    }
+
+    #[test]
+    fn repo_info_for_path_flags_branch_with_upstream() {
+        let source = init_repo_with_commit("origin commit");
+        let clone_dir = TempDir::new("clone-upstream");
+        git2::Repository::clone(source.path_str(), &clone_dir.path).expect("clone");
+
+        let info = repo_info_for_path(clone_dir.path_str()).expect("repo info");
+
+        assert!(info.has_upstream);
+        assert!(!info.is_detached);
+    }
+
+    #[test]
+    fn repo_info_for_path_flags_detached_head() {
+        let dir = init_repo_with_commit("init");
+        let repo = git2::Repository::open(dir.path_str()).expect("open");
+        let head = repo
+            .head()
+            .expect("head")
+            .peel_to_commit()
+            .expect("commit")
+            .id();
+        repo.set_head_detached(head).expect("detach");
+        drop(repo);
+
+        let info = repo_info_for_path(dir.path_str()).expect("repo info");
+
+        assert!(info.is_detached);
+        assert_eq!(info.current_branch, "HEAD (detached)");
+        assert!(!info.has_upstream);
+    }
+
+    // ── scan_repositories ─────────────────────────────────────────────────────
+
+    #[test]
+    fn scan_repositories_keeps_input_order_across_threads() {
+        let dirs: Vec<TempDir> = (0..12).map(|_| init_repo_with_commit("init")).collect();
+        let repos: Vec<EffectiveRepo> = dirs
+            .iter()
+            .enumerate()
+            .map(|(i, d)| effective(d.path_str(), &format!("repo-{i:02}"), RepoSource::Workspace))
+            .collect();
+
+        let infos = scan_repositories(&repos);
+
+        let names: Vec<_> = infos.iter().map(|i| i.name.as_str()).collect();
+        let expected: Vec<_> = (0..12).map(|i| format!("repo-{i:02}")).collect();
+        assert_eq!(names, expected);
+        assert!(infos
+            .iter()
+            .all(|i| i.source == RepoSource::Workspace && i.current_branch == "main"));
+    }
+
+    #[test]
+    fn scan_repositories_returns_a_degraded_entry_for_an_unreadable_repository() {
+        let good = init_repo_with_commit("init");
+        let missing = TempDir::new("scan-missing").path.join("gone");
+        let repos = vec![
+            effective(&missing.to_string_lossy(), "broken", RepoSource::Manual),
+            effective(good.path_str(), "good", RepoSource::Workspace),
+        ];
+
+        let infos = scan_repositories(&repos);
+
+        assert_eq!(infos.len(), 2);
+        assert_eq!(
+            (infos[0].name.as_str(), infos[0].current_branch.as_str()),
+            ("broken", "unknown")
+        );
+        assert_eq!(infos[0].source, RepoSource::Manual);
+        assert_eq!(infos[1].current_branch, "main");
+    }
+
+    #[test]
+    fn scan_repositories_handles_an_empty_list() {
+        assert!(scan_repositories(&[]).is_empty());
     }
 
     #[test]

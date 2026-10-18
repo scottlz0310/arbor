@@ -12,7 +12,7 @@ function makeRepo(path: string, name: string) {
     current_branch: 'main',
     ahead: 0, behind: 0,
     modified_count: 0, untracked_count: 0, stash_count: 0,
-    last_fetched_at: null,
+    is_detached: false, has_upstream: true, source: 'workspace' as const, last_fetched_at: null,
   };
 }
 

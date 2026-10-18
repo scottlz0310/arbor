@@ -7,6 +7,12 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
+- **Workspace スキャナー**（#294 PR-C-1）。`workspace.root`（既定 `~/src`）の直下を自動で検出し、一覧・Cleanup の対象にする。dsx の `repo.root` と同じ規則（root 自身が git ならそれも、直下の子ディレクトリのみ）なので、dsx の実行対象と常に一致する
+  - 手動登録（`repositories`）は残し、root の外のリポジトリの追加と、名前・protected branches の追加に使う。Settings の「Scan Folder」（深さ 4 の再帰検出）は、Workspace の root 設定に置き換えた
+  - 状態に `is_detached`・`has_upstream`・`source`（workspace / manual）を追加。Overview のカードに `detached` と `no upstream`（upstream が無く、ahead / behind が 0 になるため「同期済み」と区別する）を表示する
+  - `list_repositories` を最大 8 並列のスキャンにし、UI スレッドを塞がないようにした（実測: 26 リポジトリを約 0.5 秒）
+  - protected branches に全体の既定（main / master / develop / dev）を追加。手動登録の設定は、これに追加される
+  - `root` が存在しない・読めない場合は、手動登録だけを一覧にし、警告をログに出す
 - **実行ログコンソールを追加**（#294 PR-B-2）。App の下部に開閉できるドックとして常駐し、dsx の出力を `process_*` イベントでリアルタイムに表示する
   - stdout / stderr / システム行を色分けして表示し、ANSI の前景色・太字・薄字を解釈する（React の要素として描画し、HTML としては解釈しない）
   - `\r` で上書きされる進捗行は、1 行のまま更新する

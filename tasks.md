@@ -12,7 +12,9 @@
 - [x] PR-B: プロセス実行基盤 + Live Log Console
   - [x] B-1: バックエンド（`runner.rs`、`process_*` イベント、`cancel_run`、Job Object）
   - [x] B-2: コンソール UI（`consoleStore`、ANSI、`LogConsole`、下部ドック、Overview の埋め込みログの置換、キャンセル UI）
-- [ ] PR-C: Workspace scanner（`workspace.roots`、状態スキャン）
+- [ ] PR-C: Workspace scanner
+  - [x] C-1: スキャン（`workspace.root`（1 つ）、自動検出、状態フラグ、protected branches の既定、一覧・cleanup の切り替え）
+  - [ ] C-2: fetch（runner の job 化。git2 fetch を並列実行し、進捗をコンソールへ。キャンセル対応）
 - [ ] PR-D: Refresher Dashboard
 - [ ] PR-E: 実機検証・ドキュメント更新
 

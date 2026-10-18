@@ -7,13 +7,25 @@ pub struct AppConfig {
     #[serde(default)]
     pub settings: Settings,
     #[serde(default)]
+    pub workspace: Workspace,
+    #[serde(default)]
     pub repositories: Vec<RepoConfig>,
+}
+
+/// Cleanup の削除対象から常に除外するブランチ（branch-cleanup-chk と同じ既定）。
+const DEFAULT_PROTECTED_BRANCHES: [&str; 4] = ["main", "master", "develop", "dev"];
+
+fn default_protected_branches() -> Vec<String> {
+    DEFAULT_PROTECTED_BRANCHES.map(String::from).to_vec()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub stale_threshold_days: u32,
     pub fetch_on_startup: bool,
+    /// 全リポジトリ共通の protected branches。リポジトリごとの設定（`RepoConfig`）は、これに追加される。
+    #[serde(default = "default_protected_branches")]
+    pub protected_branches: Vec<String>,
 }
 
 impl Default for Settings {
@@ -21,10 +33,21 @@ impl Default for Settings {
         Self {
             stale_threshold_days: 14,
             fetch_on_startup: true,
+            protected_branches: default_protected_branches(),
         }
     }
 }
 
+/// リポジトリの自動検出の対象。
+/// `root` 直下（深さ 1。`root` 自身が git リポジトリならそれも）を検出する。dsx の `repo.root` と同じ規則。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Workspace {
+    /// None は未設定（読み込み時に、あれば既定の `~/src` で補う）。空文字列は自動検出を無効にする。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
+}
+
+/// 手動で登録したリポジトリ。root 配下のリポジトリに対しては、名前・protected branches の上書き（追加）として働く。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoConfig {
     pub path: String,
@@ -60,13 +83,30 @@ fn resolve_config_base(
         .ok_or_else(|| "Could not determine config directory for this OS".to_string())
 }
 
+/// 既定の workspace root（`~/src`）。存在するときだけ返す。
+fn default_workspace_root() -> Option<PathBuf> {
+    dirs::home_dir()
+        .map(|home| home.join("src"))
+        .filter(|path| path.is_dir())
+}
+
+/// 未設定の項目を既定値で補う。保存済みの設定は変えない。
+fn apply_defaults(config: &mut AppConfig, default_root: Option<PathBuf>) {
+    if config.workspace.root.is_none() {
+        config.workspace.root = default_root.map(|path| path.to_string_lossy().into_owned());
+    }
+}
+
 pub fn load_config() -> Result<AppConfig, String> {
     let path = config_path()?;
-    if !path.exists() {
-        return Ok(AppConfig::default());
-    }
-    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    toml::from_str(&content).map_err(|e| e.to_string())
+    let mut config = if path.exists() {
+        let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        toml::from_str(&content).map_err(|e| e.to_string())?
+    } else {
+        AppConfig::default()
+    };
+    apply_defaults(&mut config, default_workspace_root());
+    Ok(config)
 }
 
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
@@ -126,6 +166,86 @@ mod tests {
     fn default_app_config_has_no_repositories() {
         let cfg = AppConfig::default();
         assert!(cfg.repositories.is_empty());
+    }
+
+    #[test]
+    fn default_protected_branches_match_branch_cleanup_chk() {
+        assert_eq!(
+            Settings::default().protected_branches,
+            ["main", "master", "develop", "dev"]
+        );
+    }
+
+    #[test]
+    fn apply_defaults_cases() {
+        let home_src = PathBuf::from("home-src");
+        let cases = [
+            (
+                "未設定なら既定の root で補う",
+                None,
+                Some(home_src.clone()),
+                Some("home-src"),
+            ),
+            (
+                "設定済みの root は変えない",
+                Some("custom"),
+                Some(home_src.clone()),
+                Some("custom"),
+            ),
+            (
+                "空文字列（自動検出の無効化）は補わない",
+                Some(""),
+                Some(home_src),
+                Some(""),
+            ),
+            ("既定の root が無ければ未設定のまま", None, None, None),
+        ];
+
+        for (name, configured, default_root, expected) in cases {
+            let mut config = AppConfig::default();
+            config.workspace.root = configured.map(String::from);
+
+            apply_defaults(&mut config, default_root);
+
+            assert_eq!(config.workspace.root.as_deref(), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn workspace_root_roundtrips_and_unset_is_omitted() {
+        let unset = toml::to_string_pretty(&AppConfig::default()).expect("serialize");
+        assert!(
+            !unset.contains("root"),
+            "未設定の root は保存しない: {unset}"
+        );
+
+        let mut config = AppConfig::default();
+        config.workspace.root = Some(String::new());
+        let serialized = toml::to_string_pretty(&config).expect("serialize");
+        let restored: AppConfig = toml::from_str(&serialized).expect("deserialize");
+        assert_eq!(restored.workspace.root.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn config_without_workspace_or_protected_branches_still_loads() {
+        let before_workspace = r#"
+[settings]
+stale_threshold_days = 20
+fetch_on_startup = true
+
+[[repositories]]
+path = "/src/arbor"
+name = "arbor"
+"#;
+
+        let config: AppConfig = toml::from_str(before_workspace).expect("older config should load");
+
+        assert_eq!(config.workspace.root, None);
+        assert_eq!(
+            config.settings.protected_branches,
+            ["main", "master", "develop", "dev"]
+        );
+        assert!(config.repositories[0].protected_branches.is_empty());
     }
 
     #[test]
