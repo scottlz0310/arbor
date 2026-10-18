@@ -27,7 +27,7 @@ function makeRepo(path: string, name: string) {
     current_branch: 'main',
     ahead: 0, behind: 0,
     modified_count: 0, untracked_count: 0, stash_count: 0,
-    github_owner: null, github_repo: null, last_fetched_at: null,
+    last_fetched_at: null,
   };
 }
 
@@ -64,8 +64,7 @@ describe('CommandPalette — 表示', () => {
   it('ビューコマンドが全件表示される', () => {
     renderPalette();
     expect(screen.getByText('Overview へ移動')).toBeTruthy();
-    expect(screen.getByText('Branches へ移動')).toBeTruthy();
-    expect(screen.getByText('Stash へ移動')).toBeTruthy();
+    expect(screen.getByText('Cleanup へ移動')).toBeTruthy();
     expect(screen.getByText('Settings へ移動')).toBeTruthy();
   });
 
@@ -81,8 +80,8 @@ describe('CommandPalette — 表示', () => {
 describe('CommandPalette — フィルタリング', () => {
   it('クエリに一致するコマンドのみ表示される', async () => {
     renderPalette();
-    await userEvent.type(screen.getByRole('combobox'), 'branch');
-    expect(screen.getByText('Branches へ移動')).toBeTruthy();
+    await userEvent.type(screen.getByRole('combobox'), 'clean');
+    expect(screen.getByText('Cleanup へ移動')).toBeTruthy();
     expect(screen.queryByText('Overview へ移動')).toBeNull();
   });
 
@@ -121,15 +120,15 @@ describe('CommandPalette — キーボード操作', () => {
   it('↓ キーで次のコマンドへ移動し Enter で実行される', async () => {
     renderPalette();
     await userEvent.keyboard('{ArrowDown}{Enter}');
-    // 2番目のコマンドは Branches
-    expect(mockNavigate).toHaveBeenCalledWith('branches');
+    // 2番目のコマンドは Cleanup
+    expect(mockNavigate).toHaveBeenCalledWith('cleanup');
   });
 
   it('↑ キーで前のコマンドへ移動する', async () => {
     renderPalette();
     // 2つ下へ → 1つ上へ → 2番目が選択される
     await userEvent.keyboard('{ArrowDown}{ArrowDown}{ArrowUp}{Enter}');
-    expect(mockNavigate).toHaveBeenCalledWith('branches');
+    expect(mockNavigate).toHaveBeenCalledWith('cleanup');
   });
 });
 
@@ -178,8 +177,8 @@ describe('CommandPalette — 境界ケース', () => {
 
   it('query 変更時にカーソルが 0 にリセットされる', async () => {
     renderPalette();
-    // Branches (index 1) に移動してから絞り込む
-    await userEvent.keyboard('{ArrowDown}');
+    // Settings (index 2) に移動してから絞り込む
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
     await userEvent.type(screen.getByRole('combobox'), 'clean');
     // Cleanup がトップに来るのでそのまま Enter
     await userEvent.keyboard('{Enter}');

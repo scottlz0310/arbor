@@ -1,20 +1,12 @@
 /**
- * Rule-based Insight Engine (Phase 1)
+ * Rule-based Insight Engine
  *
- * Generates deterministic insights from local repo state without any AI calls.
- * The AI engine (Phase 3) will run in parallel and its results will be merged
- * and sorted with these by priority score.
+ * Generates deterministic insights from local repo state (diverged / far behind).
  */
-import type { BranchInfo, Insight, RepoInfo } from '../types';
+import type { Insight, RepoInfo } from '../types';
 
-export function generateInsights(
-  repos: RepoInfo[],
-  branchesByRepo: Record<string, BranchInfo[]>,
-  staleDays: number,
-): Insight[] {
+export function generateInsights(repos: RepoInfo[]): Insight[] {
   const insights: Insight[] = [];
-  const nowSec = Math.floor(Date.now() / 1000);
-  const staleThresholdSec = staleDays * 86400;
 
   for (const repo of repos) {
     // Diverged repo — high risk
@@ -25,8 +17,6 @@ export function generateInsights(
         repo_path: repo.path,
         priority: 'high',
         reason: `${repo.ahead}コミット先行・${repo.behind}コミット遅延: diverged状態`,
-        source: 'rule',
-        risk: 'high',
       });
     }
 
@@ -38,42 +28,7 @@ export function generateInsights(
         repo_path: repo.path,
         priority: 'high',
         reason: `リモートから${repo.behind}コミット遅れています`,
-        source: 'rule',
       });
-    }
-
-    const branches = branchesByRepo[repo.path] ?? [];
-
-    // Merged branches accumulating
-    const mergedCount = branches.filter(
-      (b) => (b.is_merged || b.is_squash_merged) && !b.is_current,
-    ).length;
-    if (mergedCount >= 3) {
-      insights.push({
-        type: 'prioritize',
-        target: repo.name,
-        repo_path: repo.path,
-        priority: 'medium',
-        reason: `${mergedCount}本のマージ済みブランチが残っています`,
-        source: 'rule',
-      });
-    }
-
-    // Stale branches — target は branch 名だが repo_path は親 repo を指す
-    for (const branch of branches) {
-      if (branch.is_current) continue;
-      const ageSec = nowSec - branch.last_commit_ts;
-      if (ageSec > staleThresholdSec) {
-        const ageDays = Math.floor(ageSec / 86400);
-        insights.push({
-          type: 'explain',
-          target: branch.name,
-          repo_path: repo.path,
-          priority: branch.behind >= 10 ? 'medium' : 'low',
-          reason: `${ageDays}日間更新なし・mainから${branch.behind}コミット遅延`,
-          source: 'rule',
-        });
-      }
     }
   }
 

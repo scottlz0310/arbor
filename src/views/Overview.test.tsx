@@ -18,8 +18,6 @@ function makeRepo(overrides: Record<string, unknown> = {}) {
     modified_count: 0,
     untracked_count: 0,
     stash_count: 0,
-    github_owner: null,
-    github_repo: null,
     last_fetched_at: null,
     ...overrides,
   };
@@ -117,5 +115,27 @@ describe('Overview — dsx ログパネル', () => {
     });
     render(<Overview />);
     expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+  });
+});
+
+describe('Overview — Recommended Actions', () => {
+  it.each([
+    { name: 'diverged', repo: { ahead: 2, behind: 3 }, text: /diverged状態/ },
+    { name: 'behind が 5 以上', repo: { behind: 6 }, text: /6コミット遅れています/ },
+  ])('$name のリポジトリがあるとパネルに表示される', ({ repo, text }) => {
+    act(() => {
+      useRepoStore.setState({ repos: [makeRepo(repo)], selectedRepo: makeRepo(repo) });
+    });
+    render(<Overview />);
+    expect(screen.getByText('RECOMMENDED ACTIONS')).toBeTruthy();
+    expect(screen.getByText(text)).toBeTruthy();
+  });
+
+  it('健全なリポジトリだけならパネルは表示されない', () => {
+    act(() => {
+      useRepoStore.setState({ repos: [makeRepo()], selectedRepo: makeRepo() });
+    });
+    render(<Overview />);
+    expect(screen.queryByText('RECOMMENDED ACTIONS')).toBeNull();
   });
 });

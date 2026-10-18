@@ -17,7 +17,7 @@ describe('coverage manifest', () => {
       .sort();
 
     // 走査自体の破綻（cwd ミス・glob typo で 0 件になる等）を検出する
-    expect(files.length).toBeGreaterThanOrEqual(17);
+    expect(files.length).toBeGreaterThanOrEqual(11);
 
     for (const file of files) {
       const mod = await import(`../${file}`);

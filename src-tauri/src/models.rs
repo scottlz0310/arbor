@@ -16,53 +16,8 @@ pub struct RepoInfo {
     pub untracked_count: u32,
     /// Number of stash entries.
     pub stash_count: u32,
-    pub github_owner: Option<String>,
-    pub github_repo: Option<String>,
     /// Unix timestamp of last successful fetch (stored in arbor's own state).
     pub last_fetched_at: Option<i64>,
-}
-
-/// Per-branch metadata for the Branches view.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BranchInfo {
-    pub name: String,
-    pub is_current: bool,
-    /// True if HEAD is a descendant of this branch tip (merged into current branch).
-    pub is_merged: bool,
-    /// True if the branch was squash-merged (requires dsx dry-run parse).
-    pub is_squash_merged: bool,
-    /// Commits ahead of its upstream tracking branch.
-    pub ahead: u32,
-    /// Commits behind its upstream tracking branch.
-    pub behind: u32,
-    /// Unix timestamp of the most recent commit on this branch.
-    pub last_commit_ts: i64,
-    pub last_commit_msg: String,
-    pub author: String,
-    pub remote_name: Option<String>,
-}
-
-/// Commit node for the Graph view (lane rendering).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommitNode {
-    pub oid: String,
-    pub short_oid: String,
-    pub summary: String,
-    pub author_name: String,
-    pub timestamp: i64,
-    pub parent_oids: Vec<String>,
-    /// Branch / tag refs pointing at this commit.
-    pub refs: Vec<String>,
-    /// Zero-based column index for SVG lane rendering.
-    pub lane: u32,
-}
-
-/// Result of a single branch deletion attempt.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteResult {
-    pub name: String,
-    pub success: bool,
-    pub error: Option<String>,
 }
 
 /// Raw output captured from a dsx subprocess.
@@ -77,80 +32,6 @@ pub struct DsxOutput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FetchResult {
     pub updated_refs: Vec<String>,
-}
-
-// ─── GitHub API response types ────────────────────────────────────────────────
-
-/// A GitHub pull request (subset of fields returned by the REST API).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PullRequest {
-    pub number: u64,
-    pub title: String,
-    /// "open" | "closed"
-    pub state: String,
-    pub html_url: String,
-    pub user_login: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub draft: bool,
-    pub merged_at: Option<String>,
-    /// Source branch name.
-    pub head_ref: String,
-    /// HEAD commit SHA of the source branch.
-    pub head_sha: String,
-    /// Target branch name.
-    pub base_ref: String,
-}
-
-/// A GitHub issue (PR items are excluded).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Issue {
-    pub number: u64,
-    pub title: String,
-    /// "open" | "closed"
-    pub state: String,
-    pub html_url: String,
-    pub user_login: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub body: Option<String>,
-    pub labels: Vec<String>,
-}
-
-/// Discriminates the three insight categories the AI (and rule engine) can emit.
-/// Serde rejects any other string, closing the boundary at parse time.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum InsightKind {
-    Explain,
-    Prioritize,
-    Risk,
-}
-
-/// A single AI-generated insight for a repository.
-///
-/// `repo_path` is the canonical identifier (Arbor allows same-name repos under
-/// different root directories, so name alone is ambiguous). `repo_name` is
-/// kept as a display label.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AiInsight {
-    pub repo_name: String,
-    pub repo_path: String,
-    pub kind: InsightKind,
-    pub message: String,
-    /// Priority level: 0 = lowest, 3 = highest urgency.
-    pub priority: u8,
-}
-
-/// A single git stash entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StashInfo {
-    /// Zero-based stash index (stash@{index}).
-    pub index: usize,
-    /// Stash reflog message (e.g. "WIP on main: abc1234 message").
-    pub message: String,
-    /// Full commit OID of the stash entry.
-    pub commit_id: String,
 }
 
 // ─── Cleanup Wizard (Issue #186) ─────────────────────────────────────────────
@@ -287,18 +168,4 @@ pub struct CleanupExecutionItemResult {
 pub struct CleanupExecutionResult {
     pub items: Vec<CleanupExecutionItemResult>,
     pub completed_at: i64,
-}
-
-/// A single check run result for a commit.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckRun {
-    pub id: u64,
-    pub name: String,
-    /// "queued" | "in_progress" | "completed"
-    pub status: String,
-    /// "success" | "failure" | "neutral" | "cancelled" | "skipped" | "timed_out" | "action_required"
-    pub conclusion: Option<String>,
-    pub html_url: String,
-    pub started_at: Option<String>,
-    pub completed_at: Option<String>,
 }

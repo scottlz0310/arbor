@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { useMemo } from 'react';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import { fetchAll, repoUpdate } from '../lib/invoke';
-import { fetchInsights, convertAiInsights, type InsightSource } from '../lib/aiService';
-import type { AiInsight, Insight, RepoInfo } from '../types';
+import { generateInsights } from '../lib/ruleEngine';
+import type { Insight, RepoInfo } from '../types';
 
 // pull スキップ行を判定するキーワード（dsx の出力に合わせて調整）
 const SKIP_KEYWORDS = ['skip', 'スキップ', 'SKIP'];
@@ -25,60 +24,9 @@ function statusBadge(repo: RepoInfo) {
 
 export default function Overview() {
   const { repos, selectedRepo, selectRepo, refreshRepo } = useRepoStore();
-  const { addToast, setDsxRunning, dsxProgress, dsxRunning, clearDsxProgress, navigate } = useUiStore();
+  const { addToast, setDsxRunning, dsxProgress, dsxRunning, clearDsxProgress } = useUiStore();
 
-  const [insights, setInsights]           = useState<Insight[]>([]);
-  const [insightSource, setInsightSource] = useState<InsightSource>('rule');
-  const [insightLoading, setInsightLoading] = useState(false);
-  // insightLoading とは独立した state。fetchInsights の .finally() に上書きされない。
-  const [aiBgRunning, setAiBgRunning]     = useState(false);
-  const [ollamaOffline, setOllamaOffline] = useState(false);
-  const [aiFailed, setAiFailed]           = useState(false);
-
-  // インサイトを取得 — repos が変わるたびに再計算 (branchesByRepo は Overview では省略)
-  useEffect(() => {
-    if (repos.length === 0) {
-      setInsights([]);
-      setOllamaOffline(false);
-      setAiBgRunning(false);
-      setAiFailed(false);
-      return;
-    }
-    setInsightLoading(true);
-    setAiFailed(false);
-    fetchInsights(repos, {}, 14)
-      .then(({ insights: ins, source, ollamaOffline: offline }) => {
-        setInsights(ins);
-        setInsightSource(source);
-        setOllamaOffline(offline);
-      })
-      .finally(() => setInsightLoading(false));
-  }, [repos]);
-
-  // バックグラウンド refresh 完了イベントを受けてインサイトを差し替える (P3-04)
-  useEffect(() => {
-    const unlistenUpdated = listen<AiInsight[]>('ai_insights_updated', (ev) => {
-      setInsights(convertAiInsights(ev.payload));
-      setInsightSource('ai');
-      setAiBgRunning(false);
-      setAiFailed(false);
-    });
-    // キャッシュミス時のバックグラウンド開始通知 → 再試行中なので失敗フラグもリセット
-    const unlistenLoading = listen<void>('ai_insights_loading', () => {
-      setAiBgRunning(true);
-      setAiFailed(false);
-    });
-    // AI 生成失敗時はルール結果を維持したまま loading を解除し失敗フラグを立てる。
-    const unlistenFailed = listen<void>('ai_insights_failed', () => {
-      setAiBgRunning(false);
-      setAiFailed(true);
-    });
-    return () => {
-      unlistenUpdated.then((f) => f());
-      unlistenLoading.then((f) => f());
-      unlistenFailed.then((f) => f());
-    };
-  }, []);
+  const insights = useMemo(() => generateInsights(repos), [repos]);
 
   const repo = selectedRepo;
 
@@ -199,84 +147,13 @@ export default function Overview() {
           })}
         </div>
 
-        {/* Recommended Actions パネル (P3-07) */}
-        {(insightLoading || aiBgRunning || ollamaOffline || aiFailed || insights.length > 0) && (
+        {/* Recommended Actions パネル */}
+        {insights.length > 0 && (
           <div style={{ marginTop: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.1em', flex: 1 }}>
-                RECOMMENDED ACTIONS
-              </span>
-              <button
-                onClick={() => navigate('ai')}
-                style={{
-                  fontSize: 10, color: 'var(--indigo-l)',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  padding: 0, marginRight: 8,
-                }}
-                title="AI Assistant タブで詳細を表示"
-              >
-                詳細 →
-              </button>
-              {/* フェーズバッジ — 状態の優先順位: loading > aiBg > failed > offline > done */}
-              {insightLoading && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--text3)', fontWeight: 600 }}>
-                  <span className="arbor-spin">⟳</span> Rules…
-                </span>
-              )}
-              {!insightLoading && aiBgRunning && (
-                <span style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 600,
-                  background: 'var(--indigo-bg2)', color: 'var(--indigo-l)',
-                }}>
-                  <span className="arbor-pulse">✦</span> AI 分析中…
-                </span>
-              )}
-              {!insightLoading && !aiBgRunning && aiFailed && (
-                <span style={{
-                  fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 600,
-                  background: 'var(--amber-bg)', color: 'var(--amber)',
-                }}>
-                  ✗ AI 失敗
-                </span>
-              )}
-              {!insightLoading && !aiBgRunning && !aiFailed && ollamaOffline && (
-                <span style={{
-                  fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 600,
-                  background: 'var(--amber-bg)', color: 'var(--amber)',
-                }}>
-                  ⚠ Offline
-                </span>
-              )}
-              {!insightLoading && !aiBgRunning && !aiFailed && !ollamaOffline && (
-                <span style={{
-                  fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 600,
-                  background: insightSource === 'ai' ? 'var(--indigo-bg2)' : 'var(--bg3)',
-                  color:      insightSource === 'ai' ? 'var(--indigo-l)'   : 'var(--text3)',
-                }}>
-                  {insightSource === 'ai' ? '✦ AI' : 'Rules'}
-                </span>
-              )}
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.1em', marginBottom: 8 }}>
+              RECOMMENDED ACTIONS
             </div>
-            {insightLoading ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--text3)' }}>
-                <span className="arbor-spin" style={{ fontSize: 13 }}>⟳</span>
-                ルール計算中…
-              </div>
-            ) : insights.length > 0 ? (
-              insights.slice(0, 5).map((ins, i) => <InsightCard key={i} insight={ins} />)
-            ) : aiBgRunning ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--indigo-l)' }}>
-                <span className="arbor-pulse" style={{ fontSize: 13 }}>✦</span>
-                AI が分析中です…
-              </div>
-            ) : (
-              <div style={{ fontSize: 11, color: ollamaOffline ? 'var(--amber)' : 'var(--green)' }}>
-                {ollamaOffline
-                  ? 'Ollama が起動していないため AI 分析を実行できません。'
-                  : '✓ すべてのリポジトリは健全です'}
-              </div>
-            )}
+            {insights.slice(0, 5).map((ins, i) => <InsightCard key={i} insight={ins} />)}
           </div>
         )}
 
@@ -334,7 +211,6 @@ export default function Overview() {
 const INSIGHT_STYLE: Record<Insight['type'], { bg: string; border: string; icon: string; color: string }> = {
   risk:       { bg: 'var(--red-bg)',    border: '#f8717128', icon: '⚠', color: 'var(--red)' },
   prioritize: { bg: 'var(--amber-bg)', border: '#fbbf2428', icon: '↑', color: 'var(--amber)' },
-  explain:    { bg: 'var(--indigo-bg)', border: '#818cf828', icon: '●', color: 'var(--indigo-l)' },
 };
 
 const PRIORITY_COLOR: Record<Insight['priority'], string> = {
