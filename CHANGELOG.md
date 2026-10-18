@@ -7,6 +7,12 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
+- **ダッシュボード**（#294 PR-D2）。サイドバーをやめ、Header の下に Summary strip と、Repository Status / Branch Cleanup のタブを置いた。Settings は Header から開く
+  - Summary: リポジトリ数（クリーンの数）・要対応の数・Cleanup 候補数・dsx 環境（Ready / Attention / Missing）。クリックで該当のビューへ移動する。Cleanup 候補数は、プレビューが全リポジトリの remote へ接続して遅いため、Cleanup を開いたときだけ集計し、run の終了や Scan で破棄する
+  - Status: All / Needs Action / Clean の絞り込み（件数つき）。要対応を先頭に並べる。リポジトリごとに Fetch（git2）とフォルダを開く操作。状態に `dirty`（未コミット・未追跡の変更）を追加。要対応の判定は branch-chk の DETACHED / DIRTY / AHEAD / BEHIND / DIVERGED / no-upstream
+  - `open_repo_folder` を追加。渡されたパスは管理対象の検索にだけ使い、開くのは管理対象として解決したパスだけ（任意のパスは開かない）
+  - 修正: 起動直後に必ず Settings が開いていた。リポジトリの読み込み前の空の一覧で「0 件なら Settings へ」を判定していたため、初回の読み込みが終わってから判定する（読み込みに失敗した場合も 0 件として誘導する）
+  - 修正: Settings のスクロールバーが、コンテンツ幅（680px）の位置に出ていた
 - **Header と Daily Refresh**（#294 PR-D1）。画面上部に、dsx の版・Bitwarden の状態・workspace root（リポジトリ数）の pill と、Scan / Fetch All / dsx sys update / Daily Refresh のボタンを追加
   - Daily Refresh は `dsx run --root <workspace root>` を実行する。dsx v0.11.0 未満・root 未設定・root を読めない場合は無効にし、理由をツールチップに出す。Bitwarden が未解錠なら、確認してから実行する（Arbor では解錠しない）
   - `repo_update` は、リポジトリ 1 件ではなく workspace root 配下の全リポジトリを `--root` つきで更新する（従来は dsx 自身の設定の root を更新していて、選択中のリポジトリとずれていた）。リポジトリごとの Update ボタンとコマンドパレットの項目は削除し、「Update All Repositories」を追加

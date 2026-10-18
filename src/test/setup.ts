@@ -31,15 +31,18 @@ const { useRepoStore } = await import('../stores/repoStore');
 const { useUiStore } = await import('../stores/uiStore');
 const { useConsoleStore } = await import('../stores/consoleStore');
 const { useEnvStore } = await import('../stores/envStore');
+const { useCleanupStore } = await import('../stores/cleanupStore');
 
 const initialRepoState = useRepoStore.getInitialState();
 const initialUiState = useUiStore.getInitialState();
 const initialConsoleState = useConsoleStore.getInitialState();
 const initialEnvState = useEnvStore.getInitialState();
+const initialCleanupState = useCleanupStore.getInitialState();
 
 afterEach(() => {
   useRepoStore.setState(initialRepoState, true);
   useUiStore.setState(initialUiState, true);
   useConsoleStore.setState(initialConsoleState, true);
   useEnvStore.setState(initialEnvState, true);
+  useCleanupStore.setState(initialCleanupState, true);
 });

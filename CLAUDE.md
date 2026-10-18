@@ -92,7 +92,7 @@ Rust backend (Tauri commands)
 | `models.rs` | `RepoInfo` / `BranchInfo` / `CommitNode` / `DsxOutput` 等の共有データ型 |
 | `config.rs` | `AppConfig` の読み書き。`dirs::config_dir()` で OS ごとのパスを解決。未設定の `workspace.root` は、あれば `~/src` で補う |
 | `workspace.rs` | 管理対象リポジトリの決定。`workspace.root` 直下（深さ 1。dsx の `repo.root` と同じ規則）の自動検出と、手動登録の和集合（`effective_repos`）。protected branches は、全体の既定（main / master / develop / dev）に、手動登録の設定を追加して解決する |
-| `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories` は実効リポジトリを最大 8 並列でスキャン、`get_repo_status`）と `fetch_all` |
+| `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories` は実効リポジトリを最大 8 並列でスキャン、`get_repo_status`）、`fetch_all`、`open_repo_folder`（管理対象のリポジトリのフォルダだけを OS のファイルマネージャで開く） |
 | `commands/config_cmd.rs` | config.toml CRUD（手動登録の追加・削除、`update_settings`、存在しない手動登録の検出）と `get_workspace_status`（Header の root 表示用） |
 | `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する。`dsx_check`（版と `supports_run_root`）、`bitwarden_status`、`repo_update` / `daily_refresh`（どちらも Arbor の `workspace.root` を `--root` で渡す。Daily Refresh は dsx v0.11.0 以上が必要） |
 | `commands/fetch.rs` | 管理対象リポジトリの一括 fetch（`fetch_repositories`）。git2 で最大 4 並列に fetch し、1 件ごとの結果を runner の job としてコンソールへ流す。`cancel_run` で転送中の fetch も中断できる |
@@ -115,8 +115,10 @@ Rust backend (Tauri commands)
 | `stores/envStore.ts` | dsx の版・Bitwarden の状態・workspace root の現況（Header の pill 用。Zustand） |
 | `lib/dsxActions.ts` | Daily Refresh / sys update / Update All の実行と Toast、Daily Refresh を実行できない理由の判定 |
 | `lib/rescanAfterRun.ts` | run の終了を検知して、一覧と環境の状態を自動で読み直す |
-| `views/` | ページコンポーネント（Overview / Cleanup / Settings） |
-| `components/` | 共通 UI（Header, Sidebar, AppBar, ConfirmDialog, Toast, LogConsole） |
+| `views/` | ページコンポーネント（Status / Cleanup / Settings）。Status が Summary の下のタブで、Cleanup と並ぶ。Settings は Header から開く |
+| `components/` | 共通 UI（Header, SummaryStrip, TabBar, AppBar, ConfirmDialog, Toast, LogConsole） |
+| `lib/repoStatus.ts` | 要対応の判定（`needsAction`）、状態バッジ、Status タブの絞り込みと並び順 |
+| `stores/cleanupStore.ts` | 直近の Cleanup プレビューの候補数（Summary 用。プレビューは remote へ接続して遅いため、自動では読み込まない） |
 
 **データフロー:** Rust コマンド → `lib/invoke.ts` → Zustand store → React コンポーネント
 **イベント:** Rust `runner.rs` が `process_started` / `process_output` / `process_finished` を emit → `lib/processEvents.ts`（`App.tsx` が購読）→ `consoleStore` → `LogConsole`（App 下部のドック）（ペイロードは `camelCase`。型は `types/index.ts` の `Process*`）

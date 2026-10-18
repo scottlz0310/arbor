@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import AppBar, { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { cleanupExecute, cleanupPreview } from '../lib/invoke';
+import { useCleanupStore } from '../stores/cleanupStore';
 import { useUiStore } from '../stores/uiStore';
 import type {
   CandidateKind,
@@ -76,8 +77,12 @@ export default function Cleanup() {
       const nextPreview = await cleanupPreview();
       setPreview(nextPreview);
       setSelected(initialSelection(nextPreview));
+      useCleanupStore.getState().setCandidateCount(
+        allCandidates(nextPreview).filter((candidate) => candidate.blocked.length === 0).length,
+      );
     } catch (error) {
       setPreview(null);
+      useCleanupStore.getState().setCandidateCount(null);
       setSelected(new Set());
       setConfirmOpen(false);
       addToast(`Cleanup preview failed: ${String(error)}`, 'error');

@@ -14,7 +14,7 @@ use commands::{
         env_inject, repo_update, sys_update,
     },
     fetch::fetch_repositories,
-    repo::{fetch_all, get_repo_status, list_repositories},
+    repo::{fetch_all, get_repo_status, list_repositories, open_repo_folder},
     runner::{cancel_run, RunnerState, TauriSink},
 };
 use std::sync::Arc;
@@ -42,6 +42,7 @@ pub fn run() {
             list_repositories,
             get_repo_status,
             fetch_all,
+            open_repo_folder,
             fetch_repositories,
             // Cleanup Wizard (Issue #186)
             cleanup_preview,

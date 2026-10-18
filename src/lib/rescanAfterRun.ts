@@ -1,9 +1,12 @@
+import { useCleanupStore } from '../stores/cleanupStore';
 import { useConsoleStore } from '../stores/consoleStore';
 import { useEnvStore } from '../stores/envStore';
 import { useRepoStore } from '../stores/repoStore';
 
 /** リポジトリ一覧と環境の状態（dsx の版・Bitwarden・root）を読み直す。 */
 export async function rescan(): Promise<void> {
+  // リポジトリの状態が変わるので、読み込み済みの Cleanup 候補数は古くなる。
+  useCleanupStore.getState().invalidate();
   await Promise.all([useRepoStore.getState().loadRepos(), useEnvStore.getState().refresh()]);
 }
 

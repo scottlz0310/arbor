@@ -67,7 +67,7 @@ describe('CommandPalette — 表示', () => {
 
   it('ビューコマンドが全件表示される', () => {
     renderPalette();
-    expect(screen.getByText('Overview へ移動')).toBeTruthy();
+    expect(screen.getByText('Status へ移動')).toBeTruthy();
     expect(screen.getByText('Cleanup へ移動')).toBeTruthy();
     expect(screen.getByText('Settings へ移動')).toBeTruthy();
   });
@@ -86,7 +86,7 @@ describe('CommandPalette — フィルタリング', () => {
     renderPalette();
     await userEvent.type(screen.getByRole('combobox'), 'clean');
     expect(screen.getByText('Cleanup へ移動')).toBeTruthy();
-    expect(screen.queryByText('Overview へ移動')).toBeNull();
+    expect(screen.queryByText('Status へ移動')).toBeNull();
   });
 
   it('一致なしのとき「一致するコマンドが見つかりません」を表示する', async () => {
@@ -115,9 +115,9 @@ describe('CommandPalette — キーボード操作', () => {
 
   it('Enter でアクティブなコマンドが実行される', async () => {
     renderPalette();
-    // 最初のコマンド (Overview へ移動) が選択されている
+    // 最初のコマンド (Status へ移動) が選択されている
     await userEvent.keyboard('{Enter}');
-    expect(mockNavigate).toHaveBeenCalledWith('overview');
+    expect(mockNavigate).toHaveBeenCalledWith('status');
     expect(mockCloseCommandPalette).toHaveBeenCalled();
   });
 
@@ -144,12 +144,17 @@ describe('CommandPalette — マウス操作', () => {
     expect(mockCloseCommandPalette).toHaveBeenCalled();
   });
 
-  it('リポジトリクリックで selectRepo が呼ばれる', async () => {
+  it('リポジトリクリックで選択し、Status タブをすべて表示で開く', async () => {
     const repo = makeRepo('/repo/a', 'test-repo');
-    act(() => { useRepoStore.setState({ repos: [repo] }); });
+    act(() => {
+      useRepoStore.setState({ repos: [repo] });
+      useUiStore.setState({ statusFilter: 'attention' });
+    });
     renderPalette();
     await userEvent.click(screen.getByText('test-repo'));
     expect(mockSelectRepo).toHaveBeenCalledWith(repo);
+    expect(mockNavigate).toHaveBeenCalledWith('status');
+    expect(useUiStore.getState().statusFilter).toBe('all');
     expect(mockCloseCommandPalette).toHaveBeenCalled();
   });
 
@@ -165,7 +170,7 @@ describe('CommandPalette — 境界ケース', () => {
   it('↑ キーは先頭で 0 のまま', async () => {
     renderPalette();
     await userEvent.keyboard('{ArrowUp}{Enter}');
-    expect(mockNavigate).toHaveBeenCalledWith('overview');
+    expect(mockNavigate).toHaveBeenCalledWith('status');
   });
 
   it('↓ キーは末尾を超えない', async () => {

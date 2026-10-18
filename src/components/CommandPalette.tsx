@@ -15,14 +15,14 @@ interface Command {
 }
 
 const VIEW_COMMANDS: { id: ViewId; icon: string; label: string }[] = [
-  { id: 'overview',  icon: '◈', label: 'Overview' },
+  { id: 'status',    icon: '◈', label: 'Status' },
   { id: 'cleanup',   icon: '✦', label: 'Cleanup' },
   { id: 'settings',  icon: '⚙', label: 'Settings' },
 ];
 
 export default function CommandPalette() {
   const { repos, selectedRepo, selectRepo, refreshRepo } = useRepoStore();
-  const { navigate, closeCommandPalette, addToast } = useUiStore();
+  const { navigate, setStatusFilter, closeCommandPalette, addToast } = useUiStore();
 
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -105,7 +105,8 @@ export default function CommandPalette() {
       icon: '⬡',
       label: r.name,
       description: r.path,
-      action: () => { selectRepo(r); closeCommandPalette(); },
+      // 選んだリポジトリを、Status タブで強調して見せる。
+      action: () => { selectRepo(r); setStatusFilter('all'); navigate('status'); closeCommandPalette(); },
     })),
   ];
 

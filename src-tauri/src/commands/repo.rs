@@ -1,7 +1,7 @@
 use super::fetch::fetch_repository;
 use crate::config::load_config;
 use crate::models::{FetchResult, RepoInfo, RepoSource};
-use crate::workspace::{effective_repos, EffectiveRepo};
+use crate::workspace::{effective_repos, find_managed, EffectiveRepo};
 use git2::{Repository, StatusOptions};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -119,6 +119,60 @@ pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
     Ok(FetchResult { updated_refs })
 }
 
+// ─── open_repo_folder ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Os {
+    Windows,
+    Mac,
+    Other,
+}
+
+impl Os {
+    fn current() -> Self {
+        if cfg!(windows) {
+            Self::Windows
+        } else if cfg!(target_os = "macos") {
+            Self::Mac
+        } else {
+            Self::Other
+        }
+    }
+}
+
+/// フォルダをファイルマネージャで開くコマンド。
+fn folder_opener(path: &str, os: Os) -> (&'static str, Vec<String>) {
+    match os {
+        // explorer は、区切りが `/` のパスだと別のフォルダを開くことがある。
+        Os::Windows => ("explorer", vec![path.replace('/', "\\")]),
+        Os::Mac => ("open", vec![path.to_string()]),
+        Os::Other => ("xdg-open", vec![path.to_string()]),
+    }
+}
+
+/// 管理対象のリポジトリのフォルダを、OS のファイルマネージャで開く。
+/// 渡されたパスは検索にだけ使い、実際に開くのは管理対象として解決したパス（任意のパスは開かない）。
+#[tauri::command(async)]
+pub fn open_repo_folder(repo_path: String) -> Result<(), String> {
+    let (repos, _) = effective_repos(&load_config()?);
+    let repo = find_managed(&repos, &repo_path)
+        .ok_or_else(|| format!("管理対象のリポジトリではありません: {repo_path}"))?;
+    if !std::path::Path::new(&repo.path).is_dir() {
+        return Err(format!("フォルダが見つかりません: {}", repo.path));
+    }
+
+    let (program, args) = folder_opener(&repo.path, Os::current());
+    let mut child = std::process::Command::new(program)
+        .args(args)
+        .spawn()
+        .map_err(|e| format!("{program} を起動できません: {e}"))?;
+    // explorer は成功しても終了コード 1 を返すため、結果は見ない。子プロセスの回収だけを行う。
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 fn repo_info_for_path(path: &str) -> Result<RepoInfo, String> {
@@ -225,7 +279,9 @@ fn upstream_ahead_behind(repo: &Repository, branch: &git2::Branch) -> (u32, u32)
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_effective, fetch_all, repo_info_for_path, scan_repositories};
+    use super::{
+        apply_effective, fetch_all, folder_opener, repo_info_for_path, scan_repositories, Os,
+    };
     use crate::models::{RepoInfo, RepoSource};
     use crate::workspace::EffectiveRepo;
     use std::path::{Path, PathBuf};
@@ -625,5 +681,44 @@ mod tests {
         std::fs::write(&path, format!("stash content: {message}\n")).expect("write");
         let sig = git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("signature");
         repo.stash_save(&sig, message, None).expect("stash save")
+    }
+
+    // ── folder_opener ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn folder_opener_cases() {
+        let cases = [
+            (
+                "Windows は区切りを バックスラッシュ にそろえる",
+                Os::Windows,
+                "C:/Users/dev/src/arbor",
+                ("explorer", r"C:\Users\dev\src\arbor"),
+            ),
+            (
+                "Windows のバックスラッシュ区切りはそのまま",
+                Os::Windows,
+                r"C:\src\arbor",
+                ("explorer", r"C:\src\arbor"),
+            ),
+            (
+                "macOS",
+                Os::Mac,
+                "/Users/dev/src/arbor",
+                ("open", "/Users/dev/src/arbor"),
+            ),
+            (
+                "その他",
+                Os::Other,
+                "/home/dev/src/arbor",
+                ("xdg-open", "/home/dev/src/arbor"),
+            ),
+        ];
+        for (name, os, path, (program, arg)) in cases {
+            assert_eq!(
+                folder_opener(path, os),
+                (program, vec![arg.to_string()]),
+                "{name}"
+            );
+        }
     }
 }
