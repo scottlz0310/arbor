@@ -49,3 +49,10 @@ button {
   min-width: 0;
   overflow: hidden;
 }
+
+/* ─── Execution Console ─────────────────────────────────── */
+@keyframes console-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+.console-pulse { animation: console-pulse 1.6s ease-in-out infinite; }

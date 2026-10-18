@@ -29,11 +29,14 @@ mock.module('@tauri-apps/plugin-dialog', () => ({
 // （store は Tauri API を import するため、mock.module 登録後に動的 import する）
 const { useRepoStore } = await import('../stores/repoStore');
 const { useUiStore } = await import('../stores/uiStore');
+const { useConsoleStore } = await import('../stores/consoleStore');
 
 const initialRepoState = useRepoStore.getInitialState();
 const initialUiState = useUiStore.getInitialState();
+const initialConsoleState = useConsoleStore.getInitialState();
 
 afterEach(() => {
   useRepoStore.setState(initialRepoState, true);
   useUiStore.setState(initialUiState, true);
+  useConsoleStore.setState(initialConsoleState, true);
 });

@@ -1,7 +1,7 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, type Mock } from 'bun:test';
 import type { CleanupCandidate } from '../types';
-import { cleanupExecute, cleanupPreview } from './invoke';
+import { cancelRun, cleanupExecute, cleanupPreview } from './invoke';
 
 const candidate: CleanupCandidate = {
   repo_path: '/repos/a',
@@ -23,6 +23,15 @@ const mockedTauriInvoke = tauriInvoke as Mock<typeof tauriInvoke>;
 
 beforeEach(() => {
   mockedTauriInvoke.mockClear();
+});
+
+describe('Process IPC wrappers', () => {
+  it('cancelRun は runId を cancel_run へ委譲する', async () => {
+    await cancelRun(7);
+
+    expect(mockedTauriInvoke).toHaveBeenCalledTimes(1);
+    expect(mockedTauriInvoke.mock.calls[0]).toEqual(['cancel_run', { runId: 7 }]);
+  });
 });
 
 describe('Cleanup IPC wrappers', () => {

@@ -7,6 +7,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
+- **実行ログコンソールを追加**（#294 PR-B-2）。App の下部に開閉できるドックとして常駐し、dsx の出力を `process_*` イベントでリアルタイムに表示する
+  - stdout / stderr / システム行を色分けして表示し、ANSI の前景色・太字・薄字を解釈する（React の要素として描画し、HTML としては解釈しない）
+  - `\r` で上書きされる進捗行は、1 行のまま更新する
+  - 自動追従（上へスクロールすると解除し、最下部へ戻ると再開）、フィルタ、Copy（ANSI を除去）、Clear、開閉
+  - 実行中は「キャンセル」を表示し、確認ダイアログを経て `cancel_run` を呼ぶ
+  - 保持するのは直近 10,000 行。受信したイベントは描画フレームごとにまとめて反映する
+  - 実行が始まるとドックが自動で開く
 - **外部コマンドの実行基盤を追加**（#294 PR-B-1）。`commands/runner.rs` が dsx の実行を担い、`dsx_progress` イベントを `process_started` / `process_output` / `process_finished` に置き換えた
   - stdout に加えて stderr も行単位で逐次送信する（従来は stderr を終了時にまとめて返していた）
   - `\r` で上書きされる進捗行を区別して送る（`overwrite`）。不正な UTF-8 は置換文字にして読み取りを続ける（従来は不正なバイトで実行全体が失敗していた）
@@ -18,6 +25,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### refactor
 
+- Overview 内の埋め込みログパネルと、`uiStore` の `dsxProgress` / `dsxRunning` を削除（実行ログは `LogConsole` に統合）
 - **Arbor のピボット（#294）の第一段階: スコープ外の機能を削除**。dsx の実行・表示基盤 兼 開発環境リフレッシュナーへ向けて、次の画面とその裏側（Rust コマンド・モデル・テスト・依存）を削除
   - AI Assistant / Ollama（`get_ai_insights` などの AI コマンド、AI 設定）
   - PR / Issues（GitHub REST API 連携、GitHub PAT の保存と、リポジトリごとの GitHub 設定）

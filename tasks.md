@@ -9,9 +9,9 @@
 設計合意と PR 構成は `Dropbox/src/arbor-dsx/handoff/arbor.md` を参照。
 
 - [x] PR-A: スコープ外の機能（AI Assistant / Graph / PR・Issues / Stash / Branches）と依存の削除
-- [ ] PR-B: プロセス実行基盤 + Live Log Console
+- [x] PR-B: プロセス実行基盤 + Live Log Console
   - [x] B-1: バックエンド（`runner.rs`、`process_*` イベント、`cancel_run`、Job Object）
-  - [ ] B-2: コンソール UI（`consoleStore`、ANSI、`LogConsole`、下部ドック、Overview の埋め込みログの置換、キャンセル UI）
+  - [x] B-2: コンソール UI（`consoleStore`、ANSI、`LogConsole`、下部ドック、Overview の埋め込みログの置換、キャンセル UI）
 - [ ] PR-C: Workspace scanner（`workspace.roots`、状態スキャン）
 - [ ] PR-D: Refresher Dashboard
 - [ ] PR-E: 実機検証・ドキュメント更新

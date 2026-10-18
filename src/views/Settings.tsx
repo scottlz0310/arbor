@@ -8,7 +8,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import type { AppConfig, DsxStatus, RepoConfig } from '../types';
 
 export default function Settings() {
-  const { addToast, setDsxRunning } = useUiStore();
+  const { addToast } = useUiStore();
   const { loadRepos } = useRepoStore();
   const [config, setConfig]       = useState<AppConfig | null>(null);
   const [dsxStatus, setDsxStatus] = useState<DsxStatus | null>(null);
@@ -122,7 +122,6 @@ export default function Settings() {
 
   const handleSysUpdate = async () => {
     setSysUpdating(true);
-    setDsxRunning(true);
     try {
       await sysUpdate();
       addToast('dsx sys update 完了', 'success');
@@ -135,13 +134,11 @@ export default function Settings() {
       addToast(String(e), 'error');
     } finally {
       setSysUpdating(false);
-      setDsxRunning(false);
     }
   };
 
   const handleDsxSelfUpdate = async () => {
     setSelfUpdating(true);
-    setDsxRunning(true);
     try {
       await dsxSelfUpdate();
       addToast('dsx self-update 完了', 'success');
@@ -153,7 +150,6 @@ export default function Settings() {
       addToast(String(e), 'error');
     } finally {
       setSelfUpdating(false);
-      setDsxRunning(false);
     }
   };
 

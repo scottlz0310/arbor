@@ -1,20 +1,20 @@
 import { useEffect } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import Sidebar from './components/Sidebar';
 import ToastContainer from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import CommandPalette from './components/CommandPalette';
+import LogConsole from './components/LogConsole';
 import Overview from './views/Overview';
 import Cleanup from './views/Cleanup';
 import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
 import { useUiStore } from './stores/uiStore';
 import { dsxCheck } from './lib/invoke';
-import type { ProcessOutput } from './types';
+import { subscribeProcessEvents } from './lib/processEvents';
 
 export default function App() {
   const { loadRepos } = useRepoStore();
-  const { activeView, navigate, appendDsxLine, addToast, commandPaletteOpen, openCommandPalette, closeCommandPalette } = useUiStore();
+  const { activeView, navigate, addToast, commandPaletteOpen, openCommandPalette, closeCommandPalette } = useUiStore();
 
   // 起動時の初期化（一度だけ実行）
   useEffect(() => {
@@ -34,13 +34,14 @@ export default function App() {
       addToast('dsx CLI の確認に失敗しました。Settings を確認してください。', 'error');
     });
 
-    const unlisten = listen<ProcessOutput>('process_output', (e) => {
-      appendDsxLine(e.payload.text);
+    const unsubscribe = subscribeProcessEvents().catch((e) => {
+      addToast(`実行ログの購読に失敗しました: ${String(e)}`, 'error');
+      return () => {};
     });
 
     return () => {
       cancelled = true;
-      unlisten.then((fn) => fn());
+      unsubscribe.then((fn) => fn());
     };
   }, []);
 
@@ -70,15 +71,18 @@ export default function App() {
     <div className="app-shell">
       <Sidebar />
       <main className="main-content">
-        {activeView === 'overview' && (
-          <ErrorBoundary key="overview" viewName="Overview"><Overview /></ErrorBoundary>
-        )}
-        {activeView === 'cleanup' && (
-          <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
-        )}
-        {activeView === 'settings' && (
-          <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>
-        )}
+        <div style={{ flex: 1, minHeight: 0 }}>
+          {activeView === 'overview' && (
+            <ErrorBoundary key="overview" viewName="Overview"><Overview /></ErrorBoundary>
+          )}
+          {activeView === 'cleanup' && (
+            <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
+          )}
+          {activeView === 'settings' && (
+            <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>
+          )}
+        </div>
+        <LogConsole />
       </main>
       <ToastContainer />
       {commandPaletteOpen && <CommandPalette />}
