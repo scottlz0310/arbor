@@ -80,3 +80,6 @@ export const sysUpdate = () =>
 
 export const dsxSelfUpdate = () =>
   tauriInvoke<DsxOutput>('dsx_self_update');
+
+export const cancelRun = (runId: number) =>
+  tauriInvoke<void>('cancel_run', { runId });

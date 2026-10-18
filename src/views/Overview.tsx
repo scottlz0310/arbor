@@ -6,12 +6,6 @@ import { fetchAll, repoUpdate } from '../lib/invoke';
 import { generateInsights } from '../lib/ruleEngine';
 import type { Insight, RepoInfo } from '../types';
 
-// pull スキップ行を判定するキーワード（dsx の出力に合わせて調整）
-const SKIP_KEYWORDS = ['skip', 'スキップ', 'SKIP'];
-function isSkipLine(line: string) {
-  return SKIP_KEYWORDS.some((k) => line.includes(k));
-}
-
 function statusBadge(repo: RepoInfo) {
   if (repo.ahead > 0 && repo.behind > 0)
     return { label: '⇕ diverged', bg: 'var(--red-bg)',    color: 'var(--red)' };
@@ -24,7 +18,7 @@ function statusBadge(repo: RepoInfo) {
 
 export default function Overview() {
   const { repos, selectedRepo, selectRepo, refreshRepo } = useRepoStore();
-  const { addToast, setDsxRunning, dsxProgress, dsxRunning, clearDsxProgress } = useUiStore();
+  const { addToast } = useUiStore();
 
   const insights = useMemo(() => generateInsights(repos), [repos]);
 
@@ -43,16 +37,12 @@ export default function Overview() {
 
   const handleUpdate = async () => {
     if (!repo) return;
-    clearDsxProgress();
-    setDsxRunning(true);
     try {
       await repoUpdate(repo.path);
       await refreshRepo(repo.path);
       addToast('Update complete', 'success');
     } catch (e) {
       addToast(String(e), 'error');
-    } finally {
-      setDsxRunning(false);
     }
   };
 
@@ -157,52 +147,6 @@ export default function Overview() {
           </div>
         )}
 
-        {/* dsx 進捗ログ — update 実行後に stdout を表示（pull スキップ行をハイライト） */}
-        {(dsxRunning || dsxProgress.length > 0) && (
-          <div style={{
-            marginTop: 16,
-            background: 'var(--bg3)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r)',
-            overflow: 'hidden',
-            flexShrink: 0,
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '6px 12px',
-              borderBottom: '1px solid var(--border)',
-              background: 'var(--bg2)',
-            }}>
-              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', letterSpacing: '.1em', flex: 1 }}>
-                {dsxRunning ? '⟳ dsx output…' : 'dsx output'}
-              </span>
-              {!dsxRunning && (
-                <AppBtn onClick={clearDsxProgress} style={{ fontSize: 9 }}>Clear</AppBtn>
-              )}
-            </div>
-            <div style={{
-              maxHeight: 180,
-              overflowY: 'auto',
-              padding: '8px 12px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              lineHeight: 1.6,
-            }}>
-              {dsxProgress.length === 0 && dsxRunning && (
-                <span style={{ color: 'var(--text4)' }}>Waiting for output…</span>
-              )}
-              {dsxProgress.map((line, i) => (
-                <div
-                  key={i}
-                  style={{ color: isSkipLine(line) ? 'var(--amber)' : 'var(--text2)' }}
-                >
-                  {line || '\u00a0'}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

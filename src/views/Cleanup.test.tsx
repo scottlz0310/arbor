@@ -115,7 +115,7 @@ function resultItem(
 beforeEach(() => {
   jest.clearAllMocks();
   act(() => {
-    useUiStore.setState({ toasts: [], dsxProgress: [], dsxRunning: false });
+    useUiStore.setState({ toasts: [] });
   });
   mockCleanupPreview.mockResolvedValue(defaultPreview());
   mockCleanupExecute.mockResolvedValue({ items: [], completed_at: 1_700_000_200 });

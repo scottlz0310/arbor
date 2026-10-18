@@ -105,13 +105,16 @@ Rust backend (Tauri commands)
 | `types/index.ts` | Rust モデルと 1:1 対応する TypeScript 型定義 |
 | `lib/invoke.ts` | `@tauri-apps/api/core` の `invoke` を型安全にラップした関数群 |
 | `lib/ruleEngine.ts` | ルールベース Insight 生成。diverged / far behind を検出 |
+| `lib/processEvents.ts` | `process_*` イベントの購読。描画フレームごとにまとめて `consoleStore` へ反映する |
+| `lib/ansi.ts` | ANSI エスケープの最小パーサ（前景 16 色・太字・薄字。他は除去） |
 | `stores/repoStore.ts` | リポジトリ一覧と選択状態（Zustand） |
-| `stores/uiStore.ts` | ナビゲーション状態・Toast・dsx 進捗ログ（Zustand） |
+| `stores/uiStore.ts` | ナビゲーション状態・Toast（Zustand） |
+| `stores/consoleStore.ts` | 実行ログ（リングバッファ 10,000 行）と実行状態（Zustand） |
 | `views/` | ページコンポーネント（Overview / Cleanup / Settings） |
-| `components/` | 共通 UI（Sidebar, AppBar, ConfirmDialog, Toast） |
+| `components/` | 共通 UI（Sidebar, AppBar, ConfirmDialog, Toast, LogConsole） |
 
 **データフロー:** Rust コマンド → `lib/invoke.ts` → Zustand store → React コンポーネント
-**イベント:** Rust `runner.rs` が `process_started` / `process_output` / `process_finished` を emit → `App.tsx` の `listen()` → `uiStore.appendDsxLine()`（ペイロードは `camelCase`。型は `types/index.ts` の `Process*`）
+**イベント:** Rust `runner.rs` が `process_started` / `process_output` / `process_finished` を emit → `lib/processEvents.ts`（`App.tsx` が購読）→ `consoleStore` → `LogConsole`（App 下部のドック）（ペイロードは `camelCase`。型は `types/index.ts` の `Process*`）
 
 ### 設定ファイル
 
