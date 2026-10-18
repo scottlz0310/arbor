@@ -29,6 +29,21 @@ export interface FetchResult {
   updated_refs: string[];
 }
 
+/** 一括 fetch で失敗した 1 件（commands/fetch.rs）。 */
+export interface FetchFailure {
+  path: string;
+  name: string;
+  error: string;
+}
+
+/** `fetch_repositories` の結果。キャンセルされた場合、成功と失敗の合計は total に満たない。 */
+export interface FetchSummary {
+  total: number;
+  succeeded: number;
+  failed: FetchFailure[];
+  cancelled: boolean;
+}
+
 /** Mirror of the `process_started` event payload (commands/runner.rs). */
 export interface ProcessStarted {
   runId: number;

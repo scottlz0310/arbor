@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
+import { useConsoleStore } from '../stores/consoleStore';
 import AppBar, { AppBtn } from '../components/AppBar';
 import { fetchAll, repoUpdate } from '../lib/invoke';
+import { fetchAllRepositories } from '../lib/fetchRepositories';
 import { generateInsights } from '../lib/ruleEngine';
 import type { Insight, RepoInfo } from '../types';
 
@@ -24,6 +26,8 @@ function statusBadge(repo: RepoInfo) {
 export default function Overview() {
   const { repos, selectedRepo, selectRepo, refreshRepo } = useRepoStore();
   const { addToast } = useUiStore();
+  // 実行枠は 1 つだけ。実行中は backend が拒否するので、押せないようにしておく。
+  const busy = useConsoleStore((s) => s.run?.status === 'running');
 
   const insights = useMemo(() => generateInsights(repos), [repos]);
 
@@ -59,10 +63,15 @@ export default function Overview() {
             ? <><span style={{ color: 'var(--text2)' }}>{repo.name}</span> · {repo.current_branch}</>
             : 'No repository selected'
         }
-        actions={repo && (
+        actions={(
           <>
-            <AppBtn onClick={handleFetch}>↓ Fetch</AppBtn>
-            <AppBtn variant="primary" onClick={handleUpdate}>⟳ Update</AppBtn>
+            <AppBtn onClick={fetchAllRepositories} disabled={busy}>⇣ Fetch All</AppBtn>
+            {repo && (
+              <>
+                <AppBtn onClick={handleFetch}>↓ Fetch</AppBtn>
+                <AppBtn variant="primary" onClick={handleUpdate}>⟳ Update</AppBtn>
+              </>
+            )}
           </>
         )}
       />

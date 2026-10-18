@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'bun:test';
 import { act } from 'react';
@@ -15,6 +15,7 @@ const mockCloseCommandPalette = mock();
 const mockAddToast            = mock();
 const mockFetchAll            = spyOn(invoke, 'fetchAll');
 const mockRepoUpdate          = spyOn(invoke, 'repoUpdate');
+const mockFetchRepositories   = spyOn(invoke, 'fetchRepositories');
 
 // module export への spy をファイル外へ漏らさない
 afterAll(() => {
@@ -34,6 +35,7 @@ function makeRepo(path: string, name: string) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockFetchAll.mockResolvedValue({ updated_refs: [] });
+  mockFetchRepositories.mockResolvedValue({ total: 2, succeeded: 2, failed: [], cancelled: false });
   mockRepoUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 });
   mockRefreshRepo.mockResolvedValue(undefined);
   mockLoadRepos.mockResolvedValue(undefined);
@@ -166,13 +168,13 @@ describe('CommandPalette — 境界ケース', () => {
 
   it('↓ キーは末尾を超えない', async () => {
     renderPalette();
-    // ビュー 7 件を超えて押す
+    // コマンド数を超えて押す
     for (let i = 0; i < 20; i++) {
       await userEvent.keyboard('{ArrowDown}');
     }
     await userEvent.keyboard('{Enter}');
-    // 最後のコマンドが実行される（undefined にならない）
-    expect(mockNavigate).toHaveBeenCalled();
+    // 最後のコマンド（Fetch All）が実行される（undefined にならない）
+    expect(mockCloseCommandPalette).toHaveBeenCalled();
   });
 
   it('query 変更時にカーソルが 0 にリセットされる', async () => {
@@ -235,3 +237,20 @@ describe('CommandPalette — アクションコマンド', () => {
   });
 });
 
+
+describe('CommandPalette — Fetch All', () => {
+  it('リポジトリを選んでいなくても Fetch All Repositories が表示される', () => {
+    act(() => { useRepoStore.setState({ selectedRepo: null }); });
+    renderPalette();
+    expect(screen.getByText('Fetch All Repositories')).toBeTruthy();
+  });
+
+  it('クリックで fetchRepositories が呼ばれ、一覧が読み直される', async () => {
+    renderPalette();
+    await userEvent.click(screen.getByText('Fetch All Repositories'));
+    expect(mockCloseCommandPalette).toHaveBeenCalled();
+    expect(mockFetchRepositories).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockLoadRepos).toHaveBeenCalled());
+    expect(mockAddToast).toHaveBeenCalledWith('Fetch 完了: 2 件', 'success');
+  });
+});

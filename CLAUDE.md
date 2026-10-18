@@ -81,7 +81,7 @@ Rust backend (Tauri commands)
 **重要な設計原則:**
 - git の**一括操作**（fetch-all / pull / cleanup）は **dsx に委譲**し、Arbor 側で再実装しない
 - git2 は主に**読み取り**（ステータス・Cleanup 候補の列挙）に使用する。
-  ただし単一リポジトリの `fetch_all` と Cleanup の実行（`cleanup_execute`）は git2 で直接実装（dsx への往復コストを避けるため、個別選択に構造化データが必要なため）
+  ただし `fetch_all`（単一）・`fetch_repositories`（一括）と Cleanup の実行（`cleanup_execute`）は git2 で直接実装（dsx への往復コストを避けるため、個別選択に構造化データが必要なため）
 - 破壊的操作は**必ず ConfirmDialog を経由**させる
 
 ### Rust バックエンド (`src-tauri/src/`)
@@ -95,7 +95,8 @@ Rust backend (Tauri commands)
 | `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories` は実効リポジトリを最大 8 並列でスキャン、`get_repo_status`）と `fetch_all` |
 | `commands/config_cmd.rs` | config.toml CRUD（手動登録の追加・削除、`update_settings`、存在しない手動登録の検出） |
 | `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する |
-| `commands/runner.rs` | 外部コマンドの実行基盤。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
+| `commands/fetch.rs` | 管理対象リポジトリの一括 fetch（`fetch_repositories`）。git2 で最大 4 並列に fetch し、1 件ごとの結果を runner の job としてコンソールへ流す。`cancel_run` で転送中の fetch も中断できる |
+| `commands/runner.rs` | 外部コマンドの実行基盤（子プロセスを持たない処理は `run_job` で同じ枠に載せる）。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
 
 新しい Tauri コマンドを追加したら `lib.rs` の `invoke_handler!` に登録する。
 
@@ -132,6 +133,7 @@ Rust backend (Tauri commands)
 | `repo_update` | `dsx repo update --no-tui --jobs 4` | stdout / stderr を `process_output` イベントでストリーム |
 | `cleanup_preview` | git2 | 管理対象（自動検出 + 手動登録）の全リポジトリの削除候補を読み取り専用で列挙 |
 | `cleanup_execute` | git2 | 選択候補を再検証して local branch 削除または remote-tracking ref prune を実行 |
+| `fetch_repositories` | git2（`commands/fetch.rs`） | 全管理対象を最大 4 並列で fetch。進捗は `process_*` イベント、結果は `FetchSummary`。実行枠は dsx と共有（同時に 1 件） |
 
 `repo_update` などの dsx コマンドは `runner` 経由でストリーミングする。Cleanup コマンドは
 `commands/cleanup.rs` で実装し、dsx を呼び出さない。
