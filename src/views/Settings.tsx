@@ -160,7 +160,8 @@ export default function Settings() {
         path={<span style={{ color: 'var(--text2)' }}>Settings</span>}
       />
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: 24, maxWidth: 680 }}>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ padding: 24, maxWidth: 680 }}>
 
         {/* dsx status */}
         <section style={{ marginBottom: 32 }}>
@@ -371,6 +372,7 @@ export default function Settings() {
           )}
         </section>
 
+      </div>
       </div>
 
       {showSelfUpdateConfirm && (

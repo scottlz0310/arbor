@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
-import Sidebar from './components/Sidebar';
+import { useEffect, useRef } from 'react';
 import ToastContainer from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import CommandPalette from './components/CommandPalette';
 import Header from './components/Header';
+import SummaryStrip from './components/SummaryStrip';
+import TabBar from './components/TabBar';
 import LogConsole from './components/LogConsole';
-import Overview from './views/Overview';
+import Status from './views/Status';
 import Cleanup from './views/Cleanup';
 import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
@@ -60,36 +61,41 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [commandPaletteOpen, openCommandPalette, closeCommandPalette]);
 
-  // リポジトリが未登録なら Settings へ遷移する。
-  const { repos } = useRepoStore();
+  // 初回の読み込みが終わってもリポジトリが 0 件なら、Settings へ誘導する（読み込み前の空の一覧では判定しない）。
+  // 誘導は 1 回だけ。以後は、0 件のままでも Status へ戻れるようにする。
+  const { repos, loaded } = useRepoStore();
+  const guided = useRef(false);
   useEffect(() => {
-    if (repos.length === 0 && activeView === 'overview') {
-      navigate('settings');
-    }
-  }, [repos.length, activeView, navigate]);
+    if (!loaded || guided.current) return;
+    guided.current = true;
+    if (repos.length === 0 && activeView === 'status') navigate('settings');
+  }, [loaded, repos.length, activeView, navigate]);
 
   return (
     <div className="app-root">
       <Header />
-      <div className="app-shell">
-        <Sidebar />
-        <main className="main-content">
-          <div style={{ flex: 1, minHeight: 0 }}>
-            {activeView === 'overview' && (
-              <ErrorBoundary key="overview" viewName="Overview"><Overview /></ErrorBoundary>
-            )}
-            {activeView === 'cleanup' && (
-              <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
-            )}
-            {activeView === 'settings' && (
-              <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>
-            )}
-          </div>
-          <LogConsole />
-        </main>
-        <ToastContainer />
-        {commandPaletteOpen && <CommandPalette />}
-      </div>
+      {activeView !== 'settings' && (
+        <>
+          <SummaryStrip />
+          <TabBar />
+        </>
+      )}
+      <main className="main-content">
+        <div style={{ flex: 1, minHeight: 0 }}>
+          {activeView === 'status' && (
+            <ErrorBoundary key="status" viewName="Status"><Status /></ErrorBoundary>
+          )}
+          {activeView === 'cleanup' && (
+            <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
+          )}
+          {activeView === 'settings' && (
+            <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>
+          )}
+        </div>
+        <LogConsole />
+      </main>
+      <ToastContainer />
+      {commandPaletteOpen && <CommandPalette />}
     </div>
   );
 }

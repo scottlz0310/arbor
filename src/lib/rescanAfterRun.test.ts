@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, jest, mock } from 'bun:test';
 import { act } from 'react';
 import { rescan, subscribeRescanAfterRun } from './rescanAfterRun';
+import { useCleanupStore } from '../stores/cleanupStore';
 import { useConsoleStore } from '../stores/consoleStore';
 import { useEnvStore } from '../stores/envStore';
 import { useRepoStore } from '../stores/repoStore';
@@ -94,5 +95,15 @@ describe('subscribeRescanAfterRun', () => {
     act(() => useConsoleStore.getState().handleFinished(finished(1)));
 
     expect(mockLoadRepos).not.toHaveBeenCalled();
+  });
+});
+
+describe('rescan と Cleanup 候補数', () => {
+  it('読み込み済みの Cleanup 候補数は、状態が変わるので捨てる', async () => {
+    act(() => useCleanupStore.setState({ candidateCount: 4 }));
+
+    await rescan();
+
+    expect(useCleanupStore.getState().candidateCount).toBeNull();
   });
 });

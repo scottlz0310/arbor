@@ -1,7 +1,7 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, type Mock } from 'bun:test';
 import type { CleanupCandidate } from '../types';
-import { cancelRun, cleanupExecute, cleanupPreview, fetchRepositories } from './invoke';
+import { cancelRun, cleanupExecute, cleanupPreview, fetchRepositories, openRepoFolder } from './invoke';
 
 const candidate: CleanupCandidate = {
   repo_path: '/repos/a',
@@ -37,6 +37,12 @@ describe('Process IPC wrappers', () => {
     await fetchRepositories();
 
     expect(mockedTauriInvoke.mock.calls[0]).toEqual(['fetch_repositories']);
+  });
+
+  it('openRepoFolder は repoPath を open_repo_folder へ委譲する', async () => {
+    await openRepoFolder('/repos/a');
+
+    expect(mockedTauriInvoke.mock.calls[0]).toEqual(['open_repo_folder', { repoPath: '/repos/a' }]);
   });
 });
 

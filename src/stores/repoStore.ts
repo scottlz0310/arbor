@@ -6,6 +6,8 @@ interface RepoStore {
   repos: RepoInfo[];
   selectedRepo: RepoInfo | null;
   loading: boolean;
+  /** 初回の読み込みが終わったか（成功・失敗を問わない）。「リポジトリが 0 件」の判定は、これが true になってから行う。 */
+  loaded: boolean;
   error: string | null;
 
   loadRepos: () => Promise<void>;
@@ -17,6 +19,7 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
   repos: [],
   selectedRepo: null,
   loading: false,
+  loaded: false,
   error: null,
 
   loadRepos: async () => {
@@ -27,12 +30,13 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
       set({
         repos,
         loading: false,
+        loaded: true,
         // Keep selection if repo still exists, else pick first.
         selectedRepo:
           repos.find((r) => r.path === selected?.path) ?? repos[0] ?? null,
       });
     } catch (e) {
-      set({ error: String(e), loading: false });
+      set({ error: String(e), loading: false, loaded: true });
     }
   },
 

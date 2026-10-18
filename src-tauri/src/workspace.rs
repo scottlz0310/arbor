@@ -67,6 +67,12 @@ fn merge_protected(global: &[String], extra: &[String]) -> Vec<String> {
     merged
 }
 
+/// 管理対象から、同じディレクトリを指すリポジトリを探す（区切り文字・末尾の区切り・Windows の大文字小文字を無視）。
+pub fn find_managed<'a>(repos: &'a [EffectiveRepo], path: &str) -> Option<&'a EffectiveRepo> {
+    let key = path_key(path);
+    repos.iter().find(|r| path_key(&r.path) == key)
+}
+
 /// 一覧に出すリポジトリ。root 配下を自動検出し、root の外の手動登録を後ろに足す。
 /// root 配下のリポジトリを手動登録していれば、その名前を使い、protected branches を追加する。
 ///
@@ -322,5 +328,34 @@ mod tests {
         } else {
             assert_ne!(path_key("/src/Arbor"), path_key("/src/arbor"));
         }
+    }
+
+    #[test]
+    fn find_managed_matches_across_path_spellings() {
+        let repos = vec![
+            EffectiveRepo {
+                path: "C:/src/arbor".to_string(),
+                name: "arbor".to_string(),
+                protected_branches: Vec::new(),
+                source: RepoSource::Workspace,
+            },
+            EffectiveRepo {
+                path: "/m/one".to_string(),
+                name: "one".to_string(),
+                protected_branches: Vec::new(),
+                source: RepoSource::Manual,
+            },
+        ];
+
+        assert_eq!(
+            find_managed(&repos, r"C:\src\arbor\").map(|r| r.name.as_str()),
+            Some("arbor")
+        );
+        assert_eq!(
+            find_managed(&repos, "/m/one").map(|r| r.name.as_str()),
+            Some("one")
+        );
+        assert!(find_managed(&repos, "C:/src/other").is_none());
+        assert!(find_managed(&repos, "").is_none());
     }
 }

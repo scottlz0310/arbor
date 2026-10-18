@@ -6,9 +6,11 @@
 
 ## 機能
 
-- **Overview** — 全リポジトリの状態（ahead/behind/modified/stash）をカード形式で俯瞰し、要対応のリポジトリを提示
+- **Header** — dsx の版・Bitwarden の状態・workspace root を表示し、Scan / Fetch All / dsx sys update / Daily Refresh（`dsx run --root`）を実行
+- **Repository Status** — 全リポジトリの状態（ahead / behind / dirty / detached / no upstream）をカードで俯瞰し、要対応のリポジトリを先頭に提示。リポジトリごとの Fetch とフォルダを開く操作
+- **Summary** — リポジトリ数・要対応の数・Cleanup 候補・dsx 環境の状態を一覧し、クリックで該当のビューへ移動
 - **Cleanup Wizard** — 全登録リポジトリの local branch 削除と remote-tracking ref prune を、実行直前の再検証付きで一括管理
-- **Settings** — リポジトリ登録・dsx CLI の確認と更新
+- **Settings** — workspace root・手動登録リポジトリの管理、dsx CLI の確認と更新
 
 ## 前提ツール
 

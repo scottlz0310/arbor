@@ -7,6 +7,7 @@ import { fetchAllRepositories } from '../lib/fetchRepositories';
 import { rescan } from '../lib/rescanAfterRun';
 import { useConsoleStore } from '../stores/consoleStore';
 import { useEnvStore } from '../stores/envStore';
+import { useUiStore } from '../stores/uiStore';
 import type { BitwardenState, DsxStatus, WorkspaceStatus } from '../types';
 
 type Tone = 'ok' | 'warn' | 'error' | 'neutral';
@@ -90,6 +91,8 @@ export default function Header() {
   // 実行枠は 1 つだけ。実行中は backend が拒否するので、押せないようにしておく。
   const busy = useConsoleStore((s) => s.run?.status === 'running');
   const [confirmingRefresh, setConfirmingRefresh] = useState(false);
+  const { activeView, navigate } = useUiStore();
+  const inSettings = activeView === 'settings';
 
   const blockReason = dailyRefreshBlockReason(dsx, workspace);
   const bitwardenLocked = bitwarden === 'not_unlocked';
@@ -115,6 +118,8 @@ export default function Header() {
         flexWrap: 'wrap',
       }}
     >
+      <span style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 700, color: 'var(--indigo)' }}>arbor</span>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
         <StatusPill pill={dsxPill(dsx)} />
         <StatusPill pill={bitwardenPill(bitwarden)} />
@@ -138,6 +143,13 @@ export default function Header() {
           title={blockReason ?? 'dsx run --root: Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新'}
         >
           ▶ Daily Refresh
+        </AppBtn>
+        <AppBtn
+          onClick={() => navigate(inSettings ? 'status' : 'settings')}
+          aria-pressed={inSettings}
+          title="Settings"
+        >
+          ⚙ Settings
         </AppBtn>
       </div>
 

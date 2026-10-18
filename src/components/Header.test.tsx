@@ -228,3 +228,17 @@ describe('Header — その他のボタン', () => {
     expect(mockFetchRepositories).not.toHaveBeenCalled();
   });
 });
+
+describe('Header — Settings', () => {
+  it('Settings ボタンで Settings を開き、開いている間は押し直すと Status へ戻る', async () => {
+    act(() => useUiStore.setState({ activeView: 'status' }));
+    render(<Header />);
+
+    await userEvent.click(button(/Settings/));
+    expect(useUiStore.getState().activeView).toBe('settings');
+    expect(button(/Settings/).getAttribute('aria-pressed')).toBe('true');
+
+    await userEvent.click(button(/Settings/));
+    expect(useUiStore.getState().activeView).toBe('status');
+  });
+});

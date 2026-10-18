@@ -1,7 +1,7 @@
 use super::fetch::fetch_repository;
 use crate::config::load_config;
 use crate::models::{FetchResult, RepoInfo, RepoSource};
-use crate::workspace::{effective_repos, EffectiveRepo};
+use crate::workspace::{effective_repos, find_managed, EffectiveRepo};
 use git2::{Repository, StatusOptions};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -119,6 +119,74 @@ pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
     Ok(FetchResult { updated_refs })
 }
 
+// ─── open_repo_folder ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Os {
+    Windows,
+    Mac,
+    Other,
+}
+
+impl Os {
+    fn current() -> Self {
+        if cfg!(windows) {
+            Self::Windows
+        } else if cfg!(target_os = "macos") {
+            Self::Mac
+        } else {
+            Self::Other
+        }
+    }
+}
+
+/// フォルダをファイルマネージャで開くコマンド。
+fn folder_opener(path: &str, os: Os) -> (&'static str, Vec<String>) {
+    match os {
+        // explorer は、区切りが `/` のパスだと別のフォルダを開くことがある。
+        Os::Windows => ("explorer", vec![path.replace('/', "\\")]),
+        Os::Mac => ("open", vec![path.to_string()]),
+        Os::Other => ("xdg-open", vec![path.to_string()]),
+    }
+}
+
+/// フォルダを開くコマンドを起動する（プログラム名, 引数）。テストでは差し替える。
+type Launch<'a> = &'a dyn Fn(&str, &[String]) -> std::io::Result<()>;
+
+/// 管理対象のリポジトリのフォルダを、`launch` で開く。
+/// 渡されたパスは検索にだけ使い、実際に開くのは管理対象として解決した実在のフォルダ（任意のパスは開かない）。
+fn open_folder(
+    repos: &[EffectiveRepo],
+    requested: &str,
+    os: Os,
+    launch: Launch<'_>,
+) -> Result<(), String> {
+    let repo = find_managed(repos, requested)
+        .ok_or_else(|| format!("管理対象のリポジトリではありません: {requested}"))?;
+    if !std::path::Path::new(&repo.path).is_dir() {
+        return Err(format!("フォルダが見つかりません: {}", repo.path));
+    }
+
+    let (program, args) = folder_opener(&repo.path, os);
+    launch(program, &args).map_err(|e| format!("{program} を起動できません: {e}"))
+}
+
+fn spawn_detached(program: &str, args: &[String]) -> std::io::Result<()> {
+    let mut child = std::process::Command::new(program).args(args).spawn()?;
+    // explorer は成功しても終了コード 1 を返すため、結果は見ない。子プロセスの回収だけを行う。
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+/// 管理対象のリポジトリのフォルダを、OS のファイルマネージャで開く。
+#[tauri::command(async)]
+pub fn open_repo_folder(repo_path: String) -> Result<(), String> {
+    let (repos, _) = effective_repos(&load_config()?);
+    open_folder(&repos, &repo_path, Os::current(), &spawn_detached)
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 fn repo_info_for_path(path: &str) -> Result<RepoInfo, String> {
@@ -225,7 +293,10 @@ fn upstream_ahead_behind(repo: &Repository, branch: &git2::Branch) -> (u32, u32)
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_effective, fetch_all, repo_info_for_path, scan_repositories};
+    use super::{
+        apply_effective, fetch_all, folder_opener, open_folder, repo_info_for_path,
+        scan_repositories, spawn_detached, Os,
+    };
     use crate::models::{RepoInfo, RepoSource};
     use crate::workspace::EffectiveRepo;
     use std::path::{Path, PathBuf};
@@ -625,5 +696,146 @@ mod tests {
         std::fs::write(&path, format!("stash content: {message}\n")).expect("write");
         let sig = git2::Signature::now("Arbor Test", "arbor@example.invalid").expect("signature");
         repo.stash_save(&sig, message, None).expect("stash save")
+    }
+
+    // ── folder_opener ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn folder_opener_cases() {
+        let cases = [
+            (
+                "Windows は区切りを バックスラッシュ にそろえる",
+                Os::Windows,
+                "C:/Users/dev/src/arbor",
+                ("explorer", r"C:\Users\dev\src\arbor"),
+            ),
+            (
+                "Windows のバックスラッシュ区切りはそのまま",
+                Os::Windows,
+                r"C:\src\arbor",
+                ("explorer", r"C:\src\arbor"),
+            ),
+            (
+                "macOS",
+                Os::Mac,
+                "/Users/dev/src/arbor",
+                ("open", "/Users/dev/src/arbor"),
+            ),
+            (
+                "その他",
+                Os::Other,
+                "/home/dev/src/arbor",
+                ("xdg-open", "/home/dev/src/arbor"),
+            ),
+        ];
+        for (name, os, path, (program, arg)) in cases {
+            assert_eq!(
+                folder_opener(path, os),
+                (program, vec![arg.to_string()]),
+                "{name}"
+            );
+        }
+    }
+
+    // ── open_folder ───────────────────────────────────────────────────────────
+
+    type Launched = std::cell::RefCell<Vec<(String, Vec<String>)>>;
+
+    fn managed(path: &str) -> Vec<EffectiveRepo> {
+        vec![EffectiveRepo {
+            path: path.to_string(),
+            name: "repo".to_string(),
+            protected_branches: Vec::new(),
+            source: RepoSource::Workspace,
+        }]
+    }
+
+    fn recording(launched: &Launched) -> impl Fn(&str, &[String]) -> std::io::Result<()> + '_ {
+        move |program, args| {
+            launched
+                .borrow_mut()
+                .push((program.to_string(), args.to_vec()));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn open_folder_opens_the_resolved_managed_path_not_the_requested_spelling() {
+        let dir = TempDir::new("open-folder");
+        let launched = Launched::default();
+        // 末尾の区切りがついた別の表記で依頼しても、管理対象として解決したパスを開く。
+        let requested = format!("{}/", dir.path_str());
+
+        open_folder(
+            &managed(dir.path_str()),
+            &requested,
+            Os::Other,
+            &recording(&launched),
+        )
+        .expect("open");
+
+        assert_eq!(
+            *launched.borrow(),
+            [("xdg-open".to_string(), vec![dir.path_str().to_string()])]
+        );
+    }
+
+    #[test]
+    fn open_folder_rejects_paths_that_are_not_managed_without_launching() {
+        let dir = TempDir::new("open-folder-unmanaged");
+        let other = TempDir::new("open-folder-other");
+        let launched = Launched::default();
+
+        let err = open_folder(
+            &managed(dir.path_str()),
+            other.path_str(),
+            Os::Other,
+            &recording(&launched),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("管理対象のリポジトリではありません"), "{err}");
+        assert!(launched.borrow().is_empty());
+    }
+
+    #[test]
+    fn open_folder_rejects_a_managed_path_that_no_longer_exists() {
+        let gone = TempDir::new("open-folder-gone").path.join("deleted");
+        let gone = gone.to_string_lossy().into_owned();
+        let launched = Launched::default();
+
+        let err =
+            open_folder(&managed(&gone), &gone, Os::Other, &recording(&launched)).unwrap_err();
+
+        assert!(err.contains("フォルダが見つかりません"), "{err}");
+        assert!(launched.borrow().is_empty());
+    }
+
+    #[test]
+    fn open_folder_reports_a_launch_failure_with_the_program_name() {
+        let dir = TempDir::new("open-folder-fail");
+        let fail = |_: &str, _: &[String]| Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+
+        let err =
+            open_folder(&managed(dir.path_str()), dir.path_str(), Os::Windows, &fail).unwrap_err();
+
+        assert!(err.contains("explorer を起動できません"), "{err}");
+    }
+
+    #[test]
+    fn current_os_matches_the_build_target() {
+        let expected = if cfg!(windows) {
+            Os::Windows
+        } else if cfg!(target_os = "macos") {
+            Os::Mac
+        } else {
+            Os::Other
+        };
+        assert_eq!(Os::current(), expected);
+    }
+
+    #[test]
+    fn spawn_detached_reports_a_missing_program() {
+        assert!(spawn_detached("arbor-no-such-program-xyz", &[]).is_err());
     }
 }

@@ -55,6 +55,9 @@ export const listRepositories = () =>
 export const getRepoStatus = (repoPath: string) =>
   tauriInvoke<RepoInfo>('get_repo_status', { repoPath });
 
+export const openRepoFolder = (repoPath: string) =>
+  tauriInvoke<void>('open_repo_folder', { repoPath });
+
 export const fetchAll = (repoPath: string) =>
   tauriInvoke<FetchResult>('fetch_all', { repoPath });
 

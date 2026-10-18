@@ -1,12 +1,15 @@
 import { create } from 'zustand';
-import type { Toast, ViewId } from '../types';
+import type { StatusFilter, Toast, ViewId } from '../types';
 
 interface UiStore {
   activeView: ViewId;
+  /** Status タブの絞り込み。Summary のカードからも切り替える。 */
+  statusFilter: StatusFilter;
   toasts: Toast[];
   commandPaletteOpen: boolean;
 
   navigate: (view: ViewId) => void;
+  setStatusFilter: (filter: StatusFilter) => void;
   addToast: (message: string, kind?: Toast['kind']) => void;
   dismissToast: (id: string) => void;
   openCommandPalette: () => void;
@@ -16,11 +19,14 @@ interface UiStore {
 let toastSeq = 0;
 
 export const useUiStore = create<UiStore>((set) => ({
-  activeView: 'overview',
+  activeView: 'status',
+  statusFilter: 'all',
   toasts: [],
   commandPaletteOpen: false,
 
   navigate: (view) => set({ activeView: view }),
+
+  setStatusFilter: (filter) => set({ statusFilter: filter }),
 
   addToast: (message, kind = 'info') => {
     const id = `toast-${++toastSeq}`;

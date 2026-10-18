@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'bun:test';
 import * as invoke from '../lib/invoke';
+import { useCleanupStore } from '../stores/cleanupStore';
 import { useUiStore } from '../stores/uiStore';
 import type {
   CleanupCandidate,
@@ -284,5 +285,24 @@ describe('Cleanup — 確認と実行結果', () => {
     expect(screen.getByRole('button', { name: 'Execute selected (0)' })).toBeDisabled();
     expect(useUiStore.getState().toasts.some((toast) => toast.message.includes('preview unavailable')))
       .toBe(true);
+  });
+
+  it('実行できる候補の数を Summary 用に保持し、失敗したら捨てる', async () => {
+    const user = userEvent.setup();
+    const blocked = makeCandidate({ ref_name: 'main', blocked: ['default_branch'] });
+    mockCleanupPreview
+      .mockResolvedValueOnce(
+        makePreview([makeRepo('/repos/a', 'repo-a', [makeCandidate(), makeCandidate({ ref_name: 'feature/two' }), blocked])]),
+      )
+      .mockRejectedValueOnce(new Error('preview unavailable'));
+    render(<Cleanup />);
+    await screen.findByText('feature/done');
+
+    // ブロックされた候補は、実行できないので数えない
+    expect(useCleanupStore.getState().candidateCount).toBe(2);
+
+    await user.click(screen.getByRole('button', { name: 'Rescan' }));
+
+    await waitFor(() => expect(useCleanupStore.getState().candidateCount).toBeNull());
   });
 });
