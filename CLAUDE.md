@@ -115,8 +115,9 @@ Rust backend (Tauri commands)
 | `stores/envStore.ts` | dsx の版・Bitwarden の状態・workspace root の現況（Header の pill 用。Zustand） |
 | `lib/dsxActions.ts` | Daily Refresh / sys update / Update All の実行と Toast、Daily Refresh を実行できない理由の判定 |
 | `lib/rescanAfterRun.ts` | run の終了を検知して、一覧と環境の状態を自動で読み直す |
-| `views/` | ページコンポーネント（Status / Cleanup / Settings）。Status が Summary の下のタブで、Cleanup と並ぶ。Settings は Header から開く |
+| `views/` | ページコンポーネント（Status / Cleanup / Tools / Settings）。Status・Cleanup・Tools が Summary の下のタブで、Settings は Header から開く。Tools は dsx の版の確認・self-update と、sys update / `-n` / repo update / doctor の実行ボタン（出力は解析せず、コンソールに流すだけ） |
 | `components/` | 共通 UI（Header, SummaryStrip, TabBar, AppBar, ConfirmDialog, Toast, LogConsole） |
+| `lib/dsxVersion.ts` | `v0.11.0` / `dsx version 0.11.0` 形式の版の比較 |
 | `lib/repoStatus.ts` | 要対応の判定（`needsAction`）、状態バッジ、Status タブの絞り込みと並び順 |
 | `stores/cleanupStore.ts` | 直近の Cleanup プレビューの候補数（Summary 用。プレビューは remote へ接続して遅いため、自動では読み込まない） |
 
@@ -135,6 +136,8 @@ Rust backend (Tauri commands)
 
 | Tauri コマンド | バックエンド処理 | 備考 |
 |---------------|-----------------|------|
+| `sys_update` / `sys_update_dry_run` | `dsx sys update --no-tui` / `... -n` | dry run は計画だけを表示する。dsx が管理するツール群を更新する（dsx 本体は更新しない） |
+| `dsx_doctor` | `dsx doctor` | 依存ツールと設定の診断。出力は `process_output` イベントでストリーム |
 | `repo_update` | `dsx repo update --root <workspace root> --no-tui --jobs 4` | root 配下の全リポジトリを更新。stdout / stderr を `process_output` イベントでストリーム |
 | `daily_refresh` | `dsx run --root <workspace root> --no-tui --jobs 4` | Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新。dsx v0.11.0 未満では拒否する |
 | `cleanup_preview` | git2 | 管理対象（自動検出 + 手動登録）の全リポジトリの削除候補を読み取り専用で列挙 |

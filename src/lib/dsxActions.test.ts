@@ -60,7 +60,7 @@ describe('dailyRefreshBlockReason', () => {
       name: 'dsx が古い',
       dsx: dsx({ version: 'dsx version 0.10.2', supports_run_root: false }),
       ws: workspace(),
-      expected: /v0\.11\.0 以上.*v0\.10\.2.*self-update/,
+      expected: /v0\.11\.0 以上.*v0\.10\.2.*dsx Tools.*self-update/,
     },
     { name: 'root 未設定', dsx: dsx(), ws: workspace({ root: null }), expected: /未設定/ },
     {

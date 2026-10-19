@@ -108,7 +108,7 @@ export default function SummaryStrip() {
         tag={env.tag}
         tagColor="var(--text3)"
         title={env.title}
-        onClick={() => navigate('settings')}
+        onClick={() => navigate('tools')}
       />
     </div>
   );

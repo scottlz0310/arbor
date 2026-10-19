@@ -69,6 +69,7 @@ describe('CommandPalette — 表示', () => {
     renderPalette();
     expect(screen.getByText('Status へ移動')).toBeTruthy();
     expect(screen.getByText('Cleanup へ移動')).toBeTruthy();
+    expect(screen.getByText('dsx Tools へ移動')).toBeTruthy();
     expect(screen.getByText('Settings へ移動')).toBeTruthy();
   });
 

@@ -229,13 +229,36 @@ pub async fn env_inject(
 
 // ─── sys_update ───────────────────────────────────────────────────────────────
 
+/// `dsx sys update` の引数。`dry_run` なら `-n` を付け、実際の更新は行わず計画だけを表示させる。
+fn sys_update_args(dry_run: bool) -> Vec<&'static str> {
+    let mut args = vec!["sys", "update", "--no-tui"];
+    if dry_run {
+        args.push("-n");
+    }
+    args
+}
+
 /// Runs `dsx sys update --no-tui` to upgrade dsx-managed tools.
 ///
 /// Does not require a specific repository directory. Output is streamed via
 /// the `process_*` events the same way as `repo_update`.
 #[tauri::command]
 pub async fn sys_update(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
-    run_dsx(&state, ".", &["sys", "update", "--no-tui"]).await
+    run_dsx(&state, ".", &sys_update_args(false)).await
+}
+
+/// Runs `dsx sys update --no-tui -n`: shows what `sys update` would do without changing anything.
+#[tauri::command]
+pub async fn sys_update_dry_run(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
+    run_dsx(&state, ".", &sys_update_args(true)).await
+}
+
+// ─── dsx_doctor ───────────────────────────────────────────────────────────────
+
+/// Runs `dsx doctor`: diagnoses the tools and environment dsx depends on. Output is streamed via the `process_*` events.
+#[tauri::command]
+pub async fn dsx_doctor(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
+    run_dsx(&state, ".", &["doctor"]).await
 }
 
 // ─── dsx_self_update ──────────────────────────────────────────────────────────
@@ -575,5 +598,11 @@ mod tests {
 
         let missing = ensure_run_root_supported(&status(false, None, false)).unwrap_err();
         assert!(missing.contains("見つかりません"), "{missing}");
+    }
+
+    #[test]
+    fn sys_update_args_add_the_dry_run_flag_only_when_asked() {
+        assert_eq!(sys_update_args(false), ["sys", "update", "--no-tui"]);
+        assert_eq!(sys_update_args(true), ["sys", "update", "--no-tui", "-n"]);
     }
 }

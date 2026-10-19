@@ -49,6 +49,9 @@ describe('TabBar', () => {
     await userEvent.click(tab(/Branch Cleanup/));
     expect(useUiStore.getState().activeView).toBe('cleanup');
 
+    await userEvent.click(tab(/dsx Tools/));
+    expect(useUiStore.getState().activeView).toBe('tools');
+
     await userEvent.click(tab(/Repository Status/));
     expect(useUiStore.getState().activeView).toBe('status');
   });
@@ -76,5 +79,6 @@ describe('TabBar', () => {
 
     expect(tab(/Repository Status/).textContent).toBe('Repository Status');
     expect(tab(/Branch Cleanup/).textContent).toBe('Branch Cleanup');
+    expect(tab(/dsx Tools/).textContent).toBe('dsx Tools');
   });
 });

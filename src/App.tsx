@@ -8,6 +8,7 @@ import TabBar from './components/TabBar';
 import LogConsole from './components/LogConsole';
 import Status from './views/Status';
 import Cleanup from './views/Cleanup';
+import Tools from './views/Tools';
 import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
 import { useUiStore } from './stores/uiStore';
@@ -28,8 +29,8 @@ export default function App() {
     useEnvStore.getState().refresh().then(() => {
       if (cancelled) return;
       if (!useEnvStore.getState().dsx?.available) {
-        navigate('settings');
-        addToast('dsx CLI が見つかりません。Settings からインストール手順を確認してください。', 'error');
+        navigate('tools');
+        addToast('dsx CLI が見つかりません。dsx Tools タブからインストール手順を確認してください。', 'error');
       }
     });
 
@@ -87,6 +88,9 @@ export default function App() {
           )}
           {activeView === 'cleanup' && (
             <ErrorBoundary key="cleanup" viewName="Cleanup"><Cleanup /></ErrorBoundary>
+          )}
+          {activeView === 'tools' && (
+            <ErrorBoundary key="tools" viewName="dsx Tools"><Tools /></ErrorBoundary>
           )}
           {activeView === 'settings' && (
             <ErrorBoundary key="settings" viewName="Settings"><Settings /></ErrorBoundary>

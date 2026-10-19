@@ -10,8 +10,8 @@ use commands::{
         scan_missing_repositories, update_settings,
     },
     dsx::{
-        bitwarden_status, daily_refresh, dsx_check, dsx_latest_version, dsx_self_update,
-        env_inject, repo_update, sys_update,
+        bitwarden_status, daily_refresh, dsx_check, dsx_doctor, dsx_latest_version,
+        dsx_self_update, env_inject, repo_update, sys_update, sys_update_dry_run,
     },
     fetch::fetch_repositories,
     repo::{fetch_all, get_repo_status, list_repositories, open_repo_folder},
@@ -55,6 +55,8 @@ pub fn run() {
             bitwarden_status,
             env_inject,
             sys_update,
+            sys_update_dry_run,
+            dsx_doctor,
             dsx_self_update,
             cancel_run,
         ])

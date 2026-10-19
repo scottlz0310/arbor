@@ -1,7 +1,16 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, type Mock } from 'bun:test';
 import type { CleanupCandidate } from '../types';
-import { cancelRun, cleanupExecute, cleanupPreview, fetchRepositories, openRepoFolder } from './invoke';
+import {
+  cancelRun,
+  cleanupExecute,
+  cleanupPreview,
+  dsxDoctor,
+  fetchRepositories,
+  openRepoFolder,
+  sysUpdate,
+  sysUpdateDryRun,
+} from './invoke';
 
 const candidate: CleanupCandidate = {
   repo_path: '/repos/a',
@@ -43,6 +52,17 @@ describe('Process IPC wrappers', () => {
     await openRepoFolder('/repos/a');
 
     expect(mockedTauriInvoke.mock.calls[0]).toEqual(['open_repo_folder', { repoPath: '/repos/a' }]);
+  });
+
+  it.each([
+    { name: 'sysUpdate', call: sysUpdate, command: 'sys_update' },
+    { name: 'sysUpdateDryRun', call: sysUpdateDryRun, command: 'sys_update_dry_run' },
+    { name: 'dsxDoctor', call: dsxDoctor, command: 'dsx_doctor' },
+  ])('$name は引数なしで $command を呼ぶ', async ({ call, command }) => {
+    await call();
+
+    expect(mockedTauriInvoke).toHaveBeenCalledTimes(1);
+    expect(mockedTauriInvoke.mock.calls[0]).toEqual([command]);
   });
 });
 

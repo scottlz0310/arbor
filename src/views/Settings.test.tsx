@@ -14,10 +14,7 @@ import { useUiStore } from '../stores/uiStore';
 const mockOpen = open as Mock<typeof open>;
 
 // デフォルトの invoke モックを設定する
-const mockDsxCheck = spyOn(invoke, 'dsxCheck');
-const mockDsxLatestVersion = spyOn(invoke, 'dsxLatestVersion');
 const mockGetConfig = spyOn(invoke, 'getConfig');
-const mockSysUpdate = spyOn(invoke, 'sysUpdate');
 const mockScanMissingRepositories = spyOn(invoke, 'scanMissingRepositories');
 const mockRemoveRepository = spyOn(invoke, 'removeRepository');
 const mockUpdateSettings = spyOn(invoke, 'updateSettings');
@@ -30,8 +27,6 @@ afterAll(() => {
   mock.restore();
 });
 
-const availableDsxStatus = { available: true, version: 'v0.2.3', path: '/usr/local/bin/dsx' };
-const unavailableDsxStatus = { available: false, version: null, path: null, supports_run_root: false };
 
 const mockConfig = {
   repositories: [],
@@ -65,9 +60,6 @@ beforeEach(() => {
     useEnvStore.setState({ refresh: mockEnvRefresh });
   });
   mockGetConfig.mockResolvedValue(mockConfig as never);
-  mockDsxCheck.mockResolvedValue(availableDsxStatus as never);
-  mockDsxLatestVersion.mockResolvedValue(null as never);
-  mockSysUpdate.mockResolvedValue({ stdout: '', stderr: '', exit_code: 0 } as never);
   mockScanMissingRepositories.mockResolvedValue([] as never);
   mockRemoveRepository.mockResolvedValue(mockConfig as never);
   mockAddRepository.mockResolvedValue(mockConfig as never);
@@ -100,150 +92,6 @@ describe('Settings — Repositories section', () => {
     await waitFor(() => expect(mockAddRepository).toHaveBeenCalledWith({ path: 'D:/other/new-tool', name: 'new-tool' }));
     await waitFor(() => expect(mockLoadRepos).toHaveBeenCalled());
     expect(mockEnvRefresh).toHaveBeenCalled();
-  });
-});
-
-describe('Settings — dsx CLI section', () => {
-  it('dsx が利用可能な場合にバージョンを表示する', async () => {
-    renderSettings();
-    await screen.findByText(/v0\.2\.3/);
-    expect(screen.getByText(/v0\.2\.3/)).toBeInTheDocument();
-  });
-
-  it('dsx が利用可能な場合に Update ボタンを表示する', async () => {
-    renderSettings();
-    await screen.findByRole('button', { name: 'Sys Update' });
-    expect(screen.getByRole('button', { name: 'Sys Update' })).toBeInTheDocument();
-  });
-
-  it('dsx が利用不可の場合に Update ボタンを表示しない', async () => {
-    mockDsxCheck.mockResolvedValue(unavailableDsxStatus as never);
-    renderSettings();
-    // インストール案内テキストが出るまで待つ
-    await screen.findByText(/dsx が見つかりません/);
-    expect(screen.queryByRole('button', { name: 'Sys Update' })).not.toBeInTheDocument();
-  });
-
-  it('Update ボタンをクリックすると確認ダイアログが表示される', async () => {
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'Sys Update' });
-    await userEvent.click(btn);
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(mockSysUpdate).not.toHaveBeenCalled();
-  });
-
-  it('確認ダイアログで「実行」をクリックすると sysUpdate が呼ばれる', async () => {
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'Sys Update' });
-    await userEvent.click(btn);
-    await userEvent.click(screen.getByRole('button', { name: '実行' }));
-    expect(mockSysUpdate).toHaveBeenCalledTimes(1);
-  });
-
-  it('確認ダイアログでキャンセルすると sysUpdate が呼ばれない', async () => {
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'Sys Update' });
-    await userEvent.click(btn);
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(mockSysUpdate).not.toHaveBeenCalled();
-  });
-
-  it('sysUpdate 完了後に dsxCheck を再呼び出しする', async () => {
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'Sys Update' });
-    await userEvent.click(btn);
-    await userEvent.click(screen.getByRole('button', { name: '実行' }));
-    await waitFor(() => {
-      // 初回 mount + update 後の再チェックで計 2 回呼ばれる
-      expect(mockDsxCheck).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  it('sysUpdate が失敗した場合にエラートーストを表示する', async () => {
-    mockSysUpdate.mockRejectedValue(new Error('network error') as never);
-    renderSettings(true);
-    const btn = await screen.findByRole('button', { name: 'Sys Update' });
-    await userEvent.click(btn);
-    await userEvent.click(screen.getByRole('button', { name: '実行' }));
-    // Toast に error メッセージが表示される（String(Error) → "Error: network error"）
-    await screen.findByText('Error: network error');
-  });
-
-  it('「バージョン確認」ボタンが表示される', async () => {
-    renderSettings();
-    await screen.findByRole('button', { name: 'バージョン確認' });
-    expect(screen.getByRole('button', { name: 'バージョン確認' })).toBeInTheDocument();
-  });
-
-  it('「バージョン確認」クリックで dsxLatestVersion が呼ばれる', async () => {
-    mockDsxLatestVersion.mockResolvedValue('v0.2.3' as never);
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
-    await userEvent.click(btn);
-    expect(mockDsxLatestVersion).toHaveBeenCalledTimes(1);
-  });
-
-  it('最新版のとき「最新版です」を表示する', async () => {
-    mockDsxLatestVersion.mockResolvedValue('v0.2.3' as never);
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
-    await userEvent.click(btn);
-    await screen.findByText(/最新版です/);
-  });
-
-  it('新バージョンがあるとき「利用可能」と「Self Update」ボタンを表示する', async () => {
-    mockDsxLatestVersion.mockResolvedValue('v0.9.9' as never);
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
-    await userEvent.click(btn);
-    await screen.findByText(/v0\.9\.9 が利用可能/);
-    expect(screen.getByRole('button', { name: 'Self Update' })).toBeInTheDocument();
-  });
-
-  it('「Self Update」クリックで確認ダイアログが表示される', async () => {
-    const mockDsxSelfUpdate = spyOn(invoke, 'dsxSelfUpdate').mockResolvedValue({} as never);
-    mockDsxLatestVersion.mockResolvedValue('v0.9.9' as never);
-    renderSettings();
-    await userEvent.click(await screen.findByRole('button', { name: 'バージョン確認' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Self Update' }));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(mockDsxSelfUpdate).not.toHaveBeenCalled();
-  });
-
-  it('「Self Update」確認後に dsxSelfUpdate が呼ばれる', async () => {
-    const mockDsxSelfUpdate = spyOn(invoke, 'dsxSelfUpdate').mockResolvedValue({} as never);
-    mockDsxLatestVersion.mockResolvedValue('v0.9.9' as never);
-    renderSettings();
-    await userEvent.click(await screen.findByRole('button', { name: 'バージョン確認' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Self Update' }));
-    await userEvent.click(screen.getByRole('button', { name: '実行' }));
-    expect(mockDsxSelfUpdate).toHaveBeenCalledTimes(1);
-  });
-
-  it('取得失敗のとき「取得できませんでした」を表示する', async () => {
-    mockDsxLatestVersion.mockRejectedValue(new Error('network') as never);
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
-    await userEvent.click(btn);
-    await screen.findByText(/取得できませんでした/);
-  });
-
-  it('v0.2.10 は v0.2.9 より新しいので「最新版です」を表示する', async () => {
-    mockDsxCheck.mockResolvedValue({ available: true, version: 'v0.2.10', path: '/usr/local/bin/dsx' } as never);
-    mockDsxLatestVersion.mockResolvedValue('v0.2.9' as never);
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
-    await userEvent.click(btn);
-    await screen.findByText(/最新版です/);
-  });
-
-  it('v0.2.5 は v0.2.50 より古いので「利用可能」を表示する', async () => {
-    mockDsxCheck.mockResolvedValue({ available: true, version: 'v0.2.5', path: '/usr/local/bin/dsx' } as never);
-    mockDsxLatestVersion.mockResolvedValue('v0.2.50' as never);
-    renderSettings();
-    const btn = await screen.findByRole('button', { name: 'バージョン確認' });
-    await userEvent.click(btn);
-    await screen.findByText(/v0\.2\.50 が利用可能/);
   });
 });
 
@@ -345,7 +193,8 @@ describe('Settings — Workspace section', () => {
 });
 
 describe('Settings — 削除済みの設定項目', () => {
-  it.each(['GitHub', 'AI Engine'])('%s セクションは表示されない', async (title) => {
+  // dsx の管理（版の確認・Sys Update・Self Update）は、dsx Tools タブへ移した。
+  it.each(['GitHub', 'AI Engine', 'dsx CLI'])('%s セクションは表示されない', async (title) => {
     renderSettings();
     await screen.findByText('REPOSITORIES');
     expect(screen.queryByText(title)).toBeNull();

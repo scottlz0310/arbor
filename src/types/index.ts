@@ -180,7 +180,7 @@ export interface RepoConfig {
 
 // ─── UI-only types ───────────────────────────────────────────────────────────
 
-export type ViewId = 'status' | 'cleanup' | 'settings';
+export type ViewId = 'status' | 'cleanup' | 'tools' | 'settings';
 
 /** Status タブの絞り込み。 */
 export type StatusFilter = 'all' | 'attention' | 'clean';

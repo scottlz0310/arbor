@@ -98,6 +98,14 @@ export const envInject = (repoPath: string, cmd: string) =>
 export const sysUpdate = () =>
   tauriInvoke<DsxOutput>('sys_update');
 
+/** `dsx sys update -n`: 実際の更新は行わず、計画だけを表示する。 */
+export const sysUpdateDryRun = () =>
+  tauriInvoke<DsxOutput>('sys_update_dry_run');
+
+/** `dsx doctor`: dsx が依存するツールと環境を診断する。 */
+export const dsxDoctor = () =>
+  tauriInvoke<DsxOutput>('dsx_doctor');
+
 export const dsxSelfUpdate = () =>
   tauriInvoke<DsxOutput>('dsx_self_update');
 
