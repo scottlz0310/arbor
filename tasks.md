@@ -6,7 +6,7 @@
 
 ## Issue #294: dsx 実行・表示基盤 兼 開発環境リフレッシュナーへのピボット
 
-設計合意と PR 構成は `Dropbox/src/arbor-dsx/handoff/arbor.md` を参照。
+設計合意と PR 構成は `Dropbox/src/arbor-dsx/handoff/completed/2026-10-19_arbor_pivot-294-refresher.md` を参照（#294 は完了・クローズ済み）。
 
 - [x] PR-A: スコープ外の機能（AI Assistant / Graph / PR・Issues / Stash / Branches）と依存の削除
 - [x] PR-B: プロセス実行基盤 + Live Log Console
@@ -23,6 +23,11 @@
 - [x] 実機検証で見つけた、認証が要る remote の fetch の失敗を修正（#311。`credentials` コールバックを設定）
 - [x] ディスク上に無い手動登録を、一覧・要対応・Fetch の対象から外す（#314）
 - [x] PR-E: 実機検証・ドキュメント更新（#294。実機で見つけた不具合は #311・#314 で修正。アーカイブ済みのクローンの検出は #313 に分離）
+
+後続（任意）:
+
+- [ ] アーカイブ済み・消えた remote のクローンの検出と、OSS の扱いの検討（#313）
+- [ ] フォルダを開く（`open_repo_folder`）の explorer ウィンドウが前面に出ない問題（#317）
 
 ---
 

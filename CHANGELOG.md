@@ -7,6 +7,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### docs
 
+- **`tasks.md` の、ハンドオフの参照先を更新した**。#294 の完了に伴い、ハンドオフを `completed/` へ移したため。後続の Issue（#313・#317）も載せた
+
 - **実機検証の結果をドキュメントに反映した**（#294 PR-E）。Windows の実機（28 リポジトリ）で、起動・旧形式の config の読み込み・`open_repo_folder`・`dsx doctor`・`sys update -n` と実行中のキャンセル・`Fetch All`・Settings の保存・Daily Refresh（Bitwarden 解錠済み）・Bitwarden 未解錠のときの表示と確認ダイアログを確認した。見つけた不具合は、認証が要る remote の fetch の失敗（#311）と、存在しない手動登録の扱い（#314）で、いずれも修正済み
   - README: dsx の前提の版を 0.11.0+ に更新し、「使うときの注意」（Bitwarden の解錠・fetch の認証・管理対象）と、実装の段階の表を追加した
   - CLAUDE.md: dsx の版、実装の段階の表、実機で動作を確かめるときの起動方法（`ARBOR_CONFIG_DIR`、`BW_SESSION`）を更新した
