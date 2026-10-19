@@ -32,8 +32,14 @@
 リリース（v0.3.0。release-automate を使う）:
 
 - [x] release-automate への移行（`prepare-release.yml` の追加と、`release.yml` の作り替え）
-- [ ] v0.3.0 の公開（準備 PR #322 マージ済み。draft・ビルド・成果物は揃ったが、`verify` が権限の誤りで失敗して公開に進めなかった。権限の修正と、検証の独立化を行い、公開の確認が残る）
-- [ ] 未公開の draft の `v0.2.1` の削除（v0.3.0 の公開後）
+- [x] v0.3.0 の公開（準備 PR #322。`verify` の権限の誤りで `finalize` に進めなかったため、#323 で直し、例外の手順で公開した。公開後に、`latest.json` の版と 3 つの URL を確認した）
+- [x] 未公開の draft の `v0.2.1` の削除（タグと CHANGELOG の `[0.2.1]` は残した）
+
+Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
+
+- [ ] PR 1: 設定の保存先を、全 OS で `~/.config/arbor/config.toml` にする（旧版の保存先からは初回にコピー）
+- [ ] PR 2: 未使用の Tauri updater の削除（plugin・capability・`plugins.updater`・`createUpdaterArtifacts`・`publish-updater-manifest`・`latest.json` の検査・`TAURI_SIGNING_PRIVATE_KEY*`）
+- [ ] PR 3: MSIX（自己署名 + `.appinstaller` + `install.ps1`）、msi / NSIS の廃止、Arbor 専用の署名証明書（生成・バックアップ・Secrets 登録のスクリプト化。バックアップ先は、ハンドオフに手順を書く）、`verify-release-assets.sh` の MSIX 検査、runbook。マージの前に、実機で受け入れ条件を確認する
 
 ---
 
@@ -46,8 +52,9 @@
    → 提案: **Branches ビューは git2 直接削除**（確認ダイアログ必須）、**Cleanup Wizard は dsx cleanup 経由** に分離する。
 3. **`dsx repo update` の `--no-tui` フラグ** — Tauri コマンドマッピング表は `--tui -j 4` と記載しているが、
    Rust コード例は `--no-tui` を使用。GUI ラッパー用途のため **`--no-tui`（または `--json`）** に統一する。
-4. **config.toml パス (Windows)** — 仕様は `~/.config/arbor/config.toml` と記載だが、
-   Windows では `%APPDATA%\arbor\config.toml` が正しい。`dirs::config_dir()` で OS 対応を自動化する。
+4. **config.toml パス** — 仕様は `~/.config/arbor/config.toml` と記載だが、Windows の既定の場所は
+   `%APPDATA%\arbor\config.toml` なので、一度は `dirs::config_dir()` で OS 対応にした。
+   MSIX が `%APPDATA%` を仮想化するため、#324 で、仕様どおり全 OS で `~/.config/arbor/config.toml` に戻した。
 5. **`fetch_all` の認証フロー** — SSH / HTTPS 両対応と記載されているが git2 の credential callback 実装は複雑。
    Phase 1 は HTTPS + git credential helper フォールバックのみに限定し、SSH は Phase 2 に延期を推奨。
 
