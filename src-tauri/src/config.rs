@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
@@ -99,8 +101,19 @@ fn resolve_config_paths(
     Ok(ConfigPaths { path, legacy })
 }
 
+/// 設定の読み込み・変更（初回の移行を含む）を直列にする。起動時に、複数の IPC
+/// （`list_repositories` と `get_workspace_status` など）が並行して `load_config` を呼ぶため、
+/// 初回の移行が重なると、コピー中のファイルを他方が読んだり、共有違反（Windows の os error 32）で
+/// 失敗したりする。
+static CONFIG_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_config() -> MutexGuard<'static, ()> {
+    // ガードが守るのは順序だけで、中身は `()`。保持中に panic しても、守る状態は壊れないので、poison は無視する。
+    CONFIG_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// 旧版の場所に設定があり、新しい場所に無いとき、新しい場所へコピーする。
-/// 旧ファイルは消さない（旧版へ戻しても、設定が残るように）。
+/// 旧ファイルは消さない（旧版へ戻しても、設定が残るように）。呼び出し側は `lock_config` を保持する。
 fn migrate_legacy_config(paths: &ConfigPaths) -> Result<(), String> {
     let Some(legacy) = &paths.legacy else {
         return Ok(());
@@ -112,21 +125,31 @@ fn migrate_legacy_config(paths: &ConfigPaths) -> Result<(), String> {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
     }
-    std::fs::copy(legacy, &paths.path).map_err(|e| {
-        format!(
-            "failed to migrate config from {} to {}: {e}",
-            legacy.display(),
-            paths.path.display()
-        )
-    })?;
-    Ok(())
+    publish_copy(legacy, &paths.path)
 }
 
-/// 設定ファイルの場所を返す。旧版の場所にだけ設定があれば、先に移行する。
-fn config_path() -> Result<PathBuf, String> {
-    let paths = config_paths()?;
-    migrate_legacy_config(&paths)?;
-    Ok(paths.path)
+/// `source` を `destination` へ、読み手に途中のファイルを見せず、既存のファイルを上書きせずに公開する。
+/// 同じディレクトリの一時ファイルへコピーし終えてから、ハードリンクで公開する。宛先が既にあれば
+/// リンクは失敗するので上書きせず（別のプロセスが先に公開した場合を含む）、その設定を使う。
+fn publish_copy(source: &Path, destination: &Path) -> Result<(), String> {
+    let context = |e: std::io::Error| {
+        format!(
+            "failed to migrate config from {} to {}: {e}",
+            source.display(),
+            destination.display()
+        )
+    };
+    let temp = destination.with_extension(format!("toml.migrating-{}", std::process::id()));
+    std::fs::copy(source, &temp).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        context(e)
+    })?;
+    let linked = std::fs::hard_link(&temp, destination);
+    let _ = std::fs::remove_file(&temp);
+    match linked {
+        Err(e) if e.kind() != ErrorKind::AlreadyExists => Err(context(e)),
+        _ => Ok(()),
+    }
 }
 
 /// 既定の workspace root（`~/src`）。存在するときだけ返す。
@@ -163,15 +186,32 @@ fn save_to(path: &Path, config: &AppConfig) -> Result<(), String> {
     std::fs::write(path, content).map_err(|e| e.to_string())
 }
 
+/// 旧版の場所にだけ設定があれば、先に移行してから読み込む。他の読み込み・変更は、移行が終わるまで待つ。
 pub fn load_config() -> Result<AppConfig, String> {
-    load_from(&config_path()?, default_workspace_root())
+    load_migrated(&config_paths()?, default_workspace_root())
+}
+
+fn load_migrated(paths: &ConfigPaths, default_root: Option<PathBuf>) -> Result<AppConfig, String> {
+    let _guard = lock_config();
+    migrate_legacy_config(paths)?;
+    load_from(&paths.path, default_root)
 }
 
 /// 設定を読み込み、`change` で変更して保存し、変更後の設定を返す。`change` が失敗したら保存しない。
 pub fn modify_config(
     change: impl FnOnce(AppConfig) -> Result<AppConfig, String>,
 ) -> Result<AppConfig, String> {
-    modify_at(&config_path()?, default_workspace_root(), change)
+    modify_migrated(&config_paths()?, default_workspace_root(), change)
+}
+
+fn modify_migrated(
+    paths: &ConfigPaths,
+    default_root: Option<PathBuf>,
+    change: impl FnOnce(AppConfig) -> Result<AppConfig, String>,
+) -> Result<AppConfig, String> {
+    let _guard = lock_config();
+    migrate_legacy_config(paths)?;
+    modify_at(&paths.path, default_root, change)
 }
 
 fn modify_at(
@@ -552,6 +592,114 @@ protected_branches = ["release"]
 
         assert!(err.contains("failed to create"), "{err}");
         let _ = std::fs::remove_file(&blocker);
+        cleanup_migration(&paths);
+    }
+
+    fn dir_entries(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn publish_copy_keeps_an_existing_destination_and_leaves_no_temp_file() {
+        let paths = migration_paths("publish-exists");
+        let legacy = paths.legacy.clone().unwrap();
+        write_config(&legacy, "legacy");
+        write_config(&paths.path, "published first");
+
+        publish_copy(&legacy, &paths.path).expect("an existing destination is not an error");
+
+        assert_eq!(
+            std::fs::read_to_string(&paths.path).unwrap(),
+            "published first"
+        );
+        assert_eq!(dir_entries(paths.path.parent().unwrap()), ["config.toml"]);
+        cleanup_migration(&paths);
+    }
+
+    #[test]
+    fn publish_copy_reports_a_missing_source_and_leaves_no_temp_file() {
+        let paths = migration_paths("publish-missing");
+        write_config(&paths.path, "existing");
+        let missing = paths.legacy.clone().unwrap();
+
+        let err = publish_copy(&missing, &paths.path).unwrap_err();
+
+        assert!(err.contains("failed to migrate config"), "{err}");
+        assert_eq!(dir_entries(paths.path.parent().unwrap()), ["config.toml"]);
+        cleanup_migration(&paths);
+    }
+
+    /// 起動時は、`list_repositories` と `get_workspace_status` などが並行して設定を読む。
+    /// 初回の移行が重なっても、全員が完全な設定を得る（Windows では、コピーの途中の読み込みや
+    /// 同時のコピーが共有違反になった）。
+    #[test]
+    fn concurrent_loads_during_the_first_migration_all_see_the_full_config() {
+        const THREADS: usize = 8;
+        const REPOSITORIES: usize = 600;
+        let paths = migration_paths("migrate-concurrent");
+        let legacy = paths.legacy.clone().unwrap();
+        let config = AppConfig {
+            repositories: (0..REPOSITORIES)
+                .map(|i| RepoConfig {
+                    path: format!("/work/repository-{i:04}"),
+                    name: format!("repository-{i:04}"),
+                    protected_branches: vec!["release".to_string()],
+                })
+                .collect(),
+            ..Default::default()
+        };
+        save_to(&legacy, &config).expect("write legacy config");
+        let barrier = std::sync::Barrier::new(THREADS);
+
+        let loaded: Vec<Result<AppConfig, String>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..THREADS)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        load_migrated(&paths, None)
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+
+        for result in loaded {
+            let config = result.expect("every concurrent load succeeds");
+            assert_eq!(config.repositories.len(), REPOSITORIES);
+        }
+        assert_eq!(dir_entries(paths.path.parent().unwrap()), ["config.toml"]);
+        assert!(legacy.exists(), "旧ファイルは消さない");
+        cleanup_migration(&paths);
+    }
+
+    #[test]
+    fn modify_migrated_applies_the_change_on_top_of_the_migrated_config() {
+        let paths = migration_paths("modify-migrated");
+        write_config(
+            paths.legacy.as_ref().unwrap(),
+            "[settings]\nstale_threshold_days = 30\nfetch_on_startup = true\n",
+        );
+
+        let updated = modify_migrated(&paths, None, |mut config| {
+            config.settings.fetch_on_startup = false;
+            Ok(config)
+        })
+        .expect("modify");
+
+        assert_eq!(updated.settings.stale_threshold_days, 30);
+        assert!(!updated.settings.fetch_on_startup);
+        assert_eq!(
+            load_from(&paths.path, None)
+                .unwrap()
+                .settings
+                .stale_threshold_days,
+            30
+        );
         cleanup_migration(&paths);
     }
 
