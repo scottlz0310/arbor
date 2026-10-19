@@ -263,7 +263,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
 
     // ── フェイク ──────────────────────────────────────────────────────────────
 
@@ -544,12 +544,10 @@ mod tests {
 
     impl TempDir {
         fn new(prefix: &str) -> Self {
-            let unique = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock should be after epoch")
-                .as_nanos();
-            let path = std::env::temp_dir()
-                .join(format!("arbor-{prefix}-{}-{unique}", std::process::id()));
+            let path = std::env::temp_dir().join(format!(
+                "arbor-{prefix}-{}",
+                crate::test_util::unique_suffix()
+            ));
             std::fs::create_dir_all(&path).expect("create temp dir");
             Self { path }
         }

@@ -317,12 +317,11 @@ protected_branches = ["release"]
     // ── load_from / save_to / modify_at ───────────────────────────────────────
 
     fn temp_config_path(prefix: &str) -> PathBuf {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock should be after epoch")
-            .as_nanos();
         std::env::temp_dir()
-            .join(format!("arbor-{prefix}-{}-{unique}", std::process::id()))
+            .join(format!(
+                "arbor-{prefix}-{}",
+                crate::test_util::unique_suffix()
+            ))
             .join("arbor")
             .join("config.toml")
     }
