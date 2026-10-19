@@ -632,12 +632,6 @@ impl RunnerState {
     }
 }
 
-/// 実行中のコマンドをキャンセルする。`run_id` は `process_started` イベントで通知される。
-#[tauri::command]
-pub fn cancel_run(state: tauri::State<'_, RunnerState>, run_id: u64) -> Result<(), String> {
-    state.0.cancel(run_id)
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

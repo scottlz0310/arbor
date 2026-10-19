@@ -7,6 +7,10 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### ci
 
+- **IPC ラッパーを `src-tauri/src/ipc/` に分け、カバレッジ対象から外した**（#309）。`#[tauri::command]` の 24 個の関数を、ロジックを持たない薄いラッパーとして `ipc/` に集め、ロジックは `commands/` のテストできる関数へ切り出した（`DsxTask`・`modify_config`・`register_repository` / `apply_settings` / `build_preview` / `fetch_all_repositories` など）。コマンド名・引数・戻り値は変えていない
+  - `ipc/` は CI の `cargo llvm-cov --ignore-filename-regex` と `codecov.yml` の `ignore` で対象外にする。ラッパーは `tauri::State` を要し、Windows では `tauri::test` のテスト実行ファイルが起動しないため、単体テストできない
+  - `ipc/guard.rs` のテスト（`syn` で構文木を検査）が、除外の正当性を保つ。`ipc/` には `use` / `mod` と `#[tauri::command]` の関数だけを置け、本文は 4 文以内で分岐・繰り返しを含められない。コマンドと `generate_handler!` の登録が過不足なく一致し、除外の設定が `ipc/` を指していることも検査する。違反すると `cargo test` が失敗する
+  - 設定の読み込み・保存を `load_from` / `save_to` に分け、「読み込み → 変更 → 保存」を `modify_config` にまとめた（失敗した変更は保存しない）。テストを追加した
 - Codecov の frontend フラグの対象を `src/lib/` のみから `src/lib/`・`src/components/`・`src/views/` に広げた。`bunfig.toml` と `coverage-manifest.test.ts` は、すでに lib / components / views を対象にしていたため、設定のずれを直した（コンポーネントとビューのテストが Codecov の patch に反映されず、`codecov/patch` が Rust のコマンド部分だけで判定されていた）
 
 ### feat

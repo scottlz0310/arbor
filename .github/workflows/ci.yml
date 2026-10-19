@@ -140,8 +140,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
+      # src/ipc/ is excluded: it holds only thin #[tauri::command] wrappers, which cannot be unit-tested on Windows
+      # (tauri::test fails to start). src/ipc/guard.rs checks that no logic ends up there and that the exclusion stays in sync.
       - name: cargo test with coverage
-        run: cargo llvm-cov --lcov --output-path lcov.info
+        run: cargo llvm-cov --lcov --output-path lcov.info --ignore-filename-regex 'src[/\\]ipc[/\\]'
 
       - name: Upload Rust coverage to Codecov
         # fork PRs do not have access to secrets; skip upload in that case

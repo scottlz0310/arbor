@@ -9,6 +9,11 @@ coverage:
         target: auto
         threshold: 2%
 
+# Thin #[tauri::command] wrappers only. Kept in sync with the cargo llvm-cov step in ci.yml and checked by src-tauri/src/ipc/guard.rs.
+# ASCII only: the Codecov CLI on Windows reads this file as cp1252.
+ignore:
+  - "src-tauri/src/ipc/**"
+
 flag_management:
   default_rules:
     carryforward: true

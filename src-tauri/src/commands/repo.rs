@@ -1,5 +1,5 @@
 use super::fetch::fetch_repository;
-use crate::config::load_config;
+use crate::config::AppConfig;
 use crate::models::{FetchResult, RepoInfo, RepoSource};
 use crate::workspace::{effective_repos, find_managed, EffectiveRepo};
 use git2::{Repository, StatusOptions};
@@ -84,23 +84,19 @@ fn scan_repositories(repos: &[EffectiveRepo]) -> Vec<RepoInfo> {
 
 /// Lists every managed repository (workspace root + manual registrations) with its local status.
 /// Local only: no network access. Runs on a worker thread so a large workspace does not block the UI.
-#[tauri::command(async)]
-pub fn list_repositories() -> Result<Vec<RepoInfo>, String> {
-    let config = load_config()?;
-    let (repos, root_error) = effective_repos(&config);
+pub fn list_repos(config: &AppConfig) -> Vec<RepoInfo> {
+    let (repos, root_error) = effective_repos(config);
     if let Some(error) = root_error {
         eprintln!("Warning: {error}");
     }
-    Ok(scan_repositories(&repos))
+    scan_repositories(&repos)
 }
 
 // ─── get_repo_status ─────────────────────────────────────────────────────────
 
-#[tauri::command(async)]
-pub fn get_repo_status(repo_path: String) -> Result<RepoInfo, String> {
-    let config = load_config()?;
-    let mut info = repo_info_for_path(&repo_path)?;
-    let (repos, _) = effective_repos(&config);
+pub fn repo_status(config: &AppConfig, repo_path: &str) -> Result<RepoInfo, String> {
+    let mut info = repo_info_for_path(repo_path)?;
+    let (repos, _) = effective_repos(config);
     if let Some(repo) = repos.iter().find(|r| r.path == repo_path) {
         apply_effective(&mut info, repo);
     }
@@ -113,9 +109,8 @@ pub fn get_repo_status(repo_path: String) -> Result<RepoInfo, String> {
 /// Phase 1: uses git2 with no credential callback (relies on the system git
 /// credential helper / SSH agent already being authenticated).
 /// Full SSH / HTTPS credential UI is deferred to Phase 2.
-#[tauri::command]
-pub fn fetch_all(repo_path: String) -> Result<FetchResult, String> {
-    let updated_refs = fetch_repository(&repo_path, &|| false)?;
+pub fn fetch_repo(repo_path: &str) -> Result<FetchResult, String> {
+    let updated_refs = fetch_repository(repo_path, &|| false)?;
     Ok(FetchResult { updated_refs })
 }
 
@@ -181,10 +176,9 @@ fn spawn_detached(program: &str, args: &[String]) -> std::io::Result<()> {
 }
 
 /// 管理対象のリポジトリのフォルダを、OS のファイルマネージャで開く。
-#[tauri::command(async)]
-pub fn open_repo_folder(repo_path: String) -> Result<(), String> {
-    let (repos, _) = effective_repos(&load_config()?);
-    open_folder(&repos, &repo_path, Os::current(), &spawn_detached)
+pub fn open_managed_folder(config: &AppConfig, repo_path: &str) -> Result<(), String> {
+    let (repos, _) = effective_repos(config);
+    open_folder(&repos, repo_path, Os::current(), &spawn_detached)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -294,7 +288,7 @@ fn upstream_ahead_behind(repo: &Repository, branch: &git2::Branch) -> (u32, u32)
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_effective, fetch_all, folder_opener, open_folder, repo_info_for_path,
+        apply_effective, fetch_repo, folder_opener, open_folder, repo_info_for_path,
         scan_repositories, spawn_detached, Os,
     };
     use crate::models::{RepoInfo, RepoSource};
@@ -683,7 +677,7 @@ mod tests {
             .expect("add origin");
         drop(repo);
 
-        let result = fetch_all(target.path_str().to_string()).expect("fetch all");
+        let result = fetch_repo(target.path_str()).expect("fetch all");
 
         assert!(result.updated_refs.iter().all(|name| name == "origin"));
     }

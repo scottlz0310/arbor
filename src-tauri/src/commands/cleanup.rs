@@ -1,25 +1,22 @@
-use crate::config::{load_config, AppConfig};
+use crate::config::AppConfig;
 use crate::models::{
-    CandidateKind, CleanupCandidate, CleanupExecutionItemResult, CleanupExecutionRequest,
-    CleanupExecutionResult, CleanupExecutionStatus, CleanupOperation, CleanupPreview,
-    RemoteFetchError, RepoCleanupPreview, SafetyBlock, UpstreamState,
+    CandidateKind, CleanupCandidate, CleanupExecutionItemResult, CleanupExecutionResult,
+    CleanupExecutionStatus, CleanupOperation, CleanupPreview, RemoteFetchError, RepoCleanupPreview,
+    SafetyBlock, UpstreamState,
 };
 use crate::workspace::effective_repos;
 use git2::{BranchType, Direction, Repository};
 use std::collections::{HashMap, HashSet};
 
-// ─── cleanup_preview ─────────────────────────────────────────────────────────
+// ─── build_preview ───────────────────────────────────────────────────────────
 
 /// 登録済み全 repo を横断して Cleanup 候補を列挙する。
 /// 読み取り専用: ローカル ref・remote-tracking ref を一切変更しない。
 /// 全 repo × 全 remote へ順に接続するため応答が遅い remote で長時間ブロックし得る。
-/// main thread を塞いで UI をフリーズさせないよう async 指定で別スレッド実行にする。
-#[tauri::command(async)]
-pub fn cleanup_preview() -> Result<CleanupPreview, String> {
-    let config = load_config()?;
+pub fn build_preview(config: &AppConfig) -> Result<CleanupPreview, String> {
     let now_ts = unix_timestamp()?;
 
-    let (managed, root_error) = effective_repos(&config);
+    let (managed, root_error) = effective_repos(config);
     if let Some(error) = root_error {
         eprintln!("Warning: {error}");
     }
@@ -42,17 +39,11 @@ pub fn cleanup_preview() -> Result<CleanupPreview, String> {
     })
 }
 
-// ─── cleanup_execute ─────────────────────────────────────────────────────────
+// ─── execute_cleanup ─────────────────────────────────────────────────────────
 
 /// preview で選択された候補を repo ごとに再検証して実行する。
 /// 再検証・実行の失敗は他の項目を巻き込まず、項目単位の結果として返す。
-#[tauri::command(async)]
-pub fn cleanup_execute(request: CleanupExecutionRequest) -> Result<CleanupExecutionResult, String> {
-    let config = load_config()?;
-    execute_cleanup(&config, request.candidates)
-}
-
-fn execute_cleanup(
+pub fn execute_cleanup(
     config: &AppConfig,
     candidates: Vec<CleanupCandidate>,
 ) -> Result<CleanupExecutionResult, String> {

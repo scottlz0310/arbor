@@ -1,16 +1,15 @@
-use crate::config::{load_config, save_config, AppConfig, RepoConfig};
+//! 設定（config.toml）とリポジトリ登録のロジック。Tauri のコマンドは `ipc/config.rs` にある。
+
+use crate::config::{AppConfig, RepoConfig};
 use crate::models::RepoSource;
 use crate::workspace::effective_repos;
 
-#[tauri::command]
-pub fn get_config() -> Result<AppConfig, String> {
-    load_config()
-}
-
-#[tauri::command]
-pub fn add_repository(path: String, name: String) -> Result<AppConfig, String> {
-    let mut config = load_config()?;
-
+/// 手動登録を追加する。git リポジトリでないパス、登録済みのパスは受け付けない。
+pub fn register_repository(
+    mut config: AppConfig,
+    path: String,
+    name: String,
+) -> Result<AppConfig, String> {
     // Validate the path is actually a git repository.
     git2::Repository::open(&path).map_err(|e| format!("Not a git repository: {e}"))?;
 
@@ -24,23 +23,38 @@ pub fn add_repository(path: String, name: String) -> Result<AppConfig, String> {
         name,
         protected_branches: Vec::new(),
     });
-
-    save_config(&config)?;
     Ok(config)
 }
 
-#[tauri::command]
-pub fn remove_repository(path: String) -> Result<AppConfig, String> {
-    let mut config = load_config()?;
+/// 手動登録を外す。登録されていないパスでもエラーにしない。
+pub fn unregister_repository(mut config: AppConfig, path: &str) -> AppConfig {
     config.repositories.retain(|r| r.path != path);
-    save_config(&config)?;
+    config
+}
+
+/// 指定された項目だけを設定に反映する。
+pub fn apply_settings(
+    mut config: AppConfig,
+    stale_threshold_days: Option<u32>,
+    fetch_on_startup: Option<bool>,
+    workspace_root: Option<String>,
+) -> Result<AppConfig, String> {
+    if let Some(root) = workspace_root {
+        config.workspace.root = Some(validate_workspace_root(&root)?);
+    }
+    if let Some(v) = stale_threshold_days {
+        config.settings.stale_threshold_days = v;
+    }
+    if let Some(v) = fetch_on_startup {
+        config.settings.fetch_on_startup = v;
+    }
     Ok(config)
 }
 
 // ─── scan_missing_repositories ───────────────────────────────────────────────
 
 /// Filters `repos` to those whose path does not exist on disk.
-fn filter_missing_repos(repos: Vec<RepoConfig>) -> Vec<RepoConfig> {
+pub fn filter_missing_repos(repos: Vec<RepoConfig>) -> Vec<RepoConfig> {
     repos
         .into_iter()
         .filter(|r| !std::path::Path::new(&r.path).exists())
@@ -71,7 +85,8 @@ pub struct WorkspaceStatus {
     pub manual_count: usize,
 }
 
-fn workspace_status(config: &AppConfig) -> WorkspaceStatus {
+/// workspace root と、検出したリポジトリ数。root を読めない場合は `root_error` に理由を入れる。
+pub fn workspace_status(config: &AppConfig) -> WorkspaceStatus {
     let (repos, root_error) = effective_repos(config);
     let count = |source| repos.iter().filter(|r| r.source == source).count();
     WorkspaceStatus {
@@ -82,44 +97,14 @@ fn workspace_status(config: &AppConfig) -> WorkspaceStatus {
     }
 }
 
-/// workspace root と、検出したリポジトリ数を返す。root を読めない場合は `root_error` に理由を入れる。
-#[tauri::command(async)]
-pub fn get_workspace_status() -> Result<WorkspaceStatus, String> {
-    Ok(workspace_status(&load_config()?))
-}
-
-/// Returns repositories registered in config whose path no longer exists on disk.
-#[tauri::command]
-pub fn scan_missing_repositories() -> Result<Vec<RepoConfig>, String> {
-    let config = load_config()?;
-    Ok(filter_missing_repos(config.repositories))
-}
-
-#[tauri::command]
-pub fn update_settings(
-    stale_threshold_days: Option<u32>,
-    fetch_on_startup: Option<bool>,
-    workspace_root: Option<String>,
-) -> Result<AppConfig, String> {
-    let mut config = load_config()?;
-    if let Some(root) = workspace_root {
-        config.workspace.root = Some(validate_workspace_root(&root)?);
-    }
-    if let Some(v) = stale_threshold_days {
-        config.settings.stale_threshold_days = v;
-    }
-    if let Some(v) = fetch_on_startup {
-        config.settings.fetch_on_startup = v;
-    }
-    save_config(&config)?;
-    Ok(config)
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
-    use super::{filter_missing_repos, validate_workspace_root, workspace_status};
+    use super::{
+        apply_settings, filter_missing_repos, register_repository, unregister_repository,
+        validate_workspace_root, workspace_status,
+    };
     use crate::config::AppConfig;
     use crate::config::RepoConfig;
     use std::path::PathBuf;
@@ -276,5 +261,119 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    // ── register_repository / unregister_repository ───────────────────────────
+
+    #[test]
+    fn register_repository_adds_a_git_repository_with_no_protected_branches() {
+        let dir = TempDir::new("register");
+        git2::Repository::init(&dir.path).expect("init");
+
+        let config = register_repository(
+            AppConfig::default(),
+            dir.path_str().to_string(),
+            "tool".to_string(),
+        )
+        .expect("register");
+
+        assert_eq!(config.repositories.len(), 1);
+        assert_eq!(config.repositories[0].path, dir.path_str());
+        assert_eq!(config.repositories[0].name, "tool");
+        assert!(config.repositories[0].protected_branches.is_empty());
+    }
+
+    #[test]
+    fn register_repository_rejects_non_repositories_and_duplicates() {
+        let plain = TempDir::new("register-plain");
+        let repo = TempDir::new("register-dup");
+        git2::Repository::init(&repo.path).expect("init");
+        let registered = register_repository(
+            AppConfig::default(),
+            repo.path_str().to_string(),
+            "dup".to_string(),
+        )
+        .expect("first registration");
+
+        let not_git = register_repository(
+            AppConfig::default(),
+            plain.path_str().to_string(),
+            "plain".to_string(),
+        )
+        .unwrap_err();
+        let duplicate =
+            register_repository(registered, repo.path_str().to_string(), "dup".to_string())
+                .unwrap_err();
+
+        assert!(not_git.contains("Not a git repository"), "{not_git}");
+        assert!(duplicate.contains("already registered"), "{duplicate}");
+    }
+
+    #[test]
+    fn unregister_repository_removes_only_the_given_path() {
+        let config = AppConfig {
+            repositories: vec![make_repo("/a/one"), make_repo("/a/two")],
+            ..AppConfig::default()
+        };
+
+        let config = unregister_repository(config, "/a/one");
+
+        let paths: Vec<_> = config
+            .repositories
+            .iter()
+            .map(|r| r.path.as_str())
+            .collect();
+        assert_eq!(paths, ["/a/two"]);
+        // 登録されていないパスでもエラーにしない
+        assert_eq!(
+            unregister_repository(config, "/a/none").repositories.len(),
+            1
+        );
+    }
+
+    // ── apply_settings ────────────────────────────────────────────────────────
+
+    #[test]
+    fn apply_settings_updates_only_the_given_fields() {
+        let dir = TempDir::new("settings-root");
+        let base = AppConfig::default();
+        let before = base.settings.clone();
+
+        let untouched = apply_settings(base.clone(), None, None, None).expect("no change");
+        assert_eq!(
+            untouched.settings.stale_threshold_days,
+            before.stale_threshold_days
+        );
+        assert_eq!(untouched.settings.fetch_on_startup, before.fetch_on_startup);
+        assert_eq!(untouched.workspace.root, base.workspace.root);
+
+        let changed = apply_settings(
+            base,
+            Some(30),
+            Some(false),
+            Some(format!("  {}  ", dir.path_str())),
+        )
+        .expect("changed");
+        assert_eq!(changed.settings.stale_threshold_days, 30);
+        assert!(!changed.settings.fetch_on_startup);
+        assert_eq!(changed.workspace.root.as_deref(), Some(dir.path_str()));
+    }
+
+    #[test]
+    fn apply_settings_rejects_an_invalid_root_without_changing_other_fields() {
+        let dir = TempDir::new("settings-bad-root");
+        let missing = dir.path.join("missing").to_string_lossy().into_owned();
+
+        let err = apply_settings(AppConfig::default(), Some(99), None, Some(missing)).unwrap_err();
+
+        assert!(err.contains("ディレクトリではありません"), "{err}");
+    }
+
+    #[test]
+    fn apply_settings_empty_root_disables_auto_discovery() {
+        let config = apply_settings(AppConfig::default(), None, None, Some("  ".to_string()))
+            .expect("empty root");
+
+        assert_eq!(config.workspace.root.as_deref(), Some(""));
     }
 }

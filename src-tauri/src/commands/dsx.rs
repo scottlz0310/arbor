@@ -1,10 +1,9 @@
 use super::runner::{hide_console, LaunchSpec, RunOutcome, RunnerState};
-use crate::config::{load_config, AppConfig};
+use crate::config::AppConfig;
 use crate::models::DsxOutput;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tauri::State;
 
 /// `dsx run --root` を受け付ける最初の版（dsx#137）。
 const RUN_ROOT_MIN_VERSION: (u32, u32, u32) = (0, 11, 0);
@@ -46,8 +45,7 @@ fn probe_exit_code(program: &str, args: &[&str]) -> io::Result<Option<i32>> {
     Ok(command.output()?.status.code())
 }
 
-#[tauri::command]
-pub fn dsx_check() -> DsxStatus {
+pub fn check_dsx() -> DsxStatus {
     // Try `dsx --version` and capture stdout.
     let mut command = Command::new("dsx");
     command.arg("--version");
@@ -110,8 +108,7 @@ fn bitwarden_state(exit: io::Result<Option<i32>>) -> BitwardenState {
 
 /// Bitwarden が解錠済みかを `dsx env status --quiet` の終了コードで確認する。
 /// GUI は解錠のためのパスワード入力を受けられないため、状態の表示だけを行う。
-#[tauri::command(async)]
-pub fn bitwarden_status() -> BitwardenState {
+pub fn current_bitwarden_state() -> BitwardenState {
     bitwarden_state(probe_exit_code("dsx", &["env", "status", "--quiet"]))
 }
 
@@ -120,8 +117,7 @@ pub fn bitwarden_status() -> BitwardenState {
 /// Queries the GitHub Releases API and returns the latest dsx tag name (e.g. "v0.3.0").
 /// Returns `None` on network error, non-2xx response, or missing field — the UI
 /// handles `null` gracefully so this command never returns `Err`.
-#[tauri::command]
-pub async fn dsx_latest_version() -> Option<String> {
+pub async fn latest_dsx_version() -> Option<String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
         .build()
@@ -147,7 +143,7 @@ fn extract_tag_name(json: &serde_json::Value) -> Option<String> {
 
 /// dsx に渡す更新対象の root。Arbor の `workspace.root` が正本で、dsx 自身の設定の root は使わない
 /// （一覧に出ているリポジトリと、dsx が更新するリポジトリを一致させるため）。
-fn update_root(config: &AppConfig) -> Result<String, String> {
+pub fn update_root(config: &AppConfig) -> Result<String, String> {
     let root = config
         .workspace
         .root
@@ -189,45 +185,7 @@ fn ensure_run_root_supported(status: &DsxStatus) -> Result<(), String> {
     ))
 }
 
-/// Runs `dsx repo update --root <workspace root> --no-tui --jobs 4`: updates every repository under the root.
-///
-/// Output is streamed to the frontend via the `process_*` events (see `runner`).
-#[tauri::command]
-pub async fn repo_update(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
-    let root = update_root(&load_config()?)?;
-    run_dsx_args(&state, ".", repo_update_args(&root)).await
-}
-
-/// Runs `dsx run --root <workspace root> --no-tui --jobs 4`: Bitwarden unlock → env → system update → repo update.
-#[tauri::command]
-pub async fn daily_refresh(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
-    let root = update_root(&load_config()?)?;
-    let status = tauri::async_runtime::spawn_blocking(dsx_check)
-        .await
-        .map_err(|e| format!("dsx の確認スレッドが異常終了しました: {e}"))?;
-    ensure_run_root_supported(&status)?;
-    run_dsx_args(&state, ".", daily_refresh_args(&root)).await
-}
-
-// ─── env_inject ───────────────────────────────────────────────────────────────
-
-/// Runs `dsx env run -- <cmd>` in the given repository directory.
-///
-/// Output is streamed via the `process_*` events so the UI can display
-/// real-time output for long-running environment-injected commands.
-#[tauri::command]
-pub async fn env_inject(
-    state: State<'_, RunnerState>,
-    repo_path: String,
-    cmd: String,
-) -> Result<DsxOutput, String> {
-    let cmd_parts: Vec<&str> = cmd.split_whitespace().collect();
-    let mut args = vec!["env", "run", "--"];
-    args.extend_from_slice(&cmd_parts);
-    run_dsx(&state, &repo_path, &args).await
-}
-
-// ─── sys_update ───────────────────────────────────────────────────────────────
+// ─── dsx の実行 ──────────────────────────────────────────────────────────────
 
 /// `dsx sys update` の引数。`dry_run` なら `-n` を付け、実際の更新は行わず計画だけを表示させる。
 fn sys_update_args(dry_run: bool) -> Vec<&'static str> {
@@ -238,47 +196,62 @@ fn sys_update_args(dry_run: bool) -> Vec<&'static str> {
     args
 }
 
-/// Runs `dsx sys update --no-tui` to upgrade dsx-managed tools.
-///
-/// Does not require a specific repository directory. Output is streamed via
-/// the `process_*` events the same way as `repo_update`.
-#[tauri::command]
-pub async fn sys_update(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
-    run_dsx(&state, ".", &sys_update_args(false)).await
+/// Arbor から実行する dsx の操作。起動するコマンドと作業ディレクトリの決定は `invocation` にまとめ、
+/// Tauri のコマンド（`ipc/dsx.rs`）は、タスクを選んで `run_task` に渡すだけにする。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DsxTask {
+    /// `dsx sys update`: dsx が管理するツール群を更新する。
+    SysUpdate,
+    /// `dsx sys update -n`: 更新はせず、計画だけを表示する。
+    SysUpdateDryRun,
+    /// `dsx doctor`: 依存ツールと環境を診断する。
+    Doctor,
+    /// `dsx self-update`: dsx 本体を更新する。
+    SelfUpdate,
+    /// `dsx repo update --root <root>`: root 配下の全リポジトリを更新する。
+    RepoUpdate { root: String },
+    /// `dsx run --root <root>`: Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新。
+    DailyRefresh { root: String },
+    /// `dsx env run -- <command>`: 環境変数を注入してコマンドを実行する。
+    EnvRun { cwd: String, command: String },
 }
 
-/// Runs `dsx sys update --no-tui -n`: shows what `sys update` would do without changing anything.
-#[tauri::command]
-pub async fn sys_update_dry_run(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
-    run_dsx(&state, ".", &sys_update_args(true)).await
+impl DsxTask {
+    /// 作業ディレクトリと、`dsx` に渡す引数。
+    fn invocation(&self) -> (String, Vec<String>) {
+        let strings = |args: &[&str]| args.iter().map(|a| (*a).to_string()).collect();
+        match self {
+            Self::SysUpdate => (".".to_string(), strings(&sys_update_args(false))),
+            Self::SysUpdateDryRun => (".".to_string(), strings(&sys_update_args(true))),
+            Self::Doctor => (".".to_string(), strings(&["doctor"])),
+            Self::SelfUpdate => (".".to_string(), strings(&["self-update"])),
+            Self::RepoUpdate { root } => (".".to_string(), repo_update_args(root)),
+            Self::DailyRefresh { root } => (".".to_string(), daily_refresh_args(root)),
+            Self::EnvRun { cwd, command } => {
+                let mut args: Vec<String> = strings(&["env", "run", "--"]);
+                args.extend(command.split_whitespace().map(String::from));
+                (cwd.clone(), args)
+            }
+        }
+    }
 }
 
-// ─── dsx_doctor ───────────────────────────────────────────────────────────────
-
-/// Runs `dsx doctor`: diagnoses the tools and environment dsx depends on. Output is streamed via the `process_*` events.
-#[tauri::command]
-pub async fn dsx_doctor(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
-    run_dsx(&state, ".", &["doctor"]).await
-}
-
-// ─── dsx_self_update ──────────────────────────────────────────────────────────
-
-/// Runs `dsx self-update` to upgrade the dsx CLI binary itself.
-///
-/// Output is streamed via the `process_*` events.
-#[tauri::command]
-pub async fn dsx_self_update(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
-    run_dsx(&state, ".", &["self-update"]).await
+/// `dsx` を共有の runner で実行し、終了を待つ。出力は `process_*` イベントで流れる。
+pub async fn run_task(state: &RunnerState, task: DsxTask) -> Result<DsxOutput, String> {
+    if matches!(task, DsxTask::DailyRefresh { .. }) {
+        let status = tauri::async_runtime::spawn_blocking(check_dsx)
+            .await
+            .map_err(|e| format!("dsx の確認スレッドが異常終了しました: {e}"))?;
+        ensure_run_root_supported(&status)?;
+    }
+    let (cwd, args) = task.invocation();
+    run_dsx_args(state, &cwd, args).await
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Runs a dsx command through the shared runner and waits for it to finish.
 /// The runner blocks on the child process, so it runs on a blocking thread.
-async fn run_dsx(state: &RunnerState, cwd: &str, args: &[&str]) -> Result<DsxOutput, String> {
-    run_dsx_args(state, cwd, args.iter().map(|a| (*a).to_string()).collect()).await
-}
-
 async fn run_dsx_args(
     state: &RunnerState,
     cwd: &str,
@@ -361,7 +334,7 @@ mod tests {
     /// `available: true` の分岐も必ずカバーされる。
     #[test]
     fn dsx_check_fields_consistent() {
-        let status = dsx_check();
+        let status = check_dsx();
         if status.available {
             assert!(
                 status.version.is_some(),
@@ -379,7 +352,7 @@ mod tests {
     /// dsx が利用可能な場合に `--version` を同期実行し、exit code 0 を返すことを確認する。
     #[test]
     fn run_dsx_sync_version_succeeds_when_available() {
-        if !dsx_check().available {
+        if !check_dsx().available {
             return; // dsx が PATH になければスキップ
         }
         let result = run_dsx_sync(&["--version"]);
@@ -394,7 +367,7 @@ mod tests {
     /// dsx が利用可能な場合に `which_dsx` がパスを返すことを確認する。
     #[test]
     fn which_dsx_returns_some_when_available() {
-        if !dsx_check().available {
+        if !check_dsx().available {
             return;
         }
         let path = which_dsx();
@@ -406,7 +379,7 @@ mod tests {
     /// `--help` を渡すことで実際の更新は行わず、サブコマンドの存在とヘルプ出力のみ検証する。
     #[test]
     fn dsx_self_update_subcommand_is_recognized() {
-        if !dsx_check().available {
+        if !check_dsx().available {
             return;
         }
         let result = run_dsx_sync(&["self-update", "--help"]);
@@ -418,27 +391,11 @@ mod tests {
         );
     }
 
-    /// `env_inject` に渡すコマンド文字列が空白で正しく分割されることを確認する。
-    /// dsx の実際の呼び出しではなく、引数分割ロジックのみを検証する。
-    #[test]
-    fn env_inject_cmd_splits_into_args() {
-        let cmd = "npm install --frozen-lockfile";
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        assert_eq!(parts, vec!["npm", "install", "--frozen-lockfile"]);
-
-        let mut args = vec!["env", "run", "--"];
-        args.extend_from_slice(&parts);
-        assert_eq!(
-            args,
-            vec!["env", "run", "--", "npm", "install", "--frozen-lockfile"]
-        );
-    }
-
     /// dsx が利用可能な場合に `sys update --no-tui` が存在するサブコマンドとして
     /// 認識されることを確認する（`--help` でサブコマンド一覧が取れれば十分）。
     #[test]
     fn run_dsx_sync_help_succeeds_when_available() {
-        if !dsx_check().available {
+        if !check_dsx().available {
             return;
         }
         let result = run_dsx_sync(&["--help"]);
@@ -604,5 +561,56 @@ mod tests {
     fn sys_update_args_add_the_dry_run_flag_only_when_asked() {
         assert_eq!(sys_update_args(false), ["sys", "update", "--no-tui"]);
         assert_eq!(sys_update_args(true), ["sys", "update", "--no-tui", "-n"]);
+    }
+
+    #[test]
+    fn dsx_task_invocation_cases() {
+        let root = "C:/src".to_string();
+        let cases: [(&str, DsxTask, &str, &[&str]); 7] = [
+            (
+                "sys update",
+                DsxTask::SysUpdate,
+                ".",
+                &["sys", "update", "--no-tui"],
+            ),
+            (
+                "sys update -n",
+                DsxTask::SysUpdateDryRun,
+                ".",
+                &["sys", "update", "--no-tui", "-n"],
+            ),
+            ("doctor", DsxTask::Doctor, ".", &["doctor"]),
+            ("self-update", DsxTask::SelfUpdate, ".", &["self-update"]),
+            (
+                "repo update は root を --root で渡す",
+                DsxTask::RepoUpdate { root: root.clone() },
+                ".",
+                &[
+                    "repo", "update", "--root", "C:/src", "--no-tui", "--jobs", "4",
+                ],
+            ),
+            (
+                "daily refresh は root を --root で渡す",
+                DsxTask::DailyRefresh { root },
+                ".",
+                &["run", "--root", "C:/src", "--no-tui", "--jobs", "4"],
+            ),
+            (
+                "env run は空白でコマンドを分け、指定のディレクトリで実行する",
+                DsxTask::EnvRun {
+                    cwd: "/repo/a".to_string(),
+                    command: "npm  install --frozen-lockfile".to_string(),
+                },
+                "/repo/a",
+                &["env", "run", "--", "npm", "install", "--frozen-lockfile"],
+            ),
+        ];
+
+        for (name, task, expected_cwd, expected_args) in cases {
+            let (cwd, args) = task.invocation();
+
+            assert_eq!(cwd, expected_cwd, "{name}");
+            assert_eq!(args, expected_args, "{name}");
+        }
     }
 }

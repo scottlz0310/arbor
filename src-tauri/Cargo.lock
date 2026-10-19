@@ -66,6 +66,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "syn 2.0.119",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

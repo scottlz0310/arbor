@@ -19,6 +19,7 @@
   - [x] D1: Header（dsx / Bitwarden / root の pill、Scan・Fetch All・sys update・Daily Refresh）、`dsx run --root`（dsx v0.11.0 以上を必須）、`repo_update` を root 全体の `--root` つきに、実行後の自動再スキャン
   - [x] D2: ダッシュボード（サイドバー廃止、Status / Cleanup のタブ、Summary strip、All / Needs Action / Clean フィルタ、カードの Fetch とフォルダを開く操作）
   - [x] D3: dsx Tools タブ（sys update / `-n` / repo update / doctor / self-update の実行ボタン。Settings の dsx 管理を移す）
+- [x] IPC ラッパーの `ipc/` への分離と、カバレッジ対象外化（#309。`ipc/guard.rs` で薄さと登録を検査）
 - [ ] PR-E: 実機検証・ドキュメント更新
 
 ---
