@@ -5,6 +5,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-19
+
 ### docs
 
 - **`tasks.md` の、ハンドオフの参照先を更新した**。#294 の完了に伴い、ハンドオフを `completed/` へ移したため。後続の Issue（#313・#317）も載せた
