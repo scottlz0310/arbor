@@ -1,0 +1,83 @@
+name: Package MSIX (signed)
+description: >-
+  build-exe.yml が作った arbor.exe を、署名した MSIX（と、.appinstaller・公開証明書・install.ps1・checksum）にして、
+  artifact `arbor-msix` にアップロードする。
+
+# 呼び出し元のジョブは、次を満たすこと。
+#   - `environment: msix-signing` を持つ（署名用のシークレットは、この Environment にある。main からのデプロイだけ）。
+#   - 再利用ワークフロー（workflow_call）の中ではなく、ワークフローの中に、直接置く。再利用ワークフローの中では、
+#     Environment のシークレットが `secrets` に渡らない（v0.4.0 のリリースで、署名のジョブが空のシークレットで失敗した）。
+#   - この action を使う前に、リポジトリを checkout しておく（packaging/ と scripts/ を使う）。
+#   - 署名用のシークレットは、`with:` で渡す（複合アクションは、`secrets` を直接参照できない）。
+# この規則は、tests/WorkflowSecrets.Tests.ps1 が検査する。
+
+inputs:
+  tag:
+    description: "MSIX の版にするタグ（例: v0.4.0）"
+    required: true
+  pfx-base64:
+    description: "署名用の pfx（Base64）。Environment のシークレット SIGNING_CERTIFICATE_BASE64"
+    required: true
+  pfx-password:
+    description: "署名用の pfx のパスワード。Environment のシークレット SIGNING_CERTIFICATE_PASSWORD"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download arbor.exe
+      uses: actions/download-artifact@v8
+      with:
+        name: arbor-exe
+        path: ${{ runner.temp }}/bin
+
+    - name: Restore signing certificate
+      shell: pwsh
+      env:
+        SIGNING_CERTIFICATE_BASE64: ${{ inputs.pfx-base64 }}
+      run: |
+        if (-not $env:SIGNING_CERTIFICATE_BASE64) {
+          throw "署名用のシークレット SIGNING_CERTIFICATE_BASE64 が空です（Environment msix-signing のシークレット。packaging/msix/Register-SigningSecrets.ps1。呼び出し元が、再利用ワークフローの中にないかも確認する）"
+        }
+        [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\signing.pfx",
+          [Convert]::FromBase64String($env:SIGNING_CERTIFICATE_BASE64))
+
+    - name: Build MSIX (signed)
+      shell: pwsh
+      env:
+        SIGNING_CERTIFICATE_PASSWORD: ${{ inputs.pfx-password }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        if (-not $env:SIGNING_CERTIFICATE_PASSWORD) { throw "署名用のシークレット SIGNING_CERTIFICATE_PASSWORD が空です" }
+        ./packaging/msix/Build-Msix.ps1 -BinaryPath "$env:RUNNER_TEMP\bin\arbor.exe" -Tag $env:TAG -OutDir "$env:RUNNER_TEMP\msix" -PfxPath "$env:RUNNER_TEMP\signing.pfx"
+
+    # 署名した MSIX の Identity・Publisher・署名者を、公開してよい状態かの検証と同じ規則で確認する
+    - name: Verify signed MSIX
+      shell: pwsh
+      env:
+        TAG: ${{ inputs.tag }}
+      run: |
+        $version = $env:TAG.TrimStart('v')
+        ./scripts/Test-ReleaseMsix.ps1 -Dir "$env:RUNNER_TEMP\msix" -Version $version
+
+    - name: Add installer script
+      shell: pwsh
+      run: Copy-Item -LiteralPath "scripts/install.ps1" -Destination "$env:RUNNER_TEMP\msix\install.ps1"
+
+    # 生成した直後の checksum を記録する。attach → 再取得の間で一式が壊れたり差し替わったりしたら、
+    # verify-release-assets.sh が検出する。sha256sum -c が読める形式（"<hash>  <name>"、LF）で書く。
+    - name: Record checksums
+      shell: pwsh
+      run: |
+        Set-Location "$env:RUNNER_TEMP\msix"
+        $lines = foreach ($name in "arbor_x64.msix", "arbor.appinstaller", "arbor.cer", "install.ps1") {
+          "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $name).Hash.ToLowerInvariant(), $name
+        }
+        [IO.File]::WriteAllText("$PWD\checksums-msix.txt", ($lines -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+
+    - name: Upload MSIX assets
+      uses: actions/upload-artifact@v7
+      with:
+        name: arbor-msix
+        path: ${{ runner.temp }}/msix/
+        if-no-files-found: error

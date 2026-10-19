@@ -34,8 +34,8 @@ BeforeAll {
 }
 
 Describe ".github/workflows/release.yml" {
-    It "ジョブが、draft → build-tauri・msix → attach-msix → publish-updater-manifest → verify → finalize の順に揃っている" {
-        @($jobs.Keys) | Should -Be @("draft", "build-tauri", "msix", "attach-msix", "publish-updater-manifest", "verify", "finalize")
+    It "ジョブが、draft → build-tauri・msix-build → msix-sign → attach-msix → publish-updater-manifest → verify → finalize の順に揃っている" {
+        @($jobs.Keys) | Should -Be @("draft", "build-tauri", "msix-build", "msix-sign", "attach-msix", "publish-updater-manifest", "verify", "finalize")
     }
 
     It "build-tauri は、macOS と Linux だけ（Windows は、msi / NSIS ではなく MSIX で配布する）" {
@@ -45,16 +45,27 @@ Describe ".github/workflows/release.yml" {
         $jobs["build-tauri"] | Should -Not -Match 'msvc'
     }
 
-    It "msix は、package-msix.yml を呼び、draft のコミットとタグを渡す。Secrets は、渡さない（署名用の値は、Environment にある）" {
-        $jobs["msix"] | Should -Match '(?m)^    uses: \./\.github/workflows/package-msix\.yml\s*$'
-        $jobs["msix"] | Should -Match 'ref: \$\{\{ needs\.draft\.outputs\.target_sha \}\}'
-        $jobs["msix"] | Should -Match 'tag: \$\{\{ needs\.draft\.outputs\.tag_name \}\}'
-        $jobs["msix"] | Should -Not -Match 'secrets:'
-        $jobs["msix"] | Should -Not -Match 'secrets\.'
+    It "msix-build は、build-exe.yml（再利用ワークフロー）を呼び、draft のコミットを渡す。Secrets は、渡さない" {
+        $jobs["msix-build"] | Should -Match '(?m)^    uses: \./\.github/workflows/build-exe\.yml\s*$'
+        $jobs["msix-build"] | Should -Match 'ref: \$\{\{ needs\.draft\.outputs\.target_sha \}\}'
+        $jobs["msix-build"] | Should -Not -Match 'secrets'
     }
 
-    It "attach-msix は、msix の後で、決まった 5 つのファイルだけを添付する" {
-        Get-Needs "attach-msix" | Should -Contain "msix"
+    It "msix-sign は、再利用ワークフローではなく、直接のジョブで、Environment msix-signing を持ち、draft のコミットとタグで署名する" {
+        # 再利用ワークフローの中では、Environment のシークレットが secrets に渡らない（v0.4.0 のリリースで、実際に失敗した）
+        $jobs["msix-sign"] | Should -Not -Match '(?m)^    uses:'
+        $jobs["msix-sign"] | Should -Match '(?m)^    runs-on: windows-latest\s*$'
+        $jobs["msix-sign"] | Should -Match '(?m)^    environment: msix-signing\s*$'
+        Get-Needs "msix-sign" | Should -Contain "msix-build"
+        $jobs["msix-sign"] | Should -Match 'ref: \$\{\{ needs\.draft\.outputs\.target_sha \}\}'
+        $jobs["msix-sign"] | Should -Match '(?m)^      - uses: \./\.github/actions/package-msix-signed\s*$'
+        $jobs["msix-sign"] | Should -Match 'tag: \$\{\{ needs\.draft\.outputs\.tag_name \}\}'
+        $jobs["msix-sign"] | Should -Match 'pfx-base64: \$\{\{ secrets\.SIGNING_CERTIFICATE_BASE64 \}\}'
+        $jobs["msix-sign"] | Should -Match 'pfx-password: \$\{\{ secrets\.SIGNING_CERTIFICATE_PASSWORD \}\}'
+    }
+
+    It "attach-msix は、msix-sign の後で、決まった 5 つのファイルだけを添付する" {
+        Get-Needs "attach-msix" | Should -Contain "msix-sign"
         foreach ($name in "arbor_x64.msix", "arbor.appinstaller", "arbor.cer", "install.ps1", "checksums-msix.txt") {
             $jobs["attach-msix"] | Should -Match ([regex]::Escape($name))
         }

@@ -1,0 +1,72 @@
+name: Build arbor.exe
+
+# Windows 版の arbor.exe を作る（インストーラは作らない。MSIX は、署名のジョブが組む）。
+# package-msix.yml（手動実行・PR）と、release.yml（リリース）から、再利用ワークフローとして呼ぶ。
+#
+# このワークフローは、Secrets を一切使わない（使ってはいけない）。再利用ワークフローの中では、Environment の
+# シークレットが `secrets` に渡らないため（v0.4.0 のリリースで、署名のジョブを再利用ワークフローにしたところ、
+# Environment に紐づいたのに、シークレットが空になった）。署名用の Secrets を使うジョブは、呼び出し元のワークフローに、
+# 直接、置く（environment: msix-signing。.github/actions/package-msix-signed）。
+# この規則は、tests/WorkflowSecrets.Tests.ps1 が検査する。
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "ビルドするコミット（リリースでは、draft の target_sha）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build arbor.exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Setup Bun
+        id: setup-bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".bun-version"
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-version }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-version }}-
+
+      - name: Install frontend dependencies
+        run: bun ci
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: msix
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # インストーラ（msi / NSIS）は作らず、実行ファイルだけを作る。MSIX は Build-Msix.ps1 が組む。
+      - name: Build arbor.exe
+        run: bun run tauri build --no-bundle
+
+      # 署名のジョブは、ここで作った実行ファイルを受け取るだけにする（署名用の Secrets を持つジョブで、
+      # ビルドスクリプトや依存の install スクリプトを動かさない）。
+      - name: Upload arbor.exe
+        uses: actions/upload-artifact@v7
+        with:
+          name: arbor-exe
+          path: src-tauri/target/release/arbor.exe
+          if-no-files-found: error
+          retention-days: 1
