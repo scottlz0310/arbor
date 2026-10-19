@@ -2,6 +2,8 @@ mod commands;
 mod config;
 mod ipc;
 mod models;
+#[cfg(test)]
+mod test_util;
 mod workspace;
 
 use commands::runner::{RunnerState, TauriSink};

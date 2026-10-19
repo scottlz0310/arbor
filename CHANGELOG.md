@@ -7,6 +7,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### fix
 
+- **Rust のテストの一時ディレクトリが、並列で同じ名前になり、macOS の CI が不安定だった問題を直した**。名前を時刻（ナノ秒）だけで作っていたが、macOS は時計の分解能がマイクロ秒で、並列のテストが同じ名前を作って衝突していた（`commands/repo.rs` の `repo_info_for_path_*` が、`.git` の作成で失敗していた）。連番を足す共通の補助（`test_util::unique_suffix`）を作り、6 か所の `TempDir` / 一時パスに使う
+
 - **ディスク上に無い手動登録を、一覧・要対応・Fetch の対象から外した**（#314）。削除済みのクローンを指す手動登録が、Status に branch 不明のカードとして表示され、「要対応」と Header の件数に数えられ、`Fetch All` を失敗させていた。`effective_repos` で除くので、一覧・fetch・cleanup・Header・フォルダを開く操作に、まとめて効く。Settings の「無効なリポジトリを検出」からは、これまでどおり登録を外せる
 
 - **認証が要る remote（非公開リポジトリなど）の fetch が 401 で失敗していた**（#311）。`fetch_repository` が `RemoteCallbacks` に認証情報の取得（`credentials`）を設定しておらず、libgit2 は認証情報ヘルパーも ssh-agent も使わなかったため、公開リポジトリしか fetch できなかった。HTTPS は git の認証情報ヘルパー（`credential.helper`。Windows は Git Credential Manager）、SSH は ssh-agent を使い、ユーザー名の要求にも応える。認証情報の要求に応える回数には上限（3 回）を付け、誤った認証情報を返され続けても fetch が終わらなくなることを防ぐ。`Fetch All` と、単体の `fetch_repo` の両方が直る。実機の 28 リポジトリで、`Fetch All` の失敗が 5 件から 2 件（どちらも存在しないパスの手動登録）に減ることを確認した。SSH remote は、実機に該当するリポジトリがなく、未検証
