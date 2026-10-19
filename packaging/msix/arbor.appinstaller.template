@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AppInstaller
+    xmlns="http://schemas.microsoft.com/appx/appinstaller/2018"
+    Uri="https://github.com/scottlz0310/arbor/releases/latest/download/arbor.appinstaller"
+    Version="{VERSION}">
+
+  <MainPackage
+      Name="scottlz0310.arbor"
+      Publisher="CN=scottlz0310"
+      Version="{VERSION}"
+      ProcessorArchitecture="x64"
+      Uri="https://github.com/scottlz0310/arbor/releases/download/{TAG}/arbor_x64.msix" />
+
+  <!-- GUI アプリなので、起動時の更新確認（OnLaunch）は使わない。Windows が 8 時間ごとにバックグラウンドで確認する -->
+  <UpdateSettings>
+    <AutomaticBackgroundTask />
+  </UpdateSettings>
+
+</AppInstaller>

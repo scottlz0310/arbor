@@ -1,0 +1,145 @@
+name: Package MSIX
+
+# Windows 版の MSIX（署名済み）と .appinstaller を作る。
+#   - workflow_dispatch: 手動で実行して、成果物（artifact `arbor-msix`）を実機に入れて確認する。タグは MSIX の版にだけ使う
+#     （リリースではないので、実在しなくてよい）。リポジトリの Secrets の署名証明書で署名する。
+#   - workflow_call: release.yml から呼ぶ（リリースの配布物を作る。検証したものが、そのまま配布物になる）。
+#   - pull_request: MSIX に関わる変更で、未署名のパッケージ化だけを検証する（マニフェストの不備を、リリースの前に見つける）。
+#     PR では署名証明書を使わない。
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "MSIX の版にするタグ（例: v0.4.0。実在しなくてよい）"
+        required: true
+        default: "v0.0.0"
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: "ビルドするコミット（draft の target_sha）"
+        required: true
+        type: string
+      tag:
+        description: "リリースのタグ（例: v0.4.0）"
+        required: true
+        type: string
+    secrets:
+      SIGNING_CERTIFICATE_BASE64:
+        required: true
+      SIGNING_CERTIFICATE_PASSWORD:
+        required: true
+  pull_request:
+    branches: [main]
+    paths:
+      - "packaging/msix/**"
+      - "scripts/install.ps1"
+      - "scripts/Test-ReleaseMsix.ps1"
+      - "src-tauri/icons/**"
+      - ".github/workflows/package-msix.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  msix:
+    name: MSIX Package
+    runs-on: windows-latest
+    env:
+      TAG: ${{ inputs.tag || 'v0.0.0' }}
+      # PR では署名しない（Secrets を PR のコードに渡さない）
+      SIGN: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Bun
+        id: setup-bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".bun-version"
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-version }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-version }}-
+
+      - name: Install frontend dependencies
+        run: bun ci
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: msix
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # インストーラ（msi / NSIS）は作らず、実行ファイルだけを作る。MSIX は Build-Msix.ps1 が組む。
+      - name: Build arbor.exe
+        run: bun run tauri build --no-bundle
+
+      - name: Restore signing certificate
+        if: ${{ env.SIGN == 'true' }}
+        shell: pwsh
+        env:
+          SIGNING_CERTIFICATE_BASE64: ${{ secrets.SIGNING_CERTIFICATE_BASE64 }}
+        run: |
+          if (-not $env:SIGNING_CERTIFICATE_BASE64) {
+            throw "Secret SIGNING_CERTIFICATE_BASE64 が未設定です（packaging/msix/New-SigningCertificate.ps1 -Register）"
+          }
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\signing.pfx",
+            [Convert]::FromBase64String($env:SIGNING_CERTIFICATE_BASE64))
+
+      - name: Build MSIX
+        shell: pwsh
+        env:
+          SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $buildArgs = @{
+            BinaryPath = "src-tauri\target\release\arbor.exe"
+            Tag        = $env:TAG
+            OutDir     = "$env:RUNNER_TEMP\msix"
+          }
+          if ($env:SIGN -eq "true") { $buildArgs.PfxPath = "$env:RUNNER_TEMP\signing.pfx" }
+          ./packaging/msix/Build-Msix.ps1 @buildArgs
+
+      # 署名した MSIX の Identity・Publisher・署名者を、公開してよい状態かの検証と同じ規則で確認する
+      - name: Verify signed MSIX
+        if: ${{ env.SIGN == 'true' }}
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          ./scripts/Test-ReleaseMsix.ps1 -Dir "$env:RUNNER_TEMP\msix" -Version $version
+
+      - name: Add installer script
+        shell: pwsh
+        run: Copy-Item -LiteralPath "scripts/install.ps1" -Destination "$env:RUNNER_TEMP\msix\install.ps1"
+
+      # 生成した直後の checksum を記録する。attach → 再取得の間で一式が壊れたり差し替わったりしたら、
+      # verify-release-assets.sh が検出する。sha256sum -c が読める形式（"<hash>  <name>"、LF）で書く。
+      - name: Record checksums
+        shell: pwsh
+        run: |
+          Set-Location "$env:RUNNER_TEMP\msix"
+          $names = "arbor_x64.msix", "arbor.appinstaller", "install.ps1"
+          if ($env:SIGN -eq "true") { $names += "arbor.cer" }
+          $lines = foreach ($name in $names) {
+            "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $name).Hash.ToLowerInvariant(), $name
+          }
+          [IO.File]::WriteAllText("$PWD\checksums-msix.txt", ($lines -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+
+      - name: Upload MSIX assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: arbor-msix
+          path: ${{ runner.temp }}/msix/
+          if-no-files-found: error

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- {VERSION} は Build-Msix.ps1 がタグから生成する 4 要素バージョンに置換する -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap desktop6 rescap">
+
+  <Identity
+    Name="scottlz0310.arbor"
+    Publisher="CN=scottlz0310"
+    Version="{VERSION}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Arbor</DisplayName>
+    <PublisherDisplayName>scottlz0310</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <!-- Arbor が起動する dsx / git / gh 等の書き込みがパッケージ専用領域へリダイレクトされると、
+         その結果（%APPDATA% 配下の設定、グローバルツールの更新結果）が他のシェルから見えなくなるため、
+         ファイル・レジストリの仮想化を無効化する（dsx と同じ） -->
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="ja-jp" />
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Arbor" Executable="arbor.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Arbor"
+        Description="複数のローカル git リポジトリを一元管理し、dsx の実行結果を表示するデスクトップアプリ"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>
