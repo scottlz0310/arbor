@@ -165,7 +165,23 @@ fn open_folder(
     launch(program, &args).map_err(|e| format!("{program} を起動できません: {e}"))
 }
 
+/// 起動したプロセスのウィンドウが前面に出られるようにする。
+/// Windows は、前面の権限を持たないプロセスのウィンドウを背面に開く。explorer は、起動済みのシェルへ
+/// 要求を渡して開くため、Arbor が前面の権限を持つうちに許可しないと、フォルダのウィンドウが背面に開く。
+#[cfg(windows)]
+fn allow_launched_window_to_foreground() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+    // SAFETY: 引数は定数で、ポインタを渡さない。失敗しても、ウィンドウが背面に開くだけ。
+    unsafe {
+        AllowSetForegroundWindow(ASFW_ANY);
+    }
+}
+
+#[cfg(not(windows))]
+fn allow_launched_window_to_foreground() {}
+
 fn spawn_detached(program: &str, args: &[String]) -> std::io::Result<()> {
+    allow_launched_window_to_foreground();
     let mut child = std::process::Command::new(program).args(args).spawn()?;
     // explorer は成功しても終了コード 1 を返すため、結果は見ない。子プロセスの回収だけを行う。
     std::thread::spawn(move || {
