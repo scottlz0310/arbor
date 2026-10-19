@@ -1,28 +1,33 @@
 # Pester 5+ ではトップレベル変数は It から見えないため、AST 解析と関数定義の読み込みを BeforeAll で行う
 BeforeAll {
-    $scriptPath = (Resolve-Path "$PSScriptRoot/../packaging/msix/New-SigningCertificate.ps1").Path
-    $tokens = $null
-    $parseErrors = $null
-    $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
-        $scriptPath,
-        [ref]$tokens,
-        [ref]$parseErrors
-    )
+    # New-SigningCertificate.ps1 は、SigningSecrets.ps1 を dot-source する。どちらの関数も読み込む。
+    foreach ($name in "SigningSecrets.ps1", "New-SigningCertificate.ps1") {
+        $scriptPath = (Resolve-Path "$PSScriptRoot/../packaging/msix/$name").Path
+        $tokens = $null
+        $parseErrors = $null
+        $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
+            $scriptPath,
+            [ref]$tokens,
+            [ref]$parseErrors
+        )
 
-    if ($parseErrors.Count -gt 0) {
-        throw "New-SigningCertificate.ps1 の構文解析に失敗しました: $($parseErrors -join '; ')"
-    }
+        if ($parseErrors.Count -gt 0) {
+            throw "$name の構文解析に失敗しました: $($parseErrors -join '; ')"
+        }
 
-    $functionAsts = $scriptAst.FindAll(
-        {
-            param($node)
-            $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
-        },
-        $true
-    )
-    foreach ($functionAst in $functionAsts) {
-        Invoke-Expression $functionAst.Extent.Text
+        $functionAsts = $scriptAst.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
+            },
+            $true
+        )
+        foreach ($functionAst in $functionAsts) {
+            Invoke-Expression $functionAst.Extent.Text
+        }
     }
+    # SigningSecrets.ps1 の変数（シークレット名）は、関数だけの読み込みでは入らないので、ここで同じ値を定義する
+    $ArborSigningSecretNames = @("SIGNING_CERTIFICATE_BASE64", "SIGNING_CERTIFICATE_PASSWORD")
 
     # 外部（証明書ストア・bw・gh）に触れず、各工程の呼び出しを記録する
     function New-TestHarness {
@@ -30,7 +35,10 @@ BeforeAll {
             [bool]$BitwardenUnlocked = $true,
             [bool]$BitwardenItemExists = $false,
             [bool]$BitwardenCreateFails = $false,
-            [string[]]$ExistingSecrets = @()
+            [string[]]$ExistingSecrets = @(),
+            [bool]$EnvironmentExists = $false,
+            [bool]$EnvironmentCustomPolicies = $true,
+            [string[]]$EnvironmentPolicies = @()
         )
 
         $state = [PSCustomObject]@{
@@ -38,6 +46,8 @@ BeforeAll {
             Password          = $null
             BitwardenItemJson = $null
             Secrets           = @{}
+            SecretEnvironment = $null
+            EnvironmentArgs   = $null
         }
 
         $certificateStep = {
@@ -68,15 +78,35 @@ BeforeAll {
             $state.BitwardenItemJson = $ItemJson
         }.GetNewClosure()
 
+        # 読み取りだけ（外部へ書き込まない）
+        $environmentStateStep = {
+            param([string]$Repo, [string]$Environment)
+            $state.Calls.Add("environment-state")
+            return [PSCustomObject]@{
+                Exists         = $EnvironmentExists
+                CustomPolicies = $EnvironmentCustomPolicies
+                Policies       = $EnvironmentPolicies
+                SecretNames    = $ExistingSecrets
+            }
+        }.GetNewClosure()
+
+        # 外部への書き込み（Environment の作成・更新）
+        $environmentStep = {
+            param([string]$Repo, [string]$Environment, [string]$Branch, [Alias("State")]$EnvState)
+            $state.Calls.Add("environment")
+            $state.EnvironmentArgs = "$Environment/$Branch"
+        }.GetNewClosure()
+
         $secretListStep = {
-            param([string]$Repo)
+            param([string]$Repo, [string]$Environment)
             $state.Calls.Add("secret-list")
             return $ExistingSecrets
         }.GetNewClosure()
 
         $secretSetStep = {
-            param([string]$Repo, [string]$Name, [string]$Value)
+            param([string]$Repo, [string]$Environment, [string]$Name, [string]$Value)
             $state.Calls.Add("secret-set:$Name")
+            $state.SecretEnvironment = $Environment
             $state.Secrets[$Name] = $Value
         }.GetNewClosure()
 
@@ -87,6 +117,8 @@ BeforeAll {
                 BitwardenStatusStep = $bitwardenStatusStep
                 BitwardenListStep   = $bitwardenListStep
                 BitwardenCreateStep = $bitwardenCreateStep
+                EnvironmentStateStep = $environmentStateStep
+                EnvironmentStep     = $environmentStep
                 SecretListStep      = $secretListStep
                 SecretSetStep       = $secretSetStep
             }
@@ -95,7 +127,7 @@ BeforeAll {
 }
 
 Describe "packaging/msix/New-SigningCertificate.ps1" {
-    It "pfx / cer を BackupDir に書き、パスワードを Bitwarden に保存し、Secrets を登録する（標準入力相当の値で）" {
+    It "pfx / cer を BackupDir に書き、パスワードを Bitwarden に保存し、Environment のシークレットを登録する" {
         $harness = New-TestHarness
         $stepArgs = $harness.Args
         $backup = Join-Path $TestDrive "cert"
@@ -104,13 +136,27 @@ Describe "packaging/msix/New-SigningCertificate.ps1" {
 
         $result.PfxPath | Should -Be (Join-Path $backup "arbor-signing.pfx")
         Test-Path $result.CerPath | Should -BeTrue
+        # 事前確認は、読み取りだけ。外部への書き込み（Environment の作成・登録）は、生成と Bitwarden への保存のあと、最後
         $harness.State.Calls | Should -Be @(
-            "bw-status", "bw-list", "secret-list", "certificate", "bw-create",
-            "secret-set:SIGNING_CERTIFICATE_BASE64", "secret-set:SIGNING_CERTIFICATE_PASSWORD"
+            "bw-status", "bw-list", "environment-state", "certificate", "bw-create",
+            "environment", "secret-set:SIGNING_CERTIFICATE_BASE64", "secret-set:SIGNING_CERTIFICATE_PASSWORD"
         )
+        $harness.State.EnvironmentArgs | Should -Be "msix-signing/main"
+        $harness.State.SecretEnvironment | Should -Be "msix-signing"
         [Convert]::FromBase64String($harness.State.Secrets["SIGNING_CERTIFICATE_BASE64"]) | Should -Be ([byte[]](1, 2, 3, 4))
         $harness.State.Secrets["SIGNING_CERTIFICATE_PASSWORD"] | Should -Be $harness.State.Password
         ($harness.State.BitwardenItemJson | ConvertFrom-Json).notes | Should -Be $harness.State.Password
+    }
+
+    It "Environment の名前とブランチを指定できる" {
+        $harness = New-TestHarness
+        $stepArgs = $harness.Args
+        $backup = Join-Path $TestDrive "cert-envname"
+
+        Invoke-ArborSigningCertificateSetup -BackupDir $backup -Register -Environment "other-env" -Branch "release" @stepArgs | Out-Null
+
+        $harness.State.EnvironmentArgs | Should -Be "other-env/release"
+        $harness.State.SecretEnvironment | Should -Be "other-env"
     }
 
     It "パスワードを出力に含めない" {
@@ -126,11 +172,13 @@ Describe "packaging/msix/New-SigningCertificate.ps1" {
         $output.Contains($harness.State.Password) | Should -BeFalse
     }
 
-    It "事前確認の失敗では、証明書を作らず、Secrets も登録しない" -TestCases @(
+    It "事前確認の失敗では、証明書を作らず、シークレットも登録しない" -TestCases @(
         @{ Name = "既存の pfx（-Force なし）"; Message = "*既に存在します*"; Setup = { param($backup) New-Item -ItemType Directory -Force $backup | Out-Null; [IO.File]::WriteAllText((Join-Path $backup "arbor-signing.pfx"), "old") }; Harness = @{} },
         @{ Name = "Bitwarden が未解錠"; Message = "*解錠されていません*"; Setup = {}; Harness = @{ BitwardenUnlocked = $false } },
         @{ Name = "Bitwarden に同名の項目"; Message = "*同名の項目*"; Setup = {}; Harness = @{ BitwardenItemExists = $true } },
-        @{ Name = "GitHub に同名の Secrets"; Message = "*同名の Secrets*"; Setup = {}; Harness = @{ ExistingSecrets = @("SIGNING_CERTIFICATE_BASE64") } }
+        @{ Name = "Environment に同名のシークレット"; Message = "*同名のシークレット*"; Setup = {}; Harness = @{ EnvironmentExists = $true; ExistingSecrets = @("SIGNING_CERTIFICATE_BASE64") } },
+        @{ Name = "既存の Environment のデプロイ制限が想定と異なる（保護ブランチのみ）"; Message = "*想定*異なります*"; Setup = {}; Harness = @{ EnvironmentExists = $true; EnvironmentCustomPolicies = $false } },
+        @{ Name = "想定外のデプロイのポリシー（別のブランチ）がある"; Message = "*想定外のデプロイのポリシー*"; Setup = {}; Harness = @{ EnvironmentExists = $true; EnvironmentPolicies = @("branch:main", "branch:dev") } }
     ) {
         param($Name, $Message, $Setup, $Harness)
         $harnessParams = $Harness
@@ -142,11 +190,13 @@ Describe "packaging/msix/New-SigningCertificate.ps1" {
         { Invoke-ArborSigningCertificateSetup -BackupDir $backup -Register @stepArgs } | Should -Throw $Message
 
         $harness.State.Calls | Should -Not -Contain "certificate"
+        # 外部への書き込み（Environment の作成・更新、シークレットの登録）は、1 件も行わない
+        $harness.State.Calls | Should -Not -Contain "environment"
         ($harness.State.Calls | Where-Object { $_ -like "secret-set:*" }) | Should -BeNullOrEmpty
     }
 
-    It "-Force なら、既存の pfx と同名の Secrets を上書きできる" {
-        $harness = New-TestHarness -ExistingSecrets @("SIGNING_CERTIFICATE_BASE64", "SIGNING_CERTIFICATE_PASSWORD")
+    It "-Force なら、既存の pfx と同名のシークレットを上書きできる" {
+        $harness = New-TestHarness -EnvironmentExists $true -ExistingSecrets @("SIGNING_CERTIFICATE_BASE64", "SIGNING_CERTIFICATE_PASSWORD")
         $stepArgs = $harness.Args
         $backup = Join-Path $TestDrive "cert-force"
         New-Item -ItemType Directory -Force $backup | Out-Null
@@ -158,7 +208,7 @@ Describe "packaging/msix/New-SigningCertificate.ps1" {
         $harness.State.Secrets.Keys | Should -HaveCount 2
     }
 
-    It "Bitwarden への保存に失敗したら、Secrets を登録しない" {
+    It "Bitwarden への保存に失敗したら、シークレットを登録しない" {
         $harness = New-TestHarness -BitwardenCreateFails $true
         $stepArgs = $harness.Args
         $backup = Join-Path $TestDrive "cert-bw-fail"
@@ -168,7 +218,7 @@ Describe "packaging/msix/New-SigningCertificate.ps1" {
         ($harness.State.Calls | Where-Object { $_ -like "secret-set:*" }) | Should -BeNullOrEmpty
     }
 
-    It "-SkipBitwarden なら Bitwarden に触れない。-Register なしなら Secrets に触れない" {
+    It "-SkipBitwarden なら Bitwarden に触れない。-Register なしなら GitHub に触れない" {
         $harness = New-TestHarness
         $stepArgs = $harness.Args
         $backup = Join-Path $TestDrive "cert-skip"

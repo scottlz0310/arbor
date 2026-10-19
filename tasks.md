@@ -37,11 +37,11 @@
 
 Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
 
-- [ ] PR 1: 設定の保存先を、全 OS で `~/.config/arbor/config.toml` にする（旧版の保存先からは初回にコピー）
-- [ ] PR 2: 未使用の Tauri updater の削除（plugin・capability・`plugins.updater`・`createUpdaterArtifacts`・`publish-updater-manifest`・`latest.json` の検査・`TAURI_SIGNING_PRIVATE_KEY*`）
+- [x] PR 1: 設定の保存先を、全 OS で `~/.config/arbor/config.toml` にする（旧版の保存先からは初回にコピー。#325）
 - [-] PR 2: （上の項目を取り下げ）updater は未完成の機能で、削除せず、macOS / Linux 向けを #327 で完成させる。#324 では、updater の Windows の分だけを PR 3b で外す
-- [ ] PR 3a: MSIX の生成と署名（`packaging/msix/`、`install.ps1`、`Test-ReleaseMsix.ps1`、`package-msix.yml`、Pester）、Arbor 専用の署名証明書のスクリプト（生成・バックアップ・Bitwarden・Secrets 登録。バックアップ先は引数。手順はハンドオフ）。リリースにはまだ繋がない。マージの前に、署名済みの MSIX を実機で確認する
-- [ ] PR 3b: リリースを MSIX に切り替える（`release.yml` から `package-msix.yml` を呼ぶ、msi / NSIS の廃止、`verify-release-assets.sh` の MSIX 検査、`latest.json` から Windows を外す、README・runbook）。v0.4.0 のリリースで、`verify` → `finalize` を通しで確認する
+- [x] PR 3a（#329。署名済みの MSIX を実機で確認し、main からの手動実行でも署名のパスを確認した）: MSIX の生成と署名（`packaging/msix/`、`install.ps1`、`Test-ReleaseMsix.ps1`、`package-msix.yml`、Pester）、Arbor 専用の署名証明書のスクリプト（生成・バックアップ・Bitwarden・Secrets 登録。バックアップ先は引数。手順はハンドオフ）。リリースにはまだ繋がない。マージの前に、署名済みの MSIX を実機で確認する
+- [ ] PR 3b-1: 署名用の Secrets を、リポジトリの Secrets から Environment（`msix-signing`。main からのデプロイだけ）のシークレットへ移す（`package-msix.yml` を、`build` / `package-unsigned`（PR）/ `package-signed`（environment つき。PR では動かさない）に分ける。`Register-SigningSecrets.ps1`（バックアップからの復元）。同一リポジトリの PR は、ワークフローを書き換えて、リポジトリの Secrets を読めるため）。マージ後に `workflow_dispatch` で署名のパスを確認し、そのあとで、リポジトリの Secrets（`SIGNING_CERTIFICATE_*`）を削除する（ユーザーの確認を取る）
+- [ ] PR 3b-2: リリースを MSIX に切り替える（`release.yml` から `package-msix.yml` を呼ぶ、msi / NSIS の廃止、`verify-release-assets.sh` の MSIX 検査、`latest.json` から Windows を外す、README・runbook）。v0.4.0 のリリースで、`verify` → `finalize` を通しで確認する
 
 後続（#324 の実機検証で見つかったもの。別 Issue）:
 
