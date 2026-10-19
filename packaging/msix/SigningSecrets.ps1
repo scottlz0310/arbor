@@ -45,36 +45,97 @@ function Get-ArborSigningPassword {
 }
 
 # Environment を作り（無ければ）、デプロイできるブランチを $Branch だけに限定する。何度実行しても同じ状態になる。
-# 想定外のブランチ / タグのポリシーが既にあるときは、黙って消さず、失敗する。
+# 外部への書き込みなので、呼ぶ前に、Get-ArborSigningEnvironmentState と Assert-ArborSigningEnvironmentPlan で、
+# 読み取りだけで衝突を判定しておく（衝突で中止するときに、既存の Environment を書き換えないため）。
 function Initialize-ArborSigningEnvironment {
     param(
         [Parameter(Mandatory)][string]$Repo,
         [Parameter(Mandatory)][string]$Environment,
         [Parameter(Mandatory)][string]$Branch,
+        [Parameter(Mandatory)]$State,
         [scriptblock]$EnvironmentStep
     )
 
     if ($null -ne $EnvironmentStep) {
-        $null = & $EnvironmentStep -Repo $Repo -Environment $Environment -Branch $Branch
+        $null = & $EnvironmentStep -Repo $Repo -Environment $Environment -Branch $Branch -State $State
         return
     }
 
     $base = "repos/$Repo/environments/$Environment"
-    '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' |
-        & gh api -X PUT $base --input - --silent
-    if ($LASTEXITCODE -ne 0) { throw "Environment を作れません: $Environment（終了コード: $LASTEXITCODE。リポジトリの管理者権限と gh auth status を確認してください）" }
-
-    $policies = @(& gh api "$base/deployment-branch-policies" --jq '.branch_policies[] | "\(.type):\(.name)"')
-    if ($LASTEXITCODE -ne 0) { throw "Environment のデプロイのポリシーを取得できません: $Environment（終了コード: $LASTEXITCODE）" }
-    $policies = @($policies | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-
-    $unexpected = @($policies | Where-Object { $_ -ne "branch:$Branch" })
-    if ($unexpected.Count -gt 0) {
-        throw "Environment「$Environment」に、想定外のデプロイのポリシーがあります: $($unexpected -join ', ')（main だけに限定するため、手で確認して削除してください）"
+    # 既に、カスタムのポリシーで、想定どおりに設定されている Environment には、書き込まない
+    if (-not $State.Exists -or -not $State.CustomPolicies) {
+        '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' |
+            & gh api -X PUT $base --input - --silent
+        if ($LASTEXITCODE -ne 0) { throw "Environment を作れません: $Environment（終了コード: $LASTEXITCODE。リポジトリの管理者権限と gh auth status を確認してください）" }
     }
-    if ($policies -notcontains "branch:$Branch") {
+    if (@($State.Policies) -notcontains "branch:$Branch") {
         "{`"name`":`"$Branch`",`"type`":`"branch`"}" | & gh api -X POST "$base/deployment-branch-policies" --input - --silent
         if ($LASTEXITCODE -ne 0) { throw "デプロイできるブランチを登録できません: $Branch（終了コード: $LASTEXITCODE）" }
+    }
+}
+
+# Environment の現在の状態を、読み取りだけで取得する（書き込まない）。無ければ Exists = $false。
+# 戻り値: Exists, CustomPolicies（カスタムのブランチ / タグのポリシーか）, Policies（"branch:main" など）, SecretNames。
+function Get-ArborSigningEnvironmentState {
+    param(
+        [Parameter(Mandatory)][string]$Repo,
+        [Parameter(Mandatory)][string]$Environment,
+        [scriptblock]$StateStep,
+        [scriptblock]$SecretListStep
+    )
+
+    if ($null -ne $StateStep) { return & $StateStep -Repo $Repo -Environment $Environment }
+
+    $base = "repos/$Repo/environments/$Environment"
+    $output = & gh api $base 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        if (($output | Out-String) -match 'HTTP 404') {
+            return [PSCustomObject]@{ Exists = $false; CustomPolicies = $false; Policies = @(); SecretNames = @() }
+        }
+        throw "Environment の状態を取得できません: $Environment（終了コード: $LASTEXITCODE。$(($output | Out-String).Trim())）"
+    }
+    $environmentInfo = ($output | Out-String) | ConvertFrom-Json
+    $custom = [bool]($environmentInfo.deployment_branch_policy -and $environmentInfo.deployment_branch_policy.custom_branch_policies)
+
+    $policies = @()
+    if ($custom) {
+        $listed = @(& gh api "$base/deployment-branch-policies" --jq '.branch_policies[] | "\(.type):\(.name)"')
+        if ($LASTEXITCODE -ne 0) { throw "Environment のデプロイのポリシーを取得できません: $Environment（終了コード: $LASTEXITCODE）" }
+        $policies = @($listed | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+
+    return [PSCustomObject]@{
+        Exists         = $true
+        CustomPolicies = $custom
+        Policies       = $policies
+        SecretNames    = @(Get-ArborExistingSecretNames -Repo $Repo -Environment $Environment -ListStep $SecretListStep)
+    }
+}
+
+# 状態（読み取りだけで取得したもの）から、外部へ書き込む前に、衝突を判定する。書き込む前に、すべて済ませる。
+#  - 既存の Environment のデプロイ制限が、想定（カスタム）と異なる: -Force なしでは、書き換えない
+#  - 想定外のブランチ / タグのポリシーがある: 黙って消さない（-Force でも）
+#  - 同名のシークレットがある: -Force なしでは、上書きしない
+function Assert-ArborSigningEnvironmentPlan {
+    param(
+        [Parameter(Mandatory)][string]$Environment,
+        [Parameter(Mandatory)][string]$Branch,
+        [Parameter(Mandatory)]$State,
+        [switch]$Force
+    )
+
+    if ($State.Exists -and -not $State.CustomPolicies -and -not $Force) {
+        throw "Environment「$Environment」のデプロイ制限が、想定（カスタム。$Branch のみ）と異なります。書き換えると、既存の署名処理のデプロイの可否が変わります（手で確認するか、-Force）"
+    }
+    $unexpected = @(@($State.Policies) | Where-Object { $_ -ne "branch:$Branch" })
+    if ($unexpected.Count -gt 0) {
+        throw "Environment「$Environment」に、想定外のデプロイのポリシーがあります: $($unexpected -join ', ')（$Branch だけに限定するため、手で確認して削除してください）"
+    }
+    if (-not $Force) {
+        $existing = @(@($State.SecretNames) | Where-Object { $ArborSigningSecretNames -contains $_ })
+        if ($existing.Count -gt 0) {
+            throw "Environment「$Environment」に同名のシークレットがあります: $($existing -join ', ')（上書きするには -Force）"
+        }
     }
 }
 

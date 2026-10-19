@@ -35,7 +35,10 @@ BeforeAll {
             [bool]$BitwardenUnlocked = $true,
             [bool]$BitwardenItemExists = $false,
             [bool]$BitwardenCreateFails = $false,
-            [string[]]$ExistingSecrets = @()
+            [string[]]$ExistingSecrets = @(),
+            [bool]$EnvironmentExists = $false,
+            [bool]$EnvironmentCustomPolicies = $true,
+            [string[]]$EnvironmentPolicies = @()
         )
 
         $state = [PSCustomObject]@{
@@ -75,8 +78,21 @@ BeforeAll {
             $state.BitwardenItemJson = $ItemJson
         }.GetNewClosure()
 
+        # 読み取りだけ（外部へ書き込まない）
+        $environmentStateStep = {
+            param([string]$Repo, [string]$Environment)
+            $state.Calls.Add("environment-state")
+            return [PSCustomObject]@{
+                Exists         = $EnvironmentExists
+                CustomPolicies = $EnvironmentCustomPolicies
+                Policies       = $EnvironmentPolicies
+                SecretNames    = $ExistingSecrets
+            }
+        }.GetNewClosure()
+
+        # 外部への書き込み（Environment の作成・更新）
         $environmentStep = {
-            param([string]$Repo, [string]$Environment, [string]$Branch)
+            param([string]$Repo, [string]$Environment, [string]$Branch, [Alias("State")]$EnvState)
             $state.Calls.Add("environment")
             $state.EnvironmentArgs = "$Environment/$Branch"
         }.GetNewClosure()
@@ -101,6 +117,7 @@ BeforeAll {
                 BitwardenStatusStep = $bitwardenStatusStep
                 BitwardenListStep   = $bitwardenListStep
                 BitwardenCreateStep = $bitwardenCreateStep
+                EnvironmentStateStep = $environmentStateStep
                 EnvironmentStep     = $environmentStep
                 SecretListStep      = $secretListStep
                 SecretSetStep       = $secretSetStep
@@ -119,10 +136,10 @@ Describe "packaging/msix/New-SigningCertificate.ps1" {
 
         $result.PfxPath | Should -Be (Join-Path $backup "arbor-signing.pfx")
         Test-Path $result.CerPath | Should -BeTrue
-        # Environment を先に整え、事前確認をすべて済ませてから、生成・保存・登録へ進む
+        # 事前確認は、読み取りだけ。外部への書き込み（Environment の作成・登録）は、生成と Bitwarden への保存のあと、最後
         $harness.State.Calls | Should -Be @(
-            "bw-status", "bw-list", "environment", "secret-list", "certificate", "bw-create",
-            "secret-set:SIGNING_CERTIFICATE_BASE64", "secret-set:SIGNING_CERTIFICATE_PASSWORD"
+            "bw-status", "bw-list", "environment-state", "certificate", "bw-create",
+            "environment", "secret-set:SIGNING_CERTIFICATE_BASE64", "secret-set:SIGNING_CERTIFICATE_PASSWORD"
         )
         $harness.State.EnvironmentArgs | Should -Be "msix-signing/main"
         $harness.State.SecretEnvironment | Should -Be "msix-signing"
@@ -159,7 +176,9 @@ Describe "packaging/msix/New-SigningCertificate.ps1" {
         @{ Name = "既存の pfx（-Force なし）"; Message = "*既に存在します*"; Setup = { param($backup) New-Item -ItemType Directory -Force $backup | Out-Null; [IO.File]::WriteAllText((Join-Path $backup "arbor-signing.pfx"), "old") }; Harness = @{} },
         @{ Name = "Bitwarden が未解錠"; Message = "*解錠されていません*"; Setup = {}; Harness = @{ BitwardenUnlocked = $false } },
         @{ Name = "Bitwarden に同名の項目"; Message = "*同名の項目*"; Setup = {}; Harness = @{ BitwardenItemExists = $true } },
-        @{ Name = "Environment に同名のシークレット"; Message = "*同名のシークレット*"; Setup = {}; Harness = @{ ExistingSecrets = @("SIGNING_CERTIFICATE_BASE64") } }
+        @{ Name = "Environment に同名のシークレット"; Message = "*同名のシークレット*"; Setup = {}; Harness = @{ EnvironmentExists = $true; ExistingSecrets = @("SIGNING_CERTIFICATE_BASE64") } },
+        @{ Name = "既存の Environment のデプロイ制限が想定と異なる（保護ブランチのみ）"; Message = "*想定*異なります*"; Setup = {}; Harness = @{ EnvironmentExists = $true; EnvironmentCustomPolicies = $false } },
+        @{ Name = "想定外のデプロイのポリシー（別のブランチ）がある"; Message = "*想定外のデプロイのポリシー*"; Setup = {}; Harness = @{ EnvironmentExists = $true; EnvironmentPolicies = @("branch:main", "branch:dev") } }
     ) {
         param($Name, $Message, $Setup, $Harness)
         $harnessParams = $Harness
@@ -171,11 +190,13 @@ Describe "packaging/msix/New-SigningCertificate.ps1" {
         { Invoke-ArborSigningCertificateSetup -BackupDir $backup -Register @stepArgs } | Should -Throw $Message
 
         $harness.State.Calls | Should -Not -Contain "certificate"
+        # 外部への書き込み（Environment の作成・更新、シークレットの登録）は、1 件も行わない
+        $harness.State.Calls | Should -Not -Contain "environment"
         ($harness.State.Calls | Where-Object { $_ -like "secret-set:*" }) | Should -BeNullOrEmpty
     }
 
     It "-Force なら、既存の pfx と同名のシークレットを上書きできる" {
-        $harness = New-TestHarness -ExistingSecrets @("SIGNING_CERTIFICATE_BASE64", "SIGNING_CERTIFICATE_PASSWORD")
+        $harness = New-TestHarness -EnvironmentExists $true -ExistingSecrets @("SIGNING_CERTIFICATE_BASE64", "SIGNING_CERTIFICATE_PASSWORD")
         $stepArgs = $harness.Args
         $backup = Join-Path $TestDrive "cert-force"
         New-Item -ItemType Directory -Force $backup | Out-Null

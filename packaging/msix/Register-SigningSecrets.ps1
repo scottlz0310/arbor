@@ -8,11 +8,14 @@
   - 署名用の Secrets を、リポジトリの Secrets から Environment のシークレットへ移すとき
   - Secrets を失った、または、リポジトリを移したとき
 
-実行順は次のとおりで、前の工程が失敗したら、後の工程へ進まない。
-  1. 事前確認: BackupDir の pfx、Bitwarden の解錠と項目、（-Force なしなら）Environment に同名のシークレットが無いこと。
+実行順は次のとおりで、前の工程が失敗したら、後の工程へ進まない。外部（GitHub）へ書き込むのは、最後の工程だけ
+（衝突で中止するときに、既存の Environment のデプロイ制限を書き換えない）。
+  1. 事前確認: BackupDir の pfx、Bitwarden の解錠と項目。
   2. pfx が、Bitwarden のパスワードで開けること（BackupDir に cer があれば、Thumbprint の一致も）を確認する。
-  3. Environment を作り（無ければ）、デプロイできるブランチを -Branch だけに限定する。
-  4. SIGNING_CERTIFICATE_BASE64 / SIGNING_CERTIFICATE_PASSWORD を登録する。値は標準入力で渡す（引数やログに出さない）。
+  3. Environment の状態を、読み取りだけで取得し、衝突を判定する（既存のデプロイ制限が想定と異なる、想定外のポリシーがある、
+     -Force なしで同名のシークレットがある、のいずれかなら、書き込まずに失敗する）。
+  4. Environment を作り（無ければ）、デプロイできるブランチを -Branch だけに限定し、
+     SIGNING_CERTIFICATE_BASE64 / SIGNING_CERTIFICATE_PASSWORD を登録する。値は標準入力で渡す（引数やログに出さない）。
 
 パスワードは、画面にもログにも出力しない。
 
@@ -23,7 +26,8 @@ pfx（arbor-signing.pfx）と cer（arbor.cer）があるバックアップ先�
 登録先の Environment の名前。ワークフロー（package-msix.yml）の `environment:` と同じにする。
 
 .PARAMETER Force
-Environment の同名のシークレットを上書きする。
+Environment の同名のシークレットを上書きする。既存の Environment のデプロイ制限が想定と異なるときに、書き換える。
+（想定外のブランチ / タグのポリシーは、-Force でも、黙って消さない。）
 
 .EXAMPLE
 pwsh packaging/msix/Register-SigningSecrets.ps1 -BackupDir ~/Dropbox/src/arbor-dsx/cert
@@ -78,6 +82,7 @@ function Invoke-ArborSigningSecretsRestore {
         [scriptblock]$BitwardenGetStep,
         [scriptblock]$PfxThumbprintStep,
         [scriptblock]$CerThumbprintStep,
+        [scriptblock]$EnvironmentStateStep,
         [scriptblock]$EnvironmentStep,
         [scriptblock]$SecretListStep,
         [scriptblock]$SecretSetStep
@@ -103,17 +108,13 @@ function Invoke-ArborSigningSecretsRestore {
         }
     }
 
-    # 3. Environment（何度作っても同じ状態になる）
-    Initialize-ArborSigningEnvironment -Repo $Repo -Environment $Environment -Branch $Branch -EnvironmentStep $EnvironmentStep
-    if (-not $Force) {
-        $existing = @(Get-ArborExistingSecretNames -Repo $Repo -Environment $Environment -ListStep $SecretListStep) |
-            Where-Object { $ArborSigningSecretNames -contains $_ }
-        if (@($existing).Count -gt 0) {
-            throw "Environment「$Environment」に同名のシークレットがあります: $($existing -join ', ')（上書きするには -Force）"
-        }
-    }
+    # 3. Environment とシークレットの衝突の判定（読み取りだけ。外部へ書き込む前に、すべて済ませる。
+    #    衝突で中止するときに、既存の Environment のデプロイ制限を書き換えないため）
+    $environmentState = Get-ArborSigningEnvironmentState -Repo $Repo -Environment $Environment -StateStep $EnvironmentStateStep -SecretListStep $SecretListStep
+    Assert-ArborSigningEnvironmentPlan -Environment $Environment -Branch $Branch -State $environmentState -Force:$Force
 
-    # 4. 登録
+    # 4. 外部への書き込み（ここまでの確認がすべて成功してから）: Environment を整え、シークレットを登録する
+    Initialize-ArborSigningEnvironment -Repo $Repo -Environment $Environment -Branch $Branch -State $environmentState -EnvironmentStep $EnvironmentStep
     $base64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($pfxPath))
     Register-ArborSigningSecrets -Repo $Repo -Environment $Environment -Base64 $base64 -Password $password -SetStep $SecretSetStep
 
