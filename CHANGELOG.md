@@ -12,6 +12,22 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
   - **移行は、並行した読み込みから保護している**（レビューでの指摘）。起動時は、`list_repositories` と `get_workspace_status` などが並行して `load_config` を呼ぶため、初回の移行が重なると、同じ移行先へ同時にコピーして、Windows で共有違反（os error 32）になりえた。設定の読み込み・変更を 1 つのロックで直列にし、移行は、一時ファイルへコピーし終えてからハードリンクで公開する（読み手は途中のファイルを見ず、別のプロセスが先に公開していても上書きしない）。8 スレッドで同時に移行する回帰テストを追加した（ロックと原子的な公開を外すと、失敗することを確認した）
   - `ARBOR_CONFIG_DIR`（debug build のみ）は、これまでどおり。隔離先を使うときは、旧版の保存先を見ない（実機の設定を持ち込まない）
 
+- **Windows 向けの MSIX（自己署名 + `.appinstaller` + `install.ps1`）の生成と、署名証明書のスクリプトを追加した**（#324 PR 3a。dsx・photo-map-studio と同じ型）。リリースにはまだ繋いでいない（msi / NSIS はそのまま。切り替えは PR 3b）
+  - `packaging/msix/`: `AppxManifest.xml`（`runFullTrust`。**書き込み仮想化は、既定（有効）のまま**にした。理由と実機の結果は、下の「実機での確認」。**実行エイリアス `arbor`** を宣言した）、`arbor.appinstaller.template`（`AutomaticBackgroundTask` のみ。GUI の起動時の更新確認を避ける）、`Build-Msix.ps1`（`tauri build --no-bundle` で作った `arbor.exe` を `makeappx` でパッケージ化し、`signtool` で署名。ロゴは `src-tauri/icons` のものを使う）
+  - `New-SigningCertificate.ps1`: 自己署名証明書（`CN=scottlz0310`、コード署名 EKU、5 年）を生成し、pfx と cer を `-BackupDir`（必須。既定値もハードコードも無い）へ書き出す。pfx のパスワードは Bitwarden の secure note に保存し（`-SkipBitwarden` で省略可）、`-Register` で GitHub Secrets（`SIGNING_CERTIFICATE_BASE64` / `_PASSWORD`）に登録する。値は標準入力で渡し、パスワードは画面にもログにも出さない。事前確認（既存の pfx / Bitwarden の同名項目 / 同名の Secrets）を済ませてから生成し、バックアップが失敗したら Secrets を登録しない
+  - `scripts/install.ps1`: 証明書が `LocalMachine\TrustedPeople` に無いときだけ、証明書のインポートを管理者権限（UAC）で行い、MSIX のインストール自体は元のユーザーで行う。旧版（msi / setup.exe）が残っていれば警告する
+  - `scripts/Test-ReleaseMsix.ps1`: 署名した MSIX の Identity（Name・Version）、Publisher と `.cer` の Subject の一致、署名者の同一性、署名後の改ざんの有無を検証する
+  - `.github/workflows/package-msix.yml`: 署名済みの MSIX を作る（`workflow_dispatch` と、`release.yml` から呼ぶ `workflow_call`）。MSIX に関わる PR では、未署名でパッケージ化だけを検証する。**署名用の Secrets（`SIGNING_CERTIFICATE_*`）は、署名するステップ（`env.SIGN == 'true'`）の `env` にだけ展開し、PR（未署名）のステップには展開しない**（レビューでの指摘。同一リポジトリの PR では Secrets が使えるため、`PfxPath` を省略するだけでは、PR 側の `Build-Msix.ps1` にパスワードが渡っていた。ビルドを署名と未署名の 2 つのステップに分け、未署名のステップは、パスワードが渡っていれば失敗する）。この規則は `tests/PackageMsixWorkflow.Tests.ps1` が検査する（漏れを再現すると失敗することを確認した）
+  - Pester のテスト（`tests/*.Tests.ps1`）と、CI の `PowerShell Tests` ジョブを追加した
+  - 署名証明書は、Arbor 専用（Thumbprint `E4091D55B296AE1E279643301803AC2035C78355`、2031-10-19 まで）。バックアップと Bitwarden への保存、Secrets への登録は、このスクリプトで行った
+  - **実機での確認**（Windows 11、署名済みの MSIX を実際にインストール。UAC は、証明書の信頼登録の 1 回）
+    - 署名は `Valid`（信頼登録の後）。`Test-ReleaseMsix.ps1` が成功。CI（`Package MSIX`）でも、署名・検証・checksum が通った
+    - パッケージ内から、`dsx`（`WindowsApps` の実行エイリアス）・`git`・`gh`・`bw` が動く。`dsx doctor`、Remote の確認（`gh`。24 件）、Fetch All（git2 + Git Credential Manager。24 件）、Daily Refresh（Bitwarden 解錠済み。リポジトリ 23 件を更新、失敗 0）が成功した。scoop が書いたユーザー環境変数（`ANDROID_HOME`）は、パッケージの外から見えた
+    - **実行中のキャンセル**（確認ダイアログの「強制終了」）が、パッケージ内でも効く（`■ キャンセルしました`、`dsx` の子プロセスが残らない）。`explorer` が前面に開く（#317 / #319 の回帰なし）
+    - **旧設定の移行**: パッケージ内から旧版の保存先（`%APPDATA%\arbor\config.toml`）が読め、`~/.config/arbor/config.toml` にコピーされた（ハッシュが一致。旧ファイルは無傷）
+    - **Bitwarden の解錠状態（`BW_SESSION`）は、起動の経路で決まる**: スタートメニューや explorer からの起動は、シェルの環境変数を引き継がないため、ヘッダーは「Bitwarden: 未解錠」になり、`doctor` も `BW_SESSION` を失敗として報告する。**シェルから `arbor`（実行エイリアス）で起動すると引き継ぎ**、「解錠済み」「Ready」になる。Daily Refresh で Bitwarden を使うときは、解錠したシェルから `arbor` で起動する（msi / exe 版と同じ運用）
+    - **アンインストール**: 書き込み仮想化が有効なら、WebView2 のデータは `LocalCache` に入り、アンインストールで、パッケージ領域・実フォルダ・エイリアスとも**何も残らない**（設定の `~/.config/arbor` だけが残る）。仮想化を無効にした試作版では、WebView2 のデータ（約 83MB）が `%LOCALAPPDATA%\dev.scottlz0310.arbor` に残った。ただし、**すでに実在するディレクトリへの書き込みは、仮想化されない**ため、旧版（exe / msi）が先に作ったディレクトリがある PC では、そこに書かれ、アンインストールで消えない（その PC では、一度、手で削除する）
+
 ### ci
 
 - **リリースの公開前の検証（`verify`）が、draft の Release を読めず、必ず失敗していた問題を直し、同じ種類の失敗を、リリースの前に見つけられる構造にした**。v0.3.0 のリリースで、`verify` が `contents: read` で動いたため、draft（書き込み権限のあるトークンにしか見えない）が `release not found` になり、成果物が揃っていても、公開に進めなかった（`finalize` は実行されず、draft のまま残った）。実行前のレビューでは、`GH_REPO` の指摘までしか、見つからなかった

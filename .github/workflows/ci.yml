@@ -199,3 +199,20 @@ jobs:
           files: coverage/lcov.info
           flags: frontend
           fail_ci_if_error: true
+
+  # ── PowerShell（MSIX の生成・署名・インストールのスクリプト） ──────────────────
+  # install.ps1 / New-SigningCertificate.ps1 / Test-ReleaseMsix.ps1 の単体テスト。
+  # Test-ReleaseMsix のテストは makeappx / signtool（Windows SDK）を使うため、windows-latest で動かす。
+  powershell:
+    name: PowerShell Tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Pester 5
+        shell: pwsh
+        run: Install-Module Pester -MinimumVersion 5.5.0 -Force -AllowClobber -Scope CurrentUser -Confirm:$false
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: Invoke-Pester -Path tests -CI
