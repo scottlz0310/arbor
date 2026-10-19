@@ -46,10 +46,17 @@ Describe ".github/workflows/package-msix.yml の Secrets の扱い" {
         $header | Should -Not -Match 'pull_request_target'
     }
 
-    It "署名用の Secrets を展開するジョブは、Environment を持ち、PR では動かない" {
+    It "再利用ワークフロー（workflow_call）にしない（Environment のシークレットが secrets に渡らないため。v0.4.0 で失敗した）" {
+        # トリガーのキー（コメント中の語ではなく）
+        $header | Should -Not -Match '(?m)^\s+workflow_call:'
+    }
+
+    It "署名用の Secrets を展開するジョブは、Environment を持ち、PR では動かず、直接のジョブ（uses ではなく、steps）である" {
         $using = @($jobs.Keys | Where-Object { $jobs[$_] -match $signingSecret })
         $using.Count | Should -BeGreaterThan 0 -Because "署名のジョブが無いと、このテストが意味を持たない"
         foreach ($name in $using) {
+            $jobs[$name] | Should -Not -Match '(?m)^    uses:' -Because "$name は、再利用ワークフローの呼び出しではなく、直接のジョブ"
+            $jobs[$name] | Should -Match '(?m)^    runs-on:' -Because "$name は、直接のジョブ"
             $jobs[$name] | Should -Match "(?m)^    environment: $environmentName\s*$" -Because "$name は、Environment を持つ"
             $jobs[$name] | Should -Match '(?m)^    if: \$\{\{ github\.event_name != ''pull_request'' \}\}\s*$' -Because "$name は、PR では動かさない"
         }

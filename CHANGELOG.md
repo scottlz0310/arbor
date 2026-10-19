@@ -5,6 +5,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### fix
+
+- **v0.4.0 のリリースで、MSIX の署名のジョブが、空のシークレットで失敗した問題を直した**（#324）。署名のジョブを、再利用ワークフロー（`release.yml` から `workflow_call` で呼ぶ `package-msix.yml`）の中に置いていたため、ジョブが Environment `msix-signing` に紐づいた（deployment の記録がある）のに、Environment のシークレットが `secrets` に渡らず、`SIGNING_CERTIFICATE_BASE64` が空だった。直接実行の `workflow_dispatch` では取れていたため、手動実行の確認では、気づけなかった。`draft` は公開されず、安全に残った（`finalize` は実行されなかった）。v0.4.0 は、`release.yml` の再実行では直らない（再実行は、その時点の定義で動き、`finalize` は「実行の SHA ＝ リリースのコミット」を要求する）ため、CLAUDE.md の例外の手順で復旧する
+  - **署名のジョブを、再利用ワークフローの外に出した**: `build-exe.yml`（新規。`arbor.exe` のビルド。再利用ワークフロー。Secrets なし）と、複合アクション `.github/actions/package-msix-signed`（新規。署名・検証・checksum・アップロード。入力で、署名用の値を受け取る）を部品にし、`release.yml` の `msix-build`（`build-exe.yml` を呼ぶ）と `msix-sign`（直接のジョブ。`environment: msix-signing`）、`package-msix.yml` の `package-signed`（同）が、組む。`package-msix.yml` は、`workflow_call` をやめた
+  - `package-msix.yml` の手動実行に、`ref`（`arbor.exe` を作るコミット）を足した。リリースのコミットから MSIX を作り直す、復旧のため。MSIX の定義（マニフェスト・ロゴ・スクリプト）は、このワークフローのコミットのものを使う
+  - **回帰テスト**: `tests/WorkflowSecrets.Tests.ps1`（新規）が、全ワークフローと複合アクションを横断して、「再利用ワークフローは、署名用の Secrets を参照せず、`environment: msix-signing` も使わない」「署名用の Secrets を参照するジョブは、`environment: msix-signing` を持つ、直接のジョブである」「複合アクションは、`secrets` を参照しない」「署名の複合アクションを使うジョブは、直接のジョブで、署名用の値を渡す」を固定する。`PackageMsixWorkflow.Tests.ps1`・`ReleaseWorkflow.Tests.ps1` も更新した。旧い構成（署名のジョブを再利用ワークフローにする）を再現すると、失敗することを確認した
+
 ## [0.4.0] - 2026-10-19
 
 ### breaking
