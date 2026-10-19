@@ -8,10 +8,6 @@ name: Package MSIX
 #     PR では署名証明書を使わない。
 
 on:
-  # TODO(#324 PR 3a): 一時。ワークフローが main に無い間は workflow_dispatch を起動できないため、
-  # 作業ブランチの push で署名済みの MSIX を作り、実機で確認する。マージの前に、この push トリガーを外す。
-  push:
-    branches: [feat/msix-packaging]
   workflow_dispatch:
     inputs:
       tag:

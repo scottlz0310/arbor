@@ -43,6 +43,11 @@ Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
 - [ ] PR 3a: MSIX の生成と署名（`packaging/msix/`、`install.ps1`、`Test-ReleaseMsix.ps1`、`package-msix.yml`、Pester）、Arbor 専用の署名証明書のスクリプト（生成・バックアップ・Bitwarden・Secrets 登録。バックアップ先は引数。手順はハンドオフ）。リリースにはまだ繋がない。マージの前に、署名済みの MSIX を実機で確認する
 - [ ] PR 3b: リリースを MSIX に切り替える（`release.yml` から `package-msix.yml` を呼ぶ、msi / NSIS の廃止、`verify-release-assets.sh` の MSIX 検査、`latest.json` から Windows を外す、README・runbook）。v0.4.0 のリリースで、`verify` → `finalize` を通しで確認する
 
+後続（#324 の実機検証で見つかったもの。別 Issue）:
+
+- [ ] 画面から Bitwarden を解錠できるようにする（#328。`BW_SESSION` を Arbor のメモリだけに保持。保留: 日常の用途には解錠が要らないため、dsx 側の scottlz0310/dsx#144（`run` は sys と repo だけ、シークレットは `env` だけ）のあとに、必要性を再評価する）
+- [ ] macOS / Linux の自動更新（Tauri updater）の完成（#327）
+
 ---
 
 ## レビューノート & 改善提案 (spec v0.3 → 実装差分)
