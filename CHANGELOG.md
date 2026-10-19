@@ -5,6 +5,16 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### breaking
+
+- **Windows の配布を、msi / NSIS（setup.exe）から、自己署名の MSIX（`.appinstaller` で自動更新）に切り替えた**（#324 PR 3b-2。**v0.4.0 から**）。公開物は、`arbor_x64.msix`・`arbor.appinstaller`・`arbor.cer`・`install.ps1`・`checksums-msix.txt`。インストールは、README の PowerShell のワンライナー（`install.ps1` が、証明書を `LocalMachine\TrustedPeople` に信頼登録（UAC）して、MSIX を入れる）。
+  - **移行（v0.3.0 までの msi / setup.exe 版）**: 先に、「設定 > アプリ」からアンインストールする。設定は、`~/.config/arbor/config.toml` に、初回の起動で引き継がれる（旧ファイルは残る）。旧版が作った `%LOCALAPPDATA%\dev.scottlz0310.arbor`（WebView2 のデータ）は、MSIX 版では使わず、アンインストールでも消えないため、手で削除する。`install.ps1` は、旧版が残っていれば警告する
+  - **Bitwarden（`BW_SESSION`）**: スタートメニューからの起動は、シェルの環境変数を引き継がない。解錠したシェルから、実行エイリアス `arbor` で起動する
+  - **リリースのワークフロー（`release.yml`）**: `build-tauri` を macOS / Linux だけにし、`msix` ジョブ（`package-msix.yml`。署名のジョブは Environment `msix-signing`）と `attach-msix`（5 つのファイルだけを draft に添付）を足した。`verify` は、これらの後に動く。`tauri.conf.json` の `bundle.targets` は、`["app", "dmg", "appimage", "deb"]`（Windows で `tauri build` が、インストーラを作らず、実行ファイルだけを作ることを確認した）。updater の `latest.json` は、macOS と Linux の 2 プラットフォームになる（Windows は `.appinstaller` で更新する。updater の他の部分は、#327 のために残す）
+  - **公開前の検証（`verify`）**: `verify-release-assets.sh` が、Windows の必須成果物（MSIX 一式）、**msi / setup.exe が混ざっていないこと**、`latest.json`（版・2 プラットフォーム・URL）、MSIX の checksum（`checksums-msix.txt` と実体）、`.appinstaller` の版（`<版>.0`）・MainPackage の URI・Name・Publisher を検査する。`verify-release.yml` に windows のジョブ（`verify-msix`）を足し、`Test-ReleaseMsix.ps1` で、署名・Identity・Publisher・改ざんを検証する
+  - **テスト**: `tests/VerifyReleaseAssets.Tests.ps1`（Pester 29 件）。`gh` を、フィクスチャを読む偽物に差し替えて、正常な Release、必須成果物の欠落（10 通り）、msi / setup.exe の混入、`latest.json` の不整合、checksum の不一致、`.appinstaller` の不整合、`gh` の失敗、不正なタグを検査する。検査を外すと、失敗することを確認した。`tests/ReleaseWorkflow.Tests.ps1`（7 件）は、`release.yml` の構造（ジョブの順序、`build-tauri` に Windows が無いこと、`msix` が Secrets を渡さないこと、`attach-msix` が 5 つのファイルだけを添付すること、`verify` が両方の添付の後に動くこと、`latest.json` に Windows が無いこと）を固定する。`release.yml` は、リリースの準備 PR のマージでしか動かず、壊れても次のリリースまで気づけないため
+  - 通しの動作（draft → 各 OS のビルド → MSIX の署名と添付 → `verify` → `finalize`）は、v0.4.0 のリリースで初めて確認する
+
 ### feat
 
 - **設定ファイルの保存先を、全 OS で `~/.config/arbor/config.toml` に統一した**（#324 PR 1）。これまでは、OS 標準の設定ディレクトリ（Windows の `%APPDATA%\arbor`、macOS の `~/Library/Application Support/arbor`）だった。Windows の配布を MSIX に一本化するため。MSIX は `%APPDATA%` への書き込みをパッケージ領域へ仮想化し、アンインストールで消すが、ユーザープロファイル直下は仮想化されず、外部から編集でき、アンインストールでも残る（dsx の `~/.config/dsx` と同じ）

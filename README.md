@@ -13,6 +13,26 @@
 - **dsx Tools** — dsx CLI の版の確認と self-update、`dsx sys update`（確認つき）・`-n`（ドライラン）・`repo update`・`doctor` の実行。出力は実行ログコンソールに流れる
 - **Settings** — workspace root と手動登録リポジトリの管理
 
+## インストール
+
+### Windows（MSIX。v0.4.0 以降）
+
+PowerShell で、次を実行する（自己署名の証明書 `arbor.cer` を信頼登録して、MSIX 版をインストールする。証明書のインポートのときだけ、UAC が出る）。
+
+```powershell
+iex ([Text.Encoding]::UTF8.GetString((iwr -UseBasicParsing https://github.com/scottlz0310/arbor/releases/latest/download/install.ps1).Content).TrimStart([char]0xFEFF))
+```
+
+- 更新は、Windows が、バックグラウンドで自動で行う（約 8 時間ごと）。Arbor のアプリ内の更新機能は、Windows 版には無い。
+- 対応は、Windows 10（19041 以降）/ 11 の x64 のみ。WebView2 ランタイムが要る（Windows 11 は標準で入っている）。
+- **v0.3.0 までの msi / setup.exe 版**: 先に、「設定 > アプリ」からアンインストールする。設定（`config.toml`）は、`~/.config/arbor/config.toml` に、初回の起動で引き継がれる（旧版の `%APPDATA%\arbor\config.toml` は、コピーするだけで、消さない）。旧版が作った `%LOCALAPPDATA%\dev.scottlz0310.arbor`（WebView2 のデータ）は、MSIX 版では使わず、MSIX 版のアンインストールでも消えない。不要なら、手で削除する。
+- **起動**: スタートメニュー、または、シェルから `arbor`。Daily Refresh で Bitwarden のシークレットを使うときは、**解錠したシェルから `arbor` で起動する**（スタートメニューからの起動は、シェルの `BW_SESSION` を引き継がない）。
+- **アンインストール**: 「設定 > アプリ」。設定（`~/.config/arbor`）は残る。信頼登録した証明書は、残る（不要なら、`Cert:\LocalMachine\TrustedPeople` から削除する）。
+
+### macOS / Linux
+
+[Releases](https://github.com/scottlz0310/arbor/releases) の、dmg（macOS）、AppImage・deb（Linux）。アプリ内の自動更新は、まだ無い（[#327](https://github.com/scottlz0310/arbor/issues/327)）。macOS は、署名・公証をしていない。
+
 ## 前提ツール
 
 | ツール | バージョン | 用途 |
@@ -41,9 +61,11 @@ bun run tauri dev
 ## ビルド
 
 ```bash
-# リリースビルド（.msi / .dmg を生成）
+# リリースビルド（macOS: .app / .dmg、Linux: AppImage / deb。Windows は実行ファイルだけで、インストーラは作らない）
 bun run tauri build
 ```
+
+Windows の配布物（MSIX）は、`tauri build` では作らない。`bun run tauri build --no-bundle` で `arbor.exe` を作り、`packaging/msix/Build-Msix.ps1` で MSIX にする（署名と手順は、CLAUDE.md の「リリース」）。
 
 ## 開発コマンド
 
