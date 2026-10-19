@@ -5,6 +5,10 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### fix
+
+- **認証が要る remote（非公開リポジトリなど）の fetch が 401 で失敗していた**（#311）。`fetch_repository` が `RemoteCallbacks` に認証情報の取得（`credentials`）を設定しておらず、libgit2 は認証情報ヘルパーも ssh-agent も使わなかったため、公開リポジトリしか fetch できなかった。HTTPS は git の認証情報ヘルパー（`credential.helper`。Windows は Git Credential Manager）、SSH は ssh-agent を使い、ユーザー名の要求にも応える。認証情報の要求に応える回数には上限（3 回）を付け、誤った認証情報を返され続けても fetch が終わらなくなることを防ぐ。`Fetch All` と、単体の `fetch_repo` の両方が直る。実機の 28 リポジトリで、`Fetch All` の失敗が 5 件から 2 件（どちらも存在しないパスの手動登録）に減ることを確認した。SSH remote は、実機に該当するリポジトリがなく、未検証
+
 ### ci
 
 - **IPC ラッパーを `src-tauri/src/ipc/` に分け、カバレッジ対象から外した**（#309）。`#[tauri::command]` の 24 個の関数を、ロジックを持たない薄いラッパーとして `ipc/` に集め、ロジックは `commands/` のテストできる関数へ切り出した（`DsxTask`・`modify_config`・`register_repository` / `apply_settings` / `build_preview` / `fetch_all_repositories` など）。コマンド名・引数・戻り値は変えていない

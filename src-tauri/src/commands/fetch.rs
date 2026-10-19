@@ -24,12 +24,72 @@ impl<F> Fetcher for F where
 {
 }
 
-/// 全 remote を fetch する。認証は、システムの git 認証情報ヘルパー / SSH エージェントに任せる。
+/// 認証情報の要求に応える回数の上限。誤った認証情報を返され続けても、fetch が終わらなくならないようにする。
+const MAX_CREDENTIAL_ATTEMPTS: u8 = 3;
+
+/// 認証情報の取得元。
+#[derive(Debug, PartialEq, Eq)]
+enum CredentialSource {
+    /// remote が URL にユーザー名を含まないときの、ユーザー名だけの応答。
+    Username,
+    /// git の認証情報ヘルパー（HTTPS）。
+    Helper,
+    /// ssh-agent（SSH）。
+    SshAgent,
+    /// OS の既定の認証（NTLM など）。
+    Default,
+}
+
+/// remote が受け付ける認証方式から、使う取得元を選ぶ。受け付ける方式が無ければ None。
+fn credential_source(allowed: git2::CredentialType) -> Option<CredentialSource> {
+    use git2::CredentialType as T;
+    if allowed.contains(T::USERNAME) {
+        Some(CredentialSource::Username)
+    } else if allowed.contains(T::USER_PASS_PLAINTEXT) {
+        Some(CredentialSource::Helper)
+    } else if allowed.contains(T::SSH_KEY) {
+        Some(CredentialSource::SshAgent)
+    } else if allowed.contains(T::DEFAULT) {
+        Some(CredentialSource::Default)
+    } else {
+        None
+    }
+}
+
+/// remote の認証情報の要求に答えるコールバック。git2 は、これを設定しないと認証情報ヘルパーも
+/// ssh-agent も使わない（認証が要る remote は 401 などで失敗する）。
+fn credentials_callback(
+    config: git2::Config,
+) -> impl FnMut(&str, Option<&str>, git2::CredentialType) -> Result<git2::Cred, git2::Error> {
+    let mut attempts = 0u8;
+    move |url, username, allowed| {
+        attempts += 1;
+        if attempts > MAX_CREDENTIAL_ATTEMPTS {
+            return Err(git2::Error::from_str(
+                "認証に失敗しました（認証情報ヘルパーまたは ssh-agent の認証情報を確認してください）",
+            ));
+        }
+        match credential_source(allowed) {
+            Some(CredentialSource::Username) => git2::Cred::username(username.unwrap_or("git")),
+            Some(CredentialSource::Helper) => git2::Cred::credential_helper(&config, url, username),
+            Some(CredentialSource::SshAgent) => {
+                git2::Cred::ssh_key_from_agent(username.unwrap_or("git"))
+            }
+            Some(CredentialSource::Default) => git2::Cred::default(),
+            None => Err(git2::Error::from_str(
+                "対応していない認証方式です（HTTPS の認証情報ヘルパーか SSH を使ってください）",
+            )),
+        }
+    }
+}
+
+/// 全 remote を fetch する。認証は、git の認証情報ヘルパー（HTTPS）と ssh-agent（SSH）を使う。
 pub fn fetch_repository(
     path: &str,
     is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<Vec<String>, String> {
     let repo = Repository::open(path).map_err(|e| e.to_string())?;
+    let mut config = repo.config().map_err(|e| e.to_string())?;
     let remotes = repo.remotes().map_err(|e| e.to_string())?;
     let mut updated = Vec::new();
 
@@ -40,6 +100,9 @@ pub fn fetch_repository(
         let mut remote = repo.find_remote(name).map_err(|e| e.to_string())?;
 
         let mut callbacks = git2::RemoteCallbacks::new();
+        callbacks.credentials(credentials_callback(
+            config.snapshot().map_err(|e| e.to_string())?,
+        ));
         callbacks.transfer_progress(|_| !is_cancelled());
         let mut options = git2::FetchOptions::new();
         options.download_tags(git2::AutotagOption::Unspecified);
@@ -565,6 +628,93 @@ mod tests {
         let result = fetch_repository(&target.path_str(), &|| true);
 
         assert!(result.is_err(), "転送を打ち切ってエラーにする: {result:?}");
+    }
+
+    // ── 認証情報の取得元 ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn credential_source_follows_the_methods_the_remote_accepts() {
+        use git2::CredentialType as T;
+        let cases = [
+            (
+                "ユーザー名の要求",
+                T::USERNAME,
+                Some(CredentialSource::Username),
+            ),
+            (
+                "HTTPS",
+                T::USER_PASS_PLAINTEXT,
+                Some(CredentialSource::Helper),
+            ),
+            ("SSH", T::SSH_KEY, Some(CredentialSource::SshAgent)),
+            ("OS の既定", T::DEFAULT, Some(CredentialSource::Default)),
+            // 複数を受け付けるなら、ユーザー名 → HTTPS → SSH → 既定の順に選ぶ。
+            (
+                "SSH と既定",
+                T::SSH_KEY | T::DEFAULT,
+                Some(CredentialSource::SshAgent),
+            ),
+            (
+                "HTTPS と SSH",
+                T::USER_PASS_PLAINTEXT | T::SSH_KEY,
+                Some(CredentialSource::Helper),
+            ),
+            ("対応外（SSH 鍵ファイルのみ）", T::SSH_MEMORY, None),
+        ];
+        for (name, allowed, expected) in cases {
+            assert_eq!(credential_source(allowed), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn credentials_callback_answers_the_username_request() {
+        let mut callback = credentials_callback(git2::Config::new().expect("config"));
+
+        let cred = callback(
+            "ssh://example.invalid/r.git",
+            None,
+            git2::CredentialType::USERNAME,
+        )
+        .expect("username");
+
+        assert!(cred.has_username());
+    }
+
+    #[test]
+    fn credentials_callback_gives_up_after_the_attempt_limit() {
+        let mut callback = credentials_callback(git2::Config::new().expect("config"));
+        let mut ask = || {
+            callback(
+                "https://example.invalid/r.git",
+                None,
+                git2::CredentialType::DEFAULT,
+            )
+        };
+
+        for attempt in 1..=MAX_CREDENTIAL_ATTEMPTS {
+            assert!(ask().is_ok(), "{attempt} 回目は応える");
+        }
+        let error = ask().err().expect("上限を超えたら応えない");
+
+        assert!(error.message().contains("認証に失敗しました"), "{error}");
+    }
+
+    #[test]
+    fn credentials_callback_rejects_unsupported_methods() {
+        let mut callback = credentials_callback(git2::Config::new().expect("config"));
+
+        let error = callback(
+            "https://example.invalid/r.git",
+            None,
+            git2::CredentialType::SSH_MEMORY,
+        )
+        .err()
+        .expect("unsupported");
+
+        assert!(
+            error.message().contains("対応していない認証方式"),
+            "{error}"
+        );
     }
 
     // ── fetch_all_repositories（設定を受ける入口）──────────────────────────────
