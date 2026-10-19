@@ -2,10 +2,16 @@ name: Package MSIX
 
 # Windows 版の MSIX（署名済み）と .appinstaller を作る。
 #   - workflow_dispatch: 手動で実行して、成果物（artifact `arbor-msix`）を実機に入れて確認する。タグは MSIX の版にだけ使う
-#     （リリースではないので、実在しなくてよい）。リポジトリの Secrets の署名証明書で署名する。
+#     （リリースではないので、実在しなくてよい）。ワークフローが main にあるときだけ起動できる。
 #   - workflow_call: release.yml から呼ぶ（リリースの配布物を作る。検証したものが、そのまま配布物になる）。
 #   - pull_request: MSIX に関わる変更で、未署名のパッケージ化だけを検証する（マニフェストの不備を、リリースの前に見つける）。
-#     PR では署名証明書も、そのパスワードも使わない（env に展開しない。下の「Build MSIX」の 2 つのステップを参照）。
+#
+# 署名用の Secrets（SIGNING_CERTIFICATE_BASE64 / _PASSWORD）は、リポジトリの Secrets ではなく、Environment
+# `msix-signing` のシークレットに置く。この Environment は、main からのデプロイだけを許す。同一リポジトリの PR は、
+# ワークフロー自体を書き換えて、リポジトリの Secrets を読めるため、署名のジョブ（environment あり）を、PR では
+# 動かさず、PR のジョブ（environment なし）には、署名用の Secrets を展開しない。この規則は、
+# tests/PackageMsixWorkflow.Tests.ps1 が検査する。Environment の作成と登録は、
+# packaging/msix/Register-SigningSecrets.ps1 と New-SigningCertificate.ps1。
 
 on:
   workflow_dispatch:
@@ -25,11 +31,6 @@ on:
         description: "リリースのタグ（例: v0.4.0）"
         required: true
         type: string
-    secrets:
-      SIGNING_CERTIFICATE_BASE64:
-        required: true
-      SIGNING_CERTIFICATE_PASSWORD:
-        required: true
   pull_request:
     branches: [main]
     paths:
@@ -43,13 +44,10 @@ permissions:
   contents: read
 
 jobs:
-  msix:
-    name: MSIX Package
+  # ── 1. arbor.exe を作る（Secrets は使わない。PR でも動く） ───────────────────────
+  build:
+    name: Build arbor.exe
     runs-on: windows-latest
-    env:
-      TAG: ${{ inputs.tag || 'v0.0.0' }}
-      # PR では署名しない（Secrets を PR のコードに渡さない）
-      SIGN: ${{ github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -87,41 +85,104 @@ jobs:
       - name: Build arbor.exe
         run: bun run tauri build --no-bundle
 
+      # 署名のジョブは、ここで作った実行ファイルを受け取るだけにする（署名用の Secrets を持つジョブで、
+      # ビルドスクリプトや依存の install スクリプトを動かさない）。
+      - name: Upload arbor.exe
+        uses: actions/upload-artifact@v7
+        with:
+          name: arbor-exe
+          path: src-tauri/target/release/arbor.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── 2a. PR: 未署名でパッケージ化だけを検証する（environment なし。署名用の Secrets は展開しない） ──
+  package-unsigned:
+    name: MSIX Package (unsigned)
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: build
+    runs-on: windows-latest
+    env:
+      TAG: ${{ inputs.tag || 'v0.0.0' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Download arbor.exe
+        uses: actions/download-artifact@v8
+        with:
+          name: arbor-exe
+          path: ${{ runner.temp }}/bin
+
+      - name: Build MSIX (unsigned)
+        shell: pwsh
+        run: |
+          # 署名用のパスワードが、このジョブに渡っていないことを、実行時にも確かめる
+          if ($env:SIGNING_CERTIFICATE_PASSWORD) { throw "未署名のビルドに、署名用のパスワードが渡っています" }
+          ./packaging/msix/Build-Msix.ps1 -BinaryPath "$env:RUNNER_TEMP\bin\arbor.exe" -Tag $env:TAG -OutDir "$env:RUNNER_TEMP\msix"
+
+      - name: Add installer script
+        shell: pwsh
+        run: Copy-Item -LiteralPath "scripts/install.ps1" -Destination "$env:RUNNER_TEMP\msix\install.ps1"
+
+      - name: Record checksums
+        shell: pwsh
+        run: |
+          Set-Location "$env:RUNNER_TEMP\msix"
+          $lines = foreach ($name in "arbor_x64.msix", "arbor.appinstaller", "install.ps1") {
+            "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $name).Hash.ToLowerInvariant(), $name
+          }
+          [IO.File]::WriteAllText("$PWD\checksums-msix.txt", ($lines -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+
+      - name: Upload MSIX assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: arbor-msix
+          path: ${{ runner.temp }}/msix/
+          if-no-files-found: error
+
+  # ── 2b. 署名（Environment msix-signing。main からのデプロイだけ。PR では動かさない） ──────────
+  package-signed:
+    name: MSIX Package (signed)
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: build
+    runs-on: windows-latest
+    environment: msix-signing
+    env:
+      TAG: ${{ inputs.tag || 'v0.0.0' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Download arbor.exe
+        uses: actions/download-artifact@v8
+        with:
+          name: arbor-exe
+          path: ${{ runner.temp }}/bin
+
       - name: Restore signing certificate
-        if: ${{ env.SIGN == 'true' }}
         shell: pwsh
         env:
           SIGNING_CERTIFICATE_BASE64: ${{ secrets.SIGNING_CERTIFICATE_BASE64 }}
         run: |
           if (-not $env:SIGNING_CERTIFICATE_BASE64) {
-            throw "Secret SIGNING_CERTIFICATE_BASE64 が未設定です（packaging/msix/New-SigningCertificate.ps1 -Register）"
+            throw "Environment msix-signing のシークレット SIGNING_CERTIFICATE_BASE64 が未設定です（packaging/msix/Register-SigningSecrets.ps1）"
           }
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\signing.pfx",
             [Convert]::FromBase64String($env:SIGNING_CERTIFICATE_BASE64))
 
-      # 署名の有無で、ステップを分ける。署名用の Secrets（SIGNING_CERTIFICATE_*）を env に展開するのは、
-      # `env.SIGN == 'true'` のステップだけで、PR（未署名）のステップには、展開しない。同一リポジトリの PR では、
-      # Secrets が使えるため、`PfxPath` を省略するだけでは、PR 側のスクリプトにパスワードが渡ってしまう。
-      # この規則は、tests/PackageMsixWorkflow.Tests.ps1 が検査する。
-      - name: Build MSIX (unsigned)
-        if: ${{ env.SIGN != 'true' }}
-        shell: pwsh
-        run: |
-          # 署名用のパスワードが、このステップに渡っていないことを、実行時にも確かめる
-          if ($env:SIGNING_CERTIFICATE_PASSWORD) { throw "未署名のビルドに、署名用のパスワードが渡っています" }
-          ./packaging/msix/Build-Msix.ps1 -BinaryPath "src-tauri\target\release\arbor.exe" -Tag $env:TAG -OutDir "$env:RUNNER_TEMP\msix"
-
       - name: Build MSIX (signed)
-        if: ${{ env.SIGN == 'true' }}
         shell: pwsh
         env:
           SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
         run: |
-          ./packaging/msix/Build-Msix.ps1 -BinaryPath "src-tauri\target\release\arbor.exe" -Tag $env:TAG -OutDir "$env:RUNNER_TEMP\msix" -PfxPath "$env:RUNNER_TEMP\signing.pfx"
+          ./packaging/msix/Build-Msix.ps1 -BinaryPath "$env:RUNNER_TEMP\bin\arbor.exe" -Tag $env:TAG -OutDir "$env:RUNNER_TEMP\msix" -PfxPath "$env:RUNNER_TEMP\signing.pfx"
 
       # 署名した MSIX の Identity・Publisher・署名者を、公開してよい状態かの検証と同じ規則で確認する
       - name: Verify signed MSIX
-        if: ${{ env.SIGN == 'true' }}
         shell: pwsh
         run: |
           $version = $env:TAG.TrimStart('v')
@@ -137,9 +198,7 @@ jobs:
         shell: pwsh
         run: |
           Set-Location "$env:RUNNER_TEMP\msix"
-          $names = "arbor_x64.msix", "arbor.appinstaller", "install.ps1"
-          if ($env:SIGN -eq "true") { $names += "arbor.cer" }
-          $lines = foreach ($name in $names) {
+          $lines = foreach ($name in "arbor_x64.msix", "arbor.appinstaller", "arbor.cer", "install.ps1") {
             "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $name).Hash.ToLowerInvariant(), $name
           }
           [IO.File]::WriteAllText("$PWD\checksums-msix.txt", ($lines -join "`n") + "`n", [Text.UTF8Encoding]::new($false))

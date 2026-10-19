@@ -1,7 +1,7 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-MSIX 署名用の自己署名証明書を生成し、バックアップ（BackupDir と Bitwarden）と GitHub Secrets への登録まで行う。
+MSIX 署名用の自己署名証明書を生成し、バックアップ（BackupDir と Bitwarden）と GitHub の Environment シークレットへの登録まで行う。
 
 .DESCRIPTION
 AppxManifest.xml の Publisher と一致する Subject の自己署名コード署名証明書を生成する。
@@ -9,13 +9,17 @@ AppxManifest.xml の Publisher と一致する Subject の自己署名コード�
 バックアップが無い状態を作らない）。
 
   1. 事前確認: 出力先に既存の pfx / cer が無いこと、Bitwarden が解錠済みで同名の項目が無いこと、
-     （-Register のとき）同名の Secrets が無いこと。出力先のファイルと Secrets は -Force で上書きできる。
-     Bitwarden の同名項目は、-Force でも上書きしない（削除するか、-BitwardenItemName を変える）。
+     （-Register のとき）Environment に同名のシークレットが無いこと。出力先のファイルとシークレットは -Force で
+     上書きできる。Bitwarden の同名項目は、-Force でも上書きしない（削除するか、-BitwardenItemName を変える）。
   2. 生成: pfx（秘密鍵つき・パスワード保護）と cer（公開証明書）を BackupDir に書き出す。
      証明書は証明書ストアから削除する（pfx が唯一の保管物）。
   3. パスワードを Bitwarden の secure note に保存する（-SkipBitwarden で省略できる）。
-  4. （-Register のとき）SIGNING_CERTIFICATE_BASE64 / SIGNING_CERTIFICATE_PASSWORD を GitHub Secrets に登録する。
-     値は標準入力で渡す（引数やログに出さない）。
+  4. （-Register のとき）Environment（無ければ作り、デプロイできるブランチを -Branch だけに限定する）に、
+     SIGNING_CERTIFICATE_BASE64 / SIGNING_CERTIFICATE_PASSWORD を登録する。値は標準入力で渡す（引数やログに出さない）。
+
+署名用の Secrets を、リポジトリの Secrets ではなく Environment のシークレットに置くのは、同一リポジトリの PR が、
+ワークフロー自体を書き換えて、リポジトリの Secrets を読めるため。Environment のデプロイを main に限定すれば、
+PR のワークフローからは読めない。
 
 パスワードは、画面にもログにも出力しない。pfx と同じ場所にも書かない。
 
@@ -23,26 +27,34 @@ AppxManifest.xml の Publisher と一致する Subject の自己署名コード�
 pfx と cer の書き出し先（バックアップ）。必須で、既定値は持たない。
 
 .PARAMETER Register
-GitHub Secrets に登録する。
+GitHub の Environment シークレットに登録する。
+
+.PARAMETER Environment
+登録先の Environment の名前。ワークフロー（package-msix.yml）の `environment:` と同じにする。
+
+.PARAMETER Branch
+Environment がデプロイできるブランチ。既定は main。
 
 .PARAMETER SkipBitwarden
-パスワードを Bitwarden に保存しない。パスワードは GitHub Secrets にだけ残るため、pfx のバックアップは
+パスワードを Bitwarden に保存しない。パスワードは GitHub にだけ残るため、pfx のバックアップは
 証明書を残す以上の意味を持たない（紛失したら、証明書を作り直し、各 PC で install.ps1 を再実行する）。
 
 .PARAMETER Force
-BackupDir の既存の pfx / cer と、GitHub の同名の Secrets を上書きする。
+BackupDir の既存の pfx / cer と、Environment の同名のシークレットを上書きする。
 
 .EXAMPLE
 pwsh packaging/msix/New-SigningCertificate.ps1 -BackupDir ~/Dropbox/src/arbor-dsx/cert -Register
 
 .NOTES
-復元の手順は、ハンドオフ（arbor-dsx/handoff/arbor.md のトピック 2）に書く。
+バックアップからの復元は、Register-SigningSecrets.ps1。手順は、ハンドオフ（arbor-dsx/handoff/arbor.md のトピック 2）に書く。
 Bitwarden に保存するには、BW_SESSION を設定した（解錠済みの）シェルから実行する。
 #>
 param(
     [Parameter(Mandatory)][string]$BackupDir,
     [string]$Subject = "CN=scottlz0310",
     [string]$Repo = "scottlz0310/arbor",
+    [string]$Environment = "msix-signing",
+    [string]$Branch = "main",
     [string]$BitwardenItemName = "arbor MSIX signing certificate",
     [int]$ValidYears = 5,
     [switch]$Register,
@@ -50,6 +62,8 @@ param(
     [switch]$Force
 )
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "SigningSecrets.ps1")
 
 function New-ArborSigningPassword {
     $bytes = [byte[]]::new(24)
@@ -83,28 +97,6 @@ function New-ArborSelfSignedCertificateFiles {
     } finally {
         Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force
     }
-}
-
-function Test-ArborBitwardenUnlocked {
-    param([scriptblock]$StatusStep)
-
-    $json = if ($null -ne $StatusStep) { & $StatusStep } else { & bw status 2>$null }
-    try {
-        return ($json | ConvertFrom-Json).status -eq "unlocked"
-    } catch {
-        return $false
-    }
-}
-
-function Test-ArborBitwardenItemExists {
-    param(
-        [Parameter(Mandatory)][string]$Name,
-        [scriptblock]$ListStep
-    )
-
-    $json = if ($null -ne $ListStep) { & $ListStep -Name $Name } else { & bw list items --search $Name }
-    $items = @($json | ConvertFrom-Json) | Where-Object { $_.name -eq $Name }
-    return @($items).Count -gt 0
 }
 
 function Save-ArborSigningPassword {
@@ -144,47 +136,14 @@ function Save-ArborSigningPassword {
     if ($LASTEXITCODE -ne 0) { throw "Bitwarden への保存に失敗しました（終了コード: $LASTEXITCODE）" }
 }
 
-function Get-ArborExistingSecretNames {
-    param(
-        [Parameter(Mandatory)][string]$Repo,
-        [scriptblock]$ListStep
-    )
-
-    if ($null -ne $ListStep) { return @(& $ListStep -Repo $Repo) }
-    $names = & gh secret list --repo $Repo --json name --jq ".[].name"
-    if ($LASTEXITCODE -ne 0) { throw "GitHub Secrets の一覧を取得できません（終了コード: $LASTEXITCODE）。gh auth status を確認してください" }
-    return @($names | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-}
-
-function Register-ArborSigningSecrets {
-    param(
-        [Parameter(Mandatory)][string]$Repo,
-        [Parameter(Mandatory)][string]$Base64,
-        [Parameter(Mandatory)][string]$Password,
-        [scriptblock]$SetStep
-    )
-
-    $values = [ordered]@{
-        SIGNING_CERTIFICATE_BASE64   = $Base64
-        SIGNING_CERTIFICATE_PASSWORD = $Password
-    }
-    foreach ($name in $values.Keys) {
-        if ($null -ne $SetStep) {
-            $null = & $SetStep -Repo $Repo -Name $name -Value $values[$name]
-            continue
-        }
-        # 値は標準入力で渡す（引数に出さない）
-        $values[$name] | & gh secret set $name --repo $Repo
-        if ($LASTEXITCODE -ne 0) { throw "Secret $name の登録に失敗しました（終了コード: $LASTEXITCODE）" }
-    }
-}
-
 function Invoke-ArborSigningCertificateSetup {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$BackupDir,
         [string]$Subject = "CN=scottlz0310",
         [string]$Repo = "scottlz0310/arbor",
+        [string]$Environment = "msix-signing",
+        [string]$Branch = "main",
         [string]$BitwardenItemName = "arbor MSIX signing certificate",
         [int]$ValidYears = 5,
         [switch]$Register,
@@ -194,11 +153,10 @@ function Invoke-ArborSigningCertificateSetup {
         [scriptblock]$BitwardenStatusStep,
         [scriptblock]$BitwardenListStep,
         [scriptblock]$BitwardenCreateStep,
+        [scriptblock]$EnvironmentStep,
         [scriptblock]$SecretListStep,
         [scriptblock]$SecretSetStep
     )
-
-    $secretNames = @("SIGNING_CERTIFICATE_BASE64", "SIGNING_CERTIFICATE_PASSWORD")
 
     # 1. 事前確認（何も作る前に、後の工程が失敗する条件を取り除く）
     $backupPath = (New-Item -ItemType Directory -Force $BackupDir).FullName
@@ -219,10 +177,15 @@ function Invoke-ArborSigningCertificateSetup {
             throw "Bitwarden に同名の項目があります: $BitwardenItemName（削除するか、-BitwardenItemName を変えてください）"
         }
     }
-    if ($Register -and -not $Force) {
-        $existing = @(Get-ArborExistingSecretNames -Repo $Repo -ListStep $SecretListStep) | Where-Object { $secretNames -contains $_ }
-        if (@($existing).Count -gt 0) {
-            throw "GitHub に同名の Secrets があります: $($existing -join ', ')（上書きするには -Force）"
+    if ($Register) {
+        # Environment は、何度作っても同じ状態になる（空の Environment を作るだけで、元に戻せる）
+        Initialize-ArborSigningEnvironment -Repo $Repo -Environment $Environment -Branch $Branch -EnvironmentStep $EnvironmentStep
+        if (-not $Force) {
+            $existing = @(Get-ArborExistingSecretNames -Repo $Repo -Environment $Environment -ListStep $SecretListStep) |
+                Where-Object { $ArborSigningSecretNames -contains $_ }
+            if (@($existing).Count -gt 0) {
+                throw "Environment「$Environment」に同名のシークレットがあります: $($existing -join ', ')（上書きするには -Force）"
+            }
         }
     }
 
@@ -239,16 +202,16 @@ function Invoke-ArborSigningCertificateSetup {
         Save-ArborSigningPassword -ItemName $BitwardenItemName -Password $password -Thumbprint $cert.Thumbprint -NotAfter $cert.NotAfter -CreateStep $BitwardenCreateStep
     }
 
-    # 4. Secrets への登録
+    # 4. Environment のシークレットへの登録
     if ($Register) {
         $base64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($pfxPath))
-        Register-ArborSigningSecrets -Repo $Repo -Base64 $base64 -Password $password -SetStep $SecretSetStep
+        Register-ArborSigningSecrets -Repo $Repo -Environment $Environment -Base64 $base64 -Password $password -SetStep $SecretSetStep
     }
 
     Write-Host "証明書を生成しました（有効期限: $($cert.NotAfter.ToString('yyyy-MM-dd'))、Subject: $Subject、Thumbprint: $($cert.Thumbprint)）"
     Write-Host "  バックアップ先: $backupPath（arbor-signing.pfx は秘密鍵つき。コミット禁止）"
-    Write-Host "  パスワード: $(if ($SkipBitwarden) { '保管していません（GitHub Secrets にだけあります）' } else { "Bitwarden の「$BitwardenItemName」" })"
-    Write-Host "  GitHub Secrets: $(if ($Register) { "$($secretNames -join ' / ') を登録しました（$Repo）" } else { '登録していません（-Register で登録）' })"
+    Write-Host "  パスワード: $(if ($SkipBitwarden) { '保管していません（GitHub にだけあります）' } else { "Bitwarden の「$BitwardenItemName」" })"
+    Write-Host "  GitHub: $(if ($Register) { "Environment「$Environment」（$Branch のみ）に $($ArborSigningSecretNames -join ' / ') を登録しました（$Repo）" } else { '登録していません（-Register で登録）' })"
 
     return [PSCustomObject]@{
         Thumbprint = $cert.Thumbprint
@@ -260,5 +223,5 @@ function Invoke-ArborSigningCertificateSetup {
 
 # 関数だけを読み込む用途（テスト）では、実行しない
 if ($MyInvocation.InvocationName -ne ".") {
-    $null = Invoke-ArborSigningCertificateSetup -BackupDir $BackupDir -Subject $Subject -Repo $Repo -BitwardenItemName $BitwardenItemName -ValidYears $ValidYears -Register:$Register -SkipBitwarden:$SkipBitwarden -Force:$Force
+    $null = Invoke-ArborSigningCertificateSetup -BackupDir $BackupDir -Subject $Subject -Repo $Repo -Environment $Environment -Branch $Branch -BitwardenItemName $BitwardenItemName -ValidYears $ValidYears -Register:$Register -SkipBitwarden:$SkipBitwarden -Force:$Force
 }

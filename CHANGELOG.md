@@ -30,6 +30,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### ci
 
+- **MSIX の署名用の Secrets を、リポジトリの Secrets から、Environment のシークレットへ移した**（#324 PR 3b-1）。同一リポジトリの PR は、ワークフロー自体を書き換えて、リポジトリの Secrets を読める（PR #329 のレビューで、署名用のパスワードが PR のステップに展開されていたと指摘され、ステップを分けて直したが、それは、PR のスクリプトを経由した漏えいを防ぐだけだった）。Environment `msix-signing` は、デプロイできるブランチを `main` だけに限定していて、PR のワークフローからは読めない
+  - `package-msix.yml` を 3 つのジョブに分けた: `build`（`arbor.exe` を作る。Secrets は使わず、PR でも動く）、`package-unsigned`（PR 用。environment なし。署名用の Secrets は展開せず、渡っていれば失敗する）、`package-signed`（`environment: msix-signing`。PR では動かさない。署名・検証・checksum）。署名のジョブは、`build` が作った実行ファイルを受け取るだけで、ビルドスクリプトや依存の install スクリプトを、署名用の Secrets を持つジョブで動かさない
+  - `packaging/msix/Register-SigningSecrets.ps1`（新規）: バックアップ（Dropbox の pfx と、Bitwarden のパスワード）から、証明書を作り直さずに、Environment のシークレットへ登録する。pfx が、そのパスワードで開けること（cer があれば、Thumbprint の一致も）を確かめてから登録する。Environment を作り（無ければ）、デプロイできるブランチを `main` だけに限定する（想定外のポリシーがあれば、黙って消さず、失敗する）。`New-SigningCertificate.ps1 -Register` も、登録先を Environment に変えた（共通の関数は `SigningSecrets.ps1`）
+  - 規則を `tests/PackageMsixWorkflow.Tests.ps1` で検査する（ジョブの外に Secrets を展開しない、`pull_request_target` を使わない、署名用の Secrets を展開するジョブは Environment を持ち PR では動かない、Environment のないジョブには Secrets を展開しない、ワークフローとスクリプトの Environment の名前が一致する）。Environment を外す、または未署名のジョブに展開すると、失敗することを確認した
+  - 署名用の Secrets は、同じ値（Thumbprint `E4091D55…8355`）を Environment に登録済み。リポジトリの Secrets は、`workflow_dispatch` で署名のパスを確認してから、削除する
+  - Environment が main に限定されるため、作業ブランチでは署名のジョブが動かない。署名のパスは、ワークフローを main に入れてから、`workflow_dispatch` で確認する
+
 - **リリースの公開前の検証（`verify`）が、draft の Release を読めず、必ず失敗していた問題を直し、同じ種類の失敗を、リリースの前に見つけられる構造にした**。v0.3.0 のリリースで、`verify` が `contents: read` で動いたため、draft（書き込み権限のあるトークンにしか見えない）が `release not found` になり、成果物が揃っていても、公開に進めなかった（`finalize` は実行されず、draft のまま残った）。実行前のレビューでは、`GH_REPO` の指摘までしか、見つからなかった
   - **検証を、独立した `verify-release.yml`（`workflow_call` と `workflow_dispatch`）にした**。`release.yml` は、これを呼ぶだけ。手動でも、タグを指定するだけで、**どの draft にも、公開の前に実行できる**ため、検証の実装そのものを、実際の draft で、リリースの前に試せる。権限が `contents: write` である理由を、コメントに残した
   - **検証の中身を、`scripts/verify-release-assets.sh` に出した**。CI と手元で、同じものを実行する（成果物の組、`latest.json` の版とタグの一致、全 URL が Release の成果物を指すこと、プラットフォームが 3 つであること）。`shellcheck` を通し、実際の draft（v0.3.0）への成功と、存在しないタグ・不正な形式への失敗を確認した。Windows の `jq` / `gh` が付ける行末の CR も扱う
