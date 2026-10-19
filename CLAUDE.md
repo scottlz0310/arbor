@@ -67,6 +67,14 @@ bun test src/lib/ruleEngine.test.ts
 module レベルの spy を作ったファイルには `afterAll(() => mock.restore())` を入れること
 （bun test は全ファイルを 1 プロセスで実行するため、spy がファイル間に漏れる）。
 
+### PowerShell スクリプト（MSIX）のテスト
+
+`packaging/msix/` と `scripts/*.ps1`（MSIX の生成・署名・インストール）は、Pester 5+ でテストする（`tests/*.Tests.ps1`。CI の `PowerShell Tests`）。`Test-ReleaseMsix.ps1` のテストは Windows SDK（makeappx / signtool）を使う。
+
+```powershell
+Invoke-Pester -Path tests -CI
+```
+
 ### Git フック（lefthook）
 
 `lefthook.yml` で定義。`bun install` 実行時に自動インストールされる。
@@ -86,6 +94,17 @@ module レベルの spy を作ったファイルには `afterAll(() => mock.rest
 - **draft の取り残し**: リリースのあとに、`gh release list` で、draft が残っていないことを確認する（v0.2.1 は、成果物が揃ったまま、3 か月、未公開の draft として残った）。
 
 **権限**: draft の Release は、書き込み権限のあるトークンにしか見えない。draft を読むジョブは、読み取りだけでも `contents: write` が要る（`contents: read` では `release not found` になる。v0.3.0 の公開で、実際に `verify` が、これで失敗した）。reusable workflow を呼ぶ job にも、同じ `permissions` が要る。
+
+### Windows の MSIX と署名証明書（#324）
+
+Windows の配布は、自己署名の MSIX + `.appinstaller` + `install.ps1`（dsx と同じ型）。生成は `packaging/msix/`、CI は `.github/workflows/package-msix.yml`（`release.yml` から呼ぶのは PR 3b 以降）。
+
+- **署名証明書**: Subject `CN=scottlz0310`（`AppxManifest.xml` の Publisher と一致させる）、5 年（2031-10-19 まで）。pfx は、Secrets の `SIGNING_CERTIFICATE_BASE64` / `SIGNING_CERTIFICATE_PASSWORD`。バックアップは、pfx と cer を `-BackupDir` で指定した場所に、パスワードを Bitwarden の secure note「arbor MSIX signing certificate」に置く（pfx とパスワードを同じ場所に置かない）。バックアップ先の具体的な場所と復元の手順は、ハンドオフ（`arbor-dsx/handoff/arbor.md` のトピック 2）。
+- **生成**: Bitwarden を解錠したシェル（`BW_SESSION`）から、`pwsh packaging/msix/New-SigningCertificate.ps1 -BackupDir <バックアップ先> -Register`。pfx の書き出し、Bitwarden への保存、Secrets の登録の順に進み、前の工程が失敗したら止まる。パスワードは、画面にもログにも出さない。`-BackupDir` に既定値は無い。
+- **ローテーション**（期限の前、または鍵が漏れたとき）: 同じ Subject で新しい証明書を生成して Secrets を更新（既存の物がある場合は `-Force`）→ 次のリリース → 各 PC で `install.ps1` を再実行（新しい `.cer` を信頼登録するため UAC が出る）。Subject を変えると Package Identity の Publisher が変わり、更新できない。
+- **手元で確認する**: `bun run tauri build --no-bundle` で `arbor.exe` を作り、`pwsh packaging/msix/Build-Msix.ps1 -BinaryPath src-tauri/target/release/arbor.exe -Tag v0.0.0 -OutDir <出力先>` で MSIX を組む（未署名）。署名した MSIX の確認は、Actions の `Package MSIX` を実行して、成果物 `arbor-msix` を取得する。手元で署名まで試すときは、Bitwarden の項目からパスワードを取り出して `-PfxPath` / `-PfxPassword` に渡す（パスワードを画面やログに出さない）。
+- **Bitwarden の解錠状態（`BW_SESSION`）**: 起動の経路で決まる。スタートメニューや explorer からの起動は、シェルの環境変数を引き継がないため、ヘッダーは「Bitwarden: 未解錠」になる。Daily Refresh で Bitwarden を使うときは、解錠したシェルから、実行エイリアス `arbor`（`AppxManifest.xml` で宣言。`WindowsApps` に置かれる）で起動する。
+- **書き込み仮想化**: MSIX は既定（有効）のままにしている（`AppxManifest.xml` のコメントに、理由と実機の結果）。新しく作られるファイルは、アンインストールで消える。**すでに実在するディレクトリ**（旧版が作った `%LOCALAPPDATA%\dev.scottlz0310.arbor` など）への書き込みは、仮想化されず、実フォルダに入る。パッケージ内の挙動を調べるときは、`Invoke-CommandInDesktopPackage -PackageFamilyName <PFN> -AppId Arbor -Command powershell.exe -Args "..."` が使える。
 
 ## アーキテクチャ
 
