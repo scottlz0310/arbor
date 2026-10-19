@@ -16,7 +16,7 @@ flag_management:
 flags:
   frontend:
     paths:
-      # bunfig.toml と coverage-manifest.test.ts がカバレッジの対象にしている lib / components / views に合わせる
+      # Keep in sync with bunfig.toml and coverage-manifest.test.ts. ASCII only: the Codecov CLI on Windows reads this file as cp1252.
       - src/lib/
       - src/components/
       - src/views/
