@@ -5,7 +5,7 @@ name: Package MSIX
 #     （リリースではないので、実在しなくてよい）。リポジトリの Secrets の署名証明書で署名する。
 #   - workflow_call: release.yml から呼ぶ（リリースの配布物を作る。検証したものが、そのまま配布物になる）。
 #   - pull_request: MSIX に関わる変更で、未署名のパッケージ化だけを検証する（マニフェストの不備を、リリースの前に見つける）。
-#     PR では署名証明書を使わない。
+#     PR では署名証明書も、そのパスワードも使わない（env に展開しない。下の「Build MSIX」の 2 つのステップを参照）。
 
 on:
   workflow_dispatch:
@@ -99,18 +99,25 @@ jobs:
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\signing.pfx",
             [Convert]::FromBase64String($env:SIGNING_CERTIFICATE_BASE64))
 
-      - name: Build MSIX
+      # 署名の有無で、ステップを分ける。署名用の Secrets（SIGNING_CERTIFICATE_*）を env に展開するのは、
+      # `env.SIGN == 'true'` のステップだけで、PR（未署名）のステップには、展開しない。同一リポジトリの PR では、
+      # Secrets が使えるため、`PfxPath` を省略するだけでは、PR 側のスクリプトにパスワードが渡ってしまう。
+      # この規則は、tests/PackageMsixWorkflow.Tests.ps1 が検査する。
+      - name: Build MSIX (unsigned)
+        if: ${{ env.SIGN != 'true' }}
+        shell: pwsh
+        run: |
+          # 署名用のパスワードが、このステップに渡っていないことを、実行時にも確かめる
+          if ($env:SIGNING_CERTIFICATE_PASSWORD) { throw "未署名のビルドに、署名用のパスワードが渡っています" }
+          ./packaging/msix/Build-Msix.ps1 -BinaryPath "src-tauri\target\release\arbor.exe" -Tag $env:TAG -OutDir "$env:RUNNER_TEMP\msix"
+
+      - name: Build MSIX (signed)
+        if: ${{ env.SIGN == 'true' }}
         shell: pwsh
         env:
           SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
         run: |
-          $buildArgs = @{
-            BinaryPath = "src-tauri\target\release\arbor.exe"
-            Tag        = $env:TAG
-            OutDir     = "$env:RUNNER_TEMP\msix"
-          }
-          if ($env:SIGN -eq "true") { $buildArgs.PfxPath = "$env:RUNNER_TEMP\signing.pfx" }
-          ./packaging/msix/Build-Msix.ps1 @buildArgs
+          ./packaging/msix/Build-Msix.ps1 -BinaryPath "src-tauri\target\release\arbor.exe" -Tag $env:TAG -OutDir "$env:RUNNER_TEMP\msix" -PfxPath "$env:RUNNER_TEMP\signing.pfx"
 
       # 署名した MSIX の Identity・Publisher・署名者を、公開してよい状態かの検証と同じ規則で確認する
       - name: Verify signed MSIX

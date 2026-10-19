@@ -17,7 +17,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
   - `New-SigningCertificate.ps1`: 自己署名証明書（`CN=scottlz0310`、コード署名 EKU、5 年）を生成し、pfx と cer を `-BackupDir`（必須。既定値もハードコードも無い）へ書き出す。pfx のパスワードは Bitwarden の secure note に保存し（`-SkipBitwarden` で省略可）、`-Register` で GitHub Secrets（`SIGNING_CERTIFICATE_BASE64` / `_PASSWORD`）に登録する。値は標準入力で渡し、パスワードは画面にもログにも出さない。事前確認（既存の pfx / Bitwarden の同名項目 / 同名の Secrets）を済ませてから生成し、バックアップが失敗したら Secrets を登録しない
   - `scripts/install.ps1`: 証明書が `LocalMachine\TrustedPeople` に無いときだけ、証明書のインポートを管理者権限（UAC）で行い、MSIX のインストール自体は元のユーザーで行う。旧版（msi / setup.exe）が残っていれば警告する
   - `scripts/Test-ReleaseMsix.ps1`: 署名した MSIX の Identity（Name・Version）、Publisher と `.cer` の Subject の一致、署名者の同一性、署名後の改ざんの有無を検証する
-  - `.github/workflows/package-msix.yml`: 署名済みの MSIX を作る（`workflow_dispatch` と、`release.yml` から呼ぶ `workflow_call`）。MSIX に関わる PR では、未署名でパッケージ化だけを検証する（Secrets を PR のコードに渡さない）
+  - `.github/workflows/package-msix.yml`: 署名済みの MSIX を作る（`workflow_dispatch` と、`release.yml` から呼ぶ `workflow_call`）。MSIX に関わる PR では、未署名でパッケージ化だけを検証する。**署名用の Secrets（`SIGNING_CERTIFICATE_*`）は、署名するステップ（`env.SIGN == 'true'`）の `env` にだけ展開し、PR（未署名）のステップには展開しない**（レビューでの指摘。同一リポジトリの PR では Secrets が使えるため、`PfxPath` を省略するだけでは、PR 側の `Build-Msix.ps1` にパスワードが渡っていた。ビルドを署名と未署名の 2 つのステップに分け、未署名のステップは、パスワードが渡っていれば失敗する）。この規則は `tests/PackageMsixWorkflow.Tests.ps1` が検査する（漏れを再現すると失敗することを確認した）
   - Pester のテスト（`tests/*.Tests.ps1`）と、CI の `PowerShell Tests` ジョブを追加した
   - 署名証明書は、Arbor 専用（Thumbprint `E4091D55B296AE1E279643301803AC2035C78355`、2031-10-19 まで）。バックアップと Bitwarden への保存、Secrets への登録は、このスクリプトで行った
   - **実機での確認**（Windows 11、署名済みの MSIX を実際にインストール。UAC は、証明書の信頼登録の 1 回）
