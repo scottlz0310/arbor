@@ -5,6 +5,14 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### ci
+
+- **リリースの公開前の検証（`verify`）が、draft の Release を読めず、必ず失敗していた問題を直し、同じ種類の失敗を、リリースの前に見つけられる構造にした**。v0.3.0 のリリースで、`verify` が `contents: read` で動いたため、draft（書き込み権限のあるトークンにしか見えない）が `release not found` になり、成果物が揃っていても、公開に進めなかった（`finalize` は実行されず、draft のまま残った）。実行前のレビューでは、`GH_REPO` の指摘までしか、見つからなかった
+  - **検証を、独立した `verify-release.yml`（`workflow_call` と `workflow_dispatch`）にした**。`release.yml` は、これを呼ぶだけ。手動でも、タグを指定するだけで、**どの draft にも、公開の前に実行できる**ため、検証の実装そのものを、実際の draft で、リリースの前に試せる。権限が `contents: write` である理由を、コメントに残した
+  - **検証の中身を、`scripts/verify-release-assets.sh` に出した**。CI と手元で、同じものを実行する（成果物の組、`latest.json` の版とタグの一致、全 URL が Release の成果物を指すこと、プラットフォームが 3 つであること）。`shellcheck` を通し、実際の draft（v0.3.0）への成功と、存在しないタグ・不正な形式への失敗を確認した。Windows の `jq` / `gh` が付ける行末の CR も扱う
+  - **失敗時の手順書を、CLAUDE.md の「リリース」に追加した**。一時的な失敗は「Re-run failed jobs」、ワークフローの定義の不具合は、再実行では直らず（再実行は、その時点の定義で動く）、`finalize` が「実行の SHA = リリースのコミット」を要求するため、main で直しても公開できない、という制約と、その場合の例外の手順（検証 → 手動の公開 → 記録）を明記した。draft の取り残しの確認（v0.2.1 の教訓）も入れた
+
+
 ## [0.3.0] - 2026-10-19
 
 ### docs

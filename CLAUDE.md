@@ -74,6 +74,19 @@ module レベルの spy を作ったファイルには `afterAll(() => mock.rest
 - **pre-commit（並列）**: `bun run typecheck`、`cargo check`
 - **pre-push（直列）**: `cargo clippy -- -D warnings`、`cargo test`、`bun run test`
 
+### リリース（release-automate）
+
+1. Actions の `Prepare Release` を、版（`MAJOR.MINOR.PATCH`）を指定して手動で実行する。リリース準備 PR（`chore(release): vX.Y.Z`。版の更新と、CHANGELOG の `[Unreleased]` の確定）が、Bot 名義で作られる。
+2. レビューして、squash マージする。`Release`（`.github/workflows/release.yml`）が、自動で動く: draft の Release とタグ → 3 OS のビルドと添付 → updater の `latest.json` → `verify`（`verify-release.yml`）→ `finalize`（公開）。`verify` が失敗すると、公開されず、draft のまま残る。
+3. 公開の前に draft を確認したいとき、または検証の実装そのものを試したいときは、Actions の `Verify Release` を、タグを指定して実行する（読み取りのみ）。手元では、`GH_REPO=scottlz0310/arbor scripts/verify-release-assets.sh vX.Y.Z`。
+
+**失敗したとき**
+- **一時的な失敗（ネットワーク・ランナー）**: 同じ実行で「Re-run failed jobs」を使う（新しいタグは切らない）。
+- **ワークフローの定義の不具合**: 再実行は、その実行の時点の定義で動くため、直らない。main で直しても、`finalize`（release-automate）は「実行の SHA = リリースのコミット」を要求するため、新しい定義では公開できない。この場合に限る例外の手順: `Verify Release` か `scripts/verify-release-assets.sh` で draft を検証 → `gh release edit vX.Y.Z --draft=false --latest` で公開 → 公開した理由と検証の結果を、PR・CHANGELOG・ハンドオフに記録 → 直した定義が、次のリリースで動くことを確認する。
+- **draft の取り残し**: リリースのあとに、`gh release list` で、draft が残っていないことを確認する（v0.2.1 は、成果物が揃ったまま、3 か月、未公開の draft として残った）。
+
+**権限**: draft の Release は、書き込み権限のあるトークンにしか見えない。draft を読むジョブは、読み取りだけでも `contents: write` が要る（`contents: read` では `release not found` になる。v0.3.0 の公開で、実際に `verify` が、これで失敗した）。reusable workflow を呼ぶ job にも、同じ `permissions` が要る。
+
 ## アーキテクチャ
 
 ### レイヤー構造
