@@ -32,7 +32,7 @@
 リリース（v0.3.0。release-automate を使う）:
 
 - [x] release-automate への移行（`prepare-release.yml` の追加と、`release.yml` の作り替え）
-- [ ] v0.3.0 の準備（`Prepare Release` の実行）、リリース準備 PR のマージ、公開の確認
+- [ ] v0.3.0 の公開（準備 PR #322 マージ済み。draft・ビルド・成果物は揃ったが、`verify` が権限の誤りで失敗して公開に進めなかった。権限の修正と、検証の独立化を行い、公開の確認が残る）
 - [ ] 未公開の draft の `v0.2.1` の削除（v0.3.0 の公開後）
 
 ---

@@ -10,6 +10,8 @@ name: Release
 #
 # 失敗したときは、同じ実行で「Re-run failed jobs」を使う（新しいタグを切らない）。
 # 公開済みの Release は、再実行しても変更されない。
+# ただし、再実行は、その実行の時点のワークフローの定義で動く。定義の不具合は、再実行では直らない
+# （main で直しても、finalize は「実行の SHA = リリースのコミット」を要求する）。手順は、CLAUDE.md の「リリース」。
 
 on:
   push:
@@ -210,60 +212,16 @@ jobs:
           gh release upload "$TAG" latest.json --clobber
 
   # ── 4. Release から成果物を再取得して照合する（公開の前の検証） ───────────────
-  # 失敗すると、finalize は実行されず、draft のまま残る。
+  # 検証の実装は verify-release.yml（手動でも実行できる）。失敗すると、finalize は実行されず、draft のまま残る。
+  # draft の Release は、書き込み権限のあるトークンにしか見えないため、呼び出し元にも write が要る。
   verify:
     needs: [draft, publish-updater-manifest]
     if: needs.draft.outputs.release_state == 'draft'
-    runs-on: ubuntu-latest
     permissions:
-      contents: read
-    steps:
-      - name: draft の成果物を検証
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.draft.outputs.tag_name }}
-        run: |
-          set -euo pipefail
-          assets=$(gh release view "$TAG" --json assets --jq '.assets[].name')
-          echo "Release assets:"
-          echo "$assets"
-
-          fail=0
-          require() {
-            if ! grep -Eq "$1" <<< "$assets"; then
-              echo "::error::成果物がありません（$2）: $1"
-              fail=1
-            fi
-          }
-          require '\.msi$' 'Windows のインストーラ'
-          require '-setup\.exe$' 'Windows のセットアップ'
-          require '\.dmg$' 'macOS'
-          require '\.AppImage$' 'Linux（AppImage）'
-          require '\.deb$' 'Linux（deb）'
-          require '\.msi\.zip\.sig$' 'updater の署名（Windows）'
-          require 'aarch64.*\.app\.tar\.gz\.sig$' 'updater の署名（macOS）'
-          require '\.AppImage\.tar\.gz\.sig$' 'updater の署名（Linux）'
-          require '^latest\.json$' 'updater の manifest'
-          if (( fail )); then
-            exit 1
-          fi
-
-          # latest.json を、Release から取り直して照合する（版がタグと一致し、全 URL が Release の成果物を指す）。
-          mkdir -p verify
-          gh release download "$TAG" --pattern latest.json --dir verify
-          version=$(jq -r '.version' verify/latest.json)
-          if [[ "$version" != "${TAG#v}" ]]; then
-            echo "::error::latest.json の版（$version）が、タグ（$TAG）と一致しません"
-            exit 1
-          fi
-          while read -r url; do
-            name="${url##*/}"
-            if ! grep -Fxq "$name" <<< "$assets"; then
-              echo "::error::latest.json の URL が、Release に無い成果物を指しています: $url"
-              exit 1
-            fi
-          done < <(jq -r '.platforms[].url' verify/latest.json)
-          echo "検証に成功しました"
+      contents: write
+    uses: ./.github/workflows/verify-release.yml
+    with:
+      tag: ${{ needs.draft.outputs.tag_name }}
 
   # ── 5. Release の公開（release-automate） ──────────────────────────────────
   finalize:

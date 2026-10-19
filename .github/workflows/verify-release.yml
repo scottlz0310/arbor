@@ -1,0 +1,42 @@
+name: Verify Release
+
+# draft の Release の成果物を検証する（公開はしない。読み取りだけ）。
+#   - release.yml から、公開（finalize）の前に呼ばれる（workflow_call）。
+#   - 手動でも実行できる（workflow_dispatch）。公開の前に、draft を確認したいとき、また、検証の実装そのものを、
+#     実際の draft で試したいときに使う。タグを指定するだけで、どの draft にも実行できる。
+# 検証の中身は、scripts/verify-release-assets.sh（手元でも、同じものを実行できる）。
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "検証する draft の Release のタグ（例: v0.3.0）"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "検証する draft の Release のタグ（例: v0.3.0）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # draft の Release は、書き込み権限のあるトークンにしか見えない。contents: read では、
+    # `release not found` になる（v0.3.0 の公開で、実際にここで失敗した）。読み取りだけを行うが、write が要る。
+    permissions:
+      contents: write
+    env:
+      # checkout があっても、gh の対象のリポジトリは、環境変数で明示する（checkout が無い場合の失敗を防ぐ）。
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: draft の成果物を検証
+        run: bash scripts/verify-release-assets.sh "$TAG"
