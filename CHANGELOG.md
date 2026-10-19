@@ -5,6 +5,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-19
+
 ### breaking
 
 - **Windows の配布を、msi / NSIS（setup.exe）から、自己署名の MSIX（`.appinstaller` で自動更新）に切り替えた**（#324 PR 3b-2。**v0.4.0 から**）。公開物は、`arbor_x64.msix`・`arbor.appinstaller`・`arbor.cer`・`install.ps1`・`checksums-msix.txt`。インストールは、README の PowerShell のワンライナー（`install.ps1` が、証明書を `LocalMachine\TrustedPeople` に信頼登録（UAC）して、MSIX を入れる）。
