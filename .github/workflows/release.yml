@@ -1,60 +1,39 @@
 name: Release
 
+# リリース準備 PR（prepare-release.yml が作る `chore(release): vX.Y.Z`）を squash マージすると動く。
+# release-automate が draft の Release とタグを作り、続けて次の順に進む。
+#   draft → 3 OS のビルドと成果物の添付 → updater の latest.json → Release から再取得して照合 → Release の公開
+# リリース準備 PR 以外の main への push では、draft ジョブが skip され、後続のジョブも動かない。
+#
+# release-automate のタグは GITHUB_TOKEN で作られ、`push: tags` の別のワークフローを起動しない。
+# そのため、ビルドは、タグの push ではなく、ここから続ける。
+#
+# 失敗したときは、同じ実行で「Re-run failed jobs」を使う（新しいタグを切らない）。
+# 公開済みの Release は、再実行しても変更されない。
+
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag (must already exist, e.g. v0.1.0)'
-        required: true
-        type: string
+    branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  # ── 1. Draft release を作成し release_id / tag を後続ジョブに渡す ──────────
-  create-release:
-    runs-on: ubuntu-latest
-    outputs:
-      release_id: ${{ steps.create.outputs.release_id }}
-      tag: ${{ steps.resolve-tag.outputs.tag }}
-    steps:
-      - name: Resolve tag
-        id: resolve-tag
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          fi
+  # ── 1. draft の Release とタグを作る（release-automate） ─────────────────────
+  draft:
+    # `chore(release):` で始まるコミット以外は、release-automate 側の条件で skip される。
+    uses: scottlz0310/release-automate/.github/workflows/reusable-publish-release.yml@3b5092d9f1a7ed9f29fb33f6e598d1e8534bb8cf # v2.1.0
+    permissions:
+      contents: write
+    with:
+      draft: true
 
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ steps.resolve-tag.outputs.tag }}
-
-      - name: Create draft release (idempotent)
-        id: create
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ steps.resolve-tag.outputs.tag }}"
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Release $TAG already exists; reusing it"
-          else
-            gh release create "$TAG" \
-              --draft \
-              --generate-notes \
-              --title "$TAG"
-          fi
-          RELEASE_ID=$(gh release view "$TAG" --json databaseId --jq .databaseId)
-          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
-
-  # ── 2. クロスプラットフォームビルド + 成果物アップロード ───────────────────
+  # ── 2. クロスプラットフォームビルド + 成果物を draft へ添付 ────────────────────
   build-tauri:
-    needs: create-release
+    needs: draft
+    if: needs.draft.outputs.release_state == 'draft'
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.create-release.outputs.tag }}
+          ref: ${{ needs.draft.outputs.target_sha }}
 
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-latest'
@@ -113,14 +92,22 @@ jobs:
         with:
           targets: ${{ matrix.rust-target }}
 
-      # tag ref で保存したキャッシュは他の tag から復元できないため、保存は
-      # main からの workflow_dispatch 実行時のみ行う（tag push 時は復元のみ）
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
           key: release
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # tauri-action は、draft の Release を id で指定して、成果物を添付する。
+      - name: Resolve draft release id
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.draft.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          echo "release_id=$(gh release view "$TAG" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
 
       - name: Build and upload Tauri artifacts
         uses: tauri-apps/tauri-action@v1
@@ -129,24 +116,27 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
+          releaseId: ${{ steps.release.outputs.release_id }}
           args: ${{ matrix.tauri-args }}
           includeUpdaterJson: false
 
   # ── 3. 全プラットフォームの署名を集約して latest.json を生成・アップロード ──
   publish-updater-manifest:
-    needs: [create-release, build-tauri]
+    needs: [draft, build-tauri]
+    if: needs.draft.outputs.release_state == 'draft'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.create-release.outputs.tag }}
+          ref: ${{ needs.draft.outputs.target_sha }}
 
       - name: Download updater signatures
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ needs.create-release.outputs.tag }}"
+          TAG="${{ needs.draft.outputs.tag_name }}"
           mkdir -p sigs
           gh release download "$TAG" --pattern '*.sig' --dir sigs
           echo "Downloaded signatures:"
@@ -154,7 +144,7 @@ jobs:
 
       - name: Build latest.json
         run: |
-          TAG="${{ needs.create-release.outputs.tag }}"
+          TAG="${{ needs.draft.outputs.tag_name }}"
           VERSION="${TAG#v}"
           BASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -162,6 +152,7 @@ jobs:
           # glob + 1件アサート。ファイル名の変動に耐えつつ意図しない複数一致を検出する。
           assert_one_sig() {
             local pattern="$1"
+            # shellcheck disable=SC2206 # glob の展開が目的
             local matched=( sigs/${pattern} )
             if [[ ${#matched[@]} -ne 1 || ! -f "${matched[0]}" ]]; then
               echo "ERROR: pattern '${pattern}' matched ${#matched[@]} file(s):"
@@ -210,5 +201,72 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ needs.create-release.outputs.tag }}"
+          TAG="${{ needs.draft.outputs.tag_name }}"
           gh release upload "$TAG" latest.json --clobber
+
+  # ── 4. Release から成果物を再取得して照合する（公開の前の検証） ───────────────
+  # 失敗すると、finalize は実行されず、draft のまま残る。
+  verify:
+    needs: [draft, publish-updater-manifest]
+    if: needs.draft.outputs.release_state == 'draft'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: draft の成果物を検証
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.draft.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          assets=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          echo "Release assets:"
+          echo "$assets"
+
+          fail=0
+          require() {
+            if ! grep -Eq "$1" <<< "$assets"; then
+              echo "::error::成果物がありません（$2）: $1"
+              fail=1
+            fi
+          }
+          require '\.msi$' 'Windows のインストーラ'
+          require '-setup\.exe$' 'Windows のセットアップ'
+          require '\.dmg$' 'macOS'
+          require '\.AppImage$' 'Linux（AppImage）'
+          require '\.deb$' 'Linux（deb）'
+          require '\.msi\.zip\.sig$' 'updater の署名（Windows）'
+          require 'aarch64.*\.app\.tar\.gz\.sig$' 'updater の署名（macOS）'
+          require '\.AppImage\.tar\.gz\.sig$' 'updater の署名（Linux）'
+          require '^latest\.json$' 'updater の manifest'
+          if (( fail )); then
+            exit 1
+          fi
+
+          # latest.json を、Release から取り直して照合する（版がタグと一致し、全 URL が Release の成果物を指す）。
+          mkdir -p verify
+          gh release download "$TAG" --pattern latest.json --dir verify
+          version=$(jq -r '.version' verify/latest.json)
+          if [[ "$version" != "${TAG#v}" ]]; then
+            echo "::error::latest.json の版（$version）が、タグ（$TAG）と一致しません"
+            exit 1
+          fi
+          while read -r url; do
+            name="${url##*/}"
+            if ! grep -Fxq "$name" <<< "$assets"; then
+              echo "::error::latest.json の URL が、Release に無い成果物を指しています: $url"
+              exit 1
+            fi
+          done < <(jq -r '.platforms[].url' verify/latest.json)
+          echo "検証に成功しました"
+
+  # ── 5. Release の公開（release-automate） ──────────────────────────────────
+  finalize:
+    needs: [draft, verify]
+    if: needs.draft.outputs.release_state == 'draft' && needs.verify.result == 'success'
+    uses: scottlz0310/release-automate/.github/workflows/reusable-finalize-release.yml@3b5092d9f1a7ed9f29fb33f6e598d1e8534bb8cf # v2.1.0
+    permissions:
+      contents: write
+    with:
+      tag_name: ${{ needs.draft.outputs.tag_name }}
+      target_sha: ${{ needs.draft.outputs.target_sha }}

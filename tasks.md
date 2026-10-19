@@ -29,6 +29,12 @@
 - [ ] アーカイブ済み・消えた remote のクローンの検出と、OSS の扱いの検討（#313）
 - [x] フォルダを開く（`open_repo_folder`）の explorer ウィンドウが前面に出ない問題（#317）
 
+リリース（v0.3.0。release-automate を使う）:
+
+- [x] release-automate への移行（`prepare-release.yml` の追加と、`release.yml` の作り替え）
+- [ ] v0.3.0 の準備（`Prepare Release` の実行）、リリース準備 PR のマージ、公開の確認
+- [ ] 未公開の draft の `v0.2.1` の削除（v0.3.0 の公開後）
+
 ---
 
 ## レビューノート & 改善提案 (spec v0.3 → 実装差分)
