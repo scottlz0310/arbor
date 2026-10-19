@@ -7,7 +7,7 @@ mod test_util;
 mod workspace;
 
 use commands::runner::{RunnerState, TauriSink};
-use ipc::{cleanup, config as settings, dsx, fetch, repo, runner};
+use ipc::{cleanup, config as settings, dsx, fetch, remote_status, repo, runner};
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -35,6 +35,7 @@ pub fn run() {
             repo::fetch_all,
             repo::open_repo_folder,
             fetch::fetch_repositories,
+            remote_status::check_remotes,
             // Cleanup Wizard (Issue #186)
             cleanup::cleanup_preview,
             cleanup::cleanup_execute,

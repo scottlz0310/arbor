@@ -100,7 +100,7 @@ Rust backend (Tauri commands)
 | ファイル | 責務 |
 |---------|------|
 | `lib.rs` | Tauri Builder + 全コマンドの `invoke_handler` 登録 |
-| `ipc/` | `#[tauri::command]` の薄いラッパーだけ（`cleanup` / `config` / `dsx` / `fetch` / `repo` / `runner`）。ロジックは持たず、`commands/` の関数を呼ぶ。カバレッジの対象外で、`ipc/guard.rs` が薄さと `lib.rs` への登録を検査する |
+| `ipc/` | `#[tauri::command]` の薄いラッパーだけ（`cleanup` / `config` / `dsx` / `fetch` / `remote_status` / `repo` / `runner`）。ロジックは持たず、`commands/` の関数を呼ぶ。カバレッジの対象外で、`ipc/guard.rs` が薄さと `lib.rs` への登録を検査する |
 | `models.rs` | `RepoInfo` / `BranchInfo` / `CommitNode` / `DsxOutput` 等の共有データ型 |
 | `config.rs` | `AppConfig` の読み書き。`dirs::config_dir()` で OS ごとのパスを解決。未設定の `workspace.root` は、あれば `~/src` で補う |
 | `workspace.rs` | 管理対象リポジトリの決定。`workspace.root` 直下（深さ 1。dsx の `repo.root` と同じ規則）の自動検出と、手動登録（ディスク上に無いものは除く）の和集合（`effective_repos`）。protected branches は、全体の既定（main / master / develop / dev）に、手動登録の設定を追加して解決する |
@@ -108,6 +108,7 @@ Rust backend (Tauri commands)
 | `commands/config_cmd.rs` | config.toml CRUD（手動登録の追加・削除、`update_settings`、存在しない手動登録の検出）と `get_workspace_status`（Header の root 表示用） |
 | `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する。`dsx_check`（版と `supports_run_root`）、`bitwarden_status`、`repo_update` / `daily_refresh`（どちらも Arbor の `workspace.root` を `--root` で渡す。Daily Refresh は dsx v0.11.0 以上が必要） |
 | `commands/fetch.rs` | 管理対象リポジトリの一括 fetch（`fetch_repositories`）。git2 で最大 4 並列に fetch し、1 件ごとの結果を runner の job としてコンソールへ流す。`cancel_run` で転送中の fetch も中断できる |
+| `commands/remote_status.rs` | リモートの状態の確認（`check_remotes`）。各リポジトリの `origin`（GitHub のもの）について、`gh api repos/{owner}/{repo}` で、アーカイブ済み・移転（transfer / rename）・見つからない（404）を調べる。最大 4 並列で、1 件ごとの結果を runner の job としてコンソールへ流す（fetch と同じ枠）。ネットワークを使うため、自動では走らせず、Status タブの「Remote を確認」で手動で行う。`gh` の呼び出しは `Looker` で差し替えられる |
 | `commands/runner.rs` | 外部コマンドの実行基盤（子プロセスを持たない処理は `run_job` で同じ枠に載せる）。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
 
 ### IPC ラッパーとカバレッジ
@@ -141,6 +142,8 @@ Rust backend (Tauri commands)
 | `components/` | 共通 UI（Header, SummaryStrip, TabBar, AppBar, ConfirmDialog, Toast, LogConsole） |
 | `lib/dsxVersion.ts` | `v0.11.0` / `dsx version 0.11.0` 形式の版の比較 |
 | `lib/repoStatus.ts` | 要対応の判定（`needsAction`）、状態バッジ、Status タブの絞り込みと並び順 |
+| `lib/remoteStatus.ts` | リモートの状態のバッジ（archived / remote なし / 移転 / 確認失敗）と件数、確認の実行と Toast |
+| `stores/remoteStore.ts` | 直近のリモートの状態の確認結果（Status のバッジと Summary の注記用。確認は遅いため自動では行わず、アプリを閉じると失われる。Zustand） |
 | `stores/cleanupStore.ts` | 直近の Cleanup プレビューの候補数（Summary 用。プレビューは remote へ接続して遅いため、自動では読み込まない） |
 
 **データフロー:** Rust コマンド → `lib/invoke.ts` → Zustand store → React コンポーネント
@@ -165,6 +168,7 @@ Rust backend (Tauri commands)
 | `cleanup_preview` | git2 | 管理対象（自動検出 + 手動登録）の全リポジトリの削除候補を読み取り専用で列挙 |
 | `cleanup_execute` | git2 | 選択候補を再検証して local branch 削除または remote-tracking ref prune を実行 |
 | `fetch_repositories` | git2（`commands/fetch.rs`） | 全管理対象を最大 4 並列で fetch。進捗は `process_*` イベント、結果は `FetchSummary`。実行枠は dsx と共有（同時に 1 件） |
+| `check_remotes` | `gh api`（`commands/remote_status.rs`） | 全管理対象の `origin` を GitHub に問い合わせ、アーカイブ済み・移転・見つからないを返す。進捗は `process_*` イベント。実行枠は dsx・fetch と共有（同時に 1 件） |
 
 `repo_update` などの dsx コマンドは `runner` 経由でストリーミングする。Cleanup コマンドは
 `commands/cleanup.rs` で実装し、dsx を呼び出さない。

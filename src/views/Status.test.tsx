@@ -4,11 +4,15 @@ import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'b
 import { act } from 'react';
 import Status from './Status';
 import * as invoke from '../lib/invoke';
+import { useConsoleStore } from '../stores/consoleStore';
+import { useRemoteStore } from '../stores/remoteStore';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
+import type { RemoteStatus } from '../types';
 
 const mockFetchAll = spyOn(invoke, 'fetchAll');
 const mockOpenRepoFolder = spyOn(invoke, 'openRepoFolder');
+const mockCheckRemotes = spyOn(invoke, 'checkRemotes');
 const mockRefreshRepo = mock();
 const mockAddToast = mock();
 
@@ -213,5 +217,64 @@ describe('Status — リポジトリカード', () => {
     await userEvent.click(screen.getByRole('button', { name: 'a のフォルダを開く' }));
 
     await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('フォルダが見つかりません: /r/a', 'error'));
+  });
+});
+
+describe('Status — リモートの状態（アーカイブ済み・移転・見つからない）', () => {
+  const statusOf = (path: string, state: RemoteStatus['state'], moved_to: string | null = null): RemoteStatus => ({
+    path,
+    name: path,
+    state,
+    moved_to,
+  });
+
+  it('「Remote を確認」で、全リポジトリの確認を始める', async () => {
+    mockCheckRemotes.mockResolvedValue({ total: 1, statuses: [], cancelled: false });
+    setRepos([makeRepo()]);
+    render(<Status />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Remote を確認/ }));
+
+    expect(mockCheckRemotes).toHaveBeenCalledTimes(1);
+  });
+
+  it('別の run の実行中は、確認を始められない', () => {
+    act(() => {
+      useConsoleStore.setState({
+        run: { runId: 1, label: 'fetch all repositories', startedAt: 0, status: 'running', exitCode: null, durationMs: null },
+      });
+    });
+    setRepos([makeRepo()]);
+
+    render(<Status />);
+
+    expect(screen.getByRole('button', { name: /Remote を確認/ })).toBeDisabled();
+  });
+
+  it.each([
+    { name: 'アーカイブ済み', state: { kind: 'archived' } as const, moved: null, badge: '▣ archived' },
+    { name: '見つからない', state: { kind: 'not_found' } as const, moved: null, badge: '✗ remote なし' },
+    { name: '移転済み', state: { kind: 'active' } as const, moved: 'me/a', badge: '→ 移転' },
+    { name: '確認に失敗', state: { kind: 'error', message: 'boom' } as const, moved: null, badge: '! 確認失敗' },
+  ])('確認の結果が、カードのバッジに出る: $name', ({ state, moved, badge }) => {
+    setRepos([makeRepo({ path: '/r/a', name: 'a' })]);
+    act(() => useRemoteStore.setState({ statuses: { '/r/a': statusOf('/r/a', state, moved) } }));
+
+    render(<Status />);
+
+    expect(within(cardOf('a')).getByText(badge)).toBeTruthy();
+  });
+
+  it.each([
+    { name: '未確認', statuses: {} as Record<string, RemoteStatus> },
+    { name: '通常', statuses: { '/r/a': statusOf('/r/a', { kind: 'active' }) } },
+    { name: 'GitHub 以外', statuses: { '/r/a': statusOf('/r/a', { kind: 'unsupported' }) } },
+  ])('注意が要らない状態では、カードにバッジを足さない: $name', ({ statuses }) => {
+    setRepos([makeRepo({ path: '/r/a', name: 'a' })]);
+    act(() => useRemoteStore.setState({ statuses }));
+
+    render(<Status />);
+
+    expect(within(cardOf('a')).queryByText(/archived|remote なし|移転|確認失敗/)).toBeNull();
   });
 });

@@ -44,6 +44,31 @@ export interface FetchSummary {
   cancelled: boolean;
 }
 
+/** GitHub 側から見たリポジトリの状態（Rust の `RemoteState`）。 */
+export type RemoteState =
+  | { kind: 'active' }
+  | { kind: 'archived' }
+  /** 削除されたか、権限が無い（GitHub は、権限の無い非公開リポジトリも 404 で答える）。 */
+  | { kind: 'not_found' }
+  /** `origin` が無い、または GitHub 以外。 */
+  | { kind: 'unsupported' }
+  | { kind: 'error'; message: string };
+
+export interface RemoteStatus {
+  path: string;
+  name: string;
+  state: RemoteState;
+  /** `origin` の URL と、GitHub が答えた現在の `owner/repo` が違うとき（transfer や rename の後）の、現在の名前。 */
+  moved_to: string | null;
+}
+
+/** `check_remotes` の結果。キャンセルされた場合、`statuses` の件数は total に満たない。 */
+export interface RemoteCheckSummary {
+  total: number;
+  statuses: RemoteStatus[];
+  cancelled: boolean;
+}
+
 /** Mirror of the `process_started` event payload (commands/runner.rs). */
 export interface ProcessStarted {
   runId: number;

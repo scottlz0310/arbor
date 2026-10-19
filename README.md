@@ -7,7 +7,7 @@
 ## 機能
 
 - **Header** — dsx の版・Bitwarden の状態・workspace root を表示し、Scan / Fetch All / dsx sys update / Daily Refresh（`dsx run --root`）を実行
-- **Repository Status** — 全リポジトリの状態（ahead / behind / dirty / detached / no upstream）をカードで俯瞰し、要対応のリポジトリを先頭に提示。リポジトリごとの Fetch とフォルダを開く操作
+- **Repository Status** — 全リポジトリの状態（ahead / behind / dirty / detached / no upstream）をカードで俯瞰し、要対応のリポジトリを先頭に提示。リポジトリごとの Fetch とフォルダを開く操作。「Remote を確認」で、各リポジトリの origin を GitHub に問い合わせ、アーカイブ済み・移転・見つからないクローンをバッジで示す（`gh` を使う。削除は、Arbor では行わない）
 - **Summary** — リポジトリ数・要対応の数・Cleanup 候補・dsx 環境の状態を一覧し、クリックで該当のビューへ移動
 - **Cleanup Wizard** — 全登録リポジトリの local branch 削除と remote-tracking ref prune を、実行直前の再検証付きで一括管理
 - **dsx Tools** — dsx CLI の版の確認と self-update、`dsx sys update`（確認つき）・`-n`（ドライラン）・`repo update`・`doctor` の実行。出力は実行ログコンソールに流れる
@@ -64,6 +64,7 @@ cargo test   --manifest-path src-tauri/Cargo.toml
 
 - **Bitwarden**: Arbor からは、Bitwarden を解錠できない（パスワードを入力する画面が無い）。Daily Refresh で Bitwarden の環境変数も使うときは、ターミナルで解錠して `BW_SESSION` を設定し、そのターミナルから Arbor を起動する。未解錠のまま Daily Refresh を押すと、確認ダイアログが出る（そのまま実行すると、解錠が必要な処理は失敗するか、省略される）。
 - **fetch の認証**: Fetch / Fetch All は、git の認証情報ヘルパー（HTTPS。Windows は Git Credential Manager）と ssh-agent を使う。認証情報を入力する画面は無いので、先に `git fetch` で認証を通しておく。
+- **Remote の確認**: 「Remote を確認」は、[GitHub CLI（`gh`）](https://cli.github.com/)を使う。`gh auth login` で、ログインしておく（非公開リポジトリも、`gh` の認証で読む）。GitHub に問い合わせるため、自動では行わない。GitHub 以外の origin は、対象外。権限の無い非公開リポジトリは、GitHub が 404 で答えるため、「remote なし」と区別できない。
 - **管理対象**: `workspace.root` 直下の git リポジトリが、自動で一覧に入る。手動登録のうち、ディスク上に無いものは一覧・Fetch の対象から外れる（Settings の「無効なリポジトリを検出」から、登録を外せる）。
 
 ## アーキテクチャ

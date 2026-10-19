@@ -5,9 +5,10 @@ import { act } from 'react';
 import SummaryStrip from './SummaryStrip';
 import { useCleanupStore } from '../stores/cleanupStore';
 import { useEnvStore } from '../stores/envStore';
+import { useRemoteStore } from '../stores/remoteStore';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
-import type { BitwardenState, DsxStatus, RepoInfo, WorkspaceStatus } from '../types';
+import type { BitwardenState, DsxStatus, RemoteStatus, RepoInfo, WorkspaceStatus } from '../types';
 
 function repo(name: string, overrides: Partial<RepoInfo> = {}): RepoInfo {
   return {
@@ -141,5 +142,37 @@ describe('SummaryStrip — 移動', () => {
     await userEvent.click(card(label));
 
     expect(useUiStore.getState().activeView).toBe(view);
+  });
+});
+
+describe('SummaryStrip — リモートの状態', () => {
+  const remote = (name: string, state: RemoteStatus['state'], moved_to: string | null = null): RemoteStatus => ({
+    path: `/src/${name}`,
+    name,
+    state,
+    moved_to,
+  });
+
+  it('確認前は、注意の 1 行を出さない', () => {
+    render(<SummaryStrip />);
+
+    expect(card(/TOTAL REPOSITORIES/).textContent).not.toMatch(/Archived|remote なし|移転/);
+  });
+
+  it('アーカイブ済み・見つからない・移転を、TOTAL のカードに添える（要対応の数には混ぜない）', () => {
+    const statuses = Object.fromEntries(
+      [
+        remote('a', { kind: 'archived' }),
+        remote('b', { kind: 'not_found' }),
+        remote('c', { kind: 'active' }, 'me/c'),
+      ].map((s) => [s.path, s]),
+    );
+    act(() => useRemoteStore.setState({ statuses }));
+
+    render(<SummaryStrip />);
+
+    expect(card(/TOTAL REPOSITORIES/).textContent).toContain('1 Archived · 1 remote なし · 1 移転');
+    // 要対応の数は、リポジトリの状態だけで決まる（b: dirty、d: behind の 2 件）。
+    expect(card(/NEEDS ACTION/).textContent).toContain('2');
   });
 });

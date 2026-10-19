@@ -32,12 +32,14 @@ const { useUiStore } = await import('../stores/uiStore');
 const { useConsoleStore } = await import('../stores/consoleStore');
 const { useEnvStore } = await import('../stores/envStore');
 const { useCleanupStore } = await import('../stores/cleanupStore');
+const { useRemoteStore } = await import('../stores/remoteStore');
 
 const initialRepoState = useRepoStore.getInitialState();
 const initialUiState = useUiStore.getInitialState();
 const initialConsoleState = useConsoleStore.getInitialState();
 const initialEnvState = useEnvStore.getInitialState();
 const initialCleanupState = useCleanupStore.getInitialState();
+const initialRemoteState = useRemoteStore.getInitialState();
 
 afterEach(() => {
   useRepoStore.setState(initialRepoState, true);
@@ -45,4 +47,5 @@ afterEach(() => {
   useConsoleStore.setState(initialConsoleState, true);
   useEnvStore.setState(initialEnvState, true);
   useCleanupStore.setState(initialCleanupState, true);
+  useRemoteStore.setState(initialRemoteState, true);
 });

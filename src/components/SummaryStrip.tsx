@@ -1,8 +1,10 @@
 import type { CSSProperties } from 'react';
 import { dailyRefreshBlockReason, shortVersion } from '../lib/dsxActions';
+import { countRemote, remoteNote } from '../lib/remoteStatus';
 import { countRepos } from '../lib/repoStatus';
 import { useCleanupStore } from '../stores/cleanupStore';
 import { useEnvStore } from '../stores/envStore';
+import { useRemoteStore } from '../stores/remoteStore';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 
@@ -12,11 +14,13 @@ interface CardProps {
   valueColor: string;
   tag: string;
   tagColor: string;
+  /** 値の下に添える、注意を促す 1 行（無ければ表示しない）。 */
+  note?: string | null;
   title: string;
   onClick: () => void;
 }
 
-function Card({ label, value, valueColor, tag, tagColor, title, onClick }: CardProps) {
+function Card({ label, value, valueColor, tag, tagColor, note, title, onClick }: CardProps) {
   const style: CSSProperties = {
     flex: 1,
     minWidth: 150,
@@ -38,6 +42,7 @@ function Card({ label, value, valueColor, tag, tagColor, title, onClick }: CardP
         </span>
         <span style={{ fontSize: 10, color: tagColor }}>{tag}</span>
       </div>
+      {note && <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>{note}</div>}
     </button>
   );
 }
@@ -62,6 +67,7 @@ export default function SummaryStrip() {
   const repos = useRepoStore((s) => s.repos);
   const { dsx, bitwarden, workspace } = useEnvStore();
   const candidateCount = useCleanupStore((s) => s.candidateCount);
+  const remoteStatuses = useRemoteStore((s) => s.statuses);
   const { navigate, setStatusFilter } = useUiStore();
 
   const counts = countRepos(repos);
@@ -80,6 +86,7 @@ export default function SummaryStrip() {
         valueColor="var(--text1)"
         tag={`${counts.clean} Clean`}
         tagColor="var(--green)"
+        note={remoteNote(countRemote(remoteStatuses))}
         title="すべてのリポジトリを表示"
         onClick={() => showStatus('all')}
       />
