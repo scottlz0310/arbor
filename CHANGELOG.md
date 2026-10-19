@@ -33,6 +33,13 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### feat
 
+- **アーカイブ済み・移転・消えた remote のクローンを検出して、Status に表示する**（#313）。git だけでは、アーカイブ済みかどうかが分からない（transfer の後も旧 URL はリダイレクトされ、アーカイブの後も fetch は成功する）ため、消し忘れたクローンに気づけなかった
+  - Status タブの「🔍 Remote を確認」で、各リポジトリの `origin`（GitHub のもの）を `gh api repos/{owner}/{repo}` で問い合わせ、結果をカードのバッジで示す: `▣ archived`（アーカイブ済み）・`✗ remote なし`（404。削除されたか、権限が無い）・`→ 移転`（transfer や rename の後。GitHub 上の現在の名前を、ヒントに出す）・`! 確認失敗`。Summary の TOTAL のカードにも、件数を添える（「要対応」の数には混ぜない）
+  - ネットワークを使うため、自動では走らせない。fetch と同じ実行の枠（同時に 1 件）で、進捗を実行ログコンソールに流し、最大 4 並列で確認する。`cancel_run` で中断できる。結果は、アプリを閉じるまで保持する
+  - 削除は、Arbor では行わない。カードの `Open` で、エクスプローラーを開いて消す。GitHub 以外の `origin`・`origin` の無いリポジトリは、対象外
+  - `gh` の呼び出しは差し替えられる形で、`origin` の URL の解釈（https・scp・ssh://）、`gh` の出力の解釈、アーカイブ・移転の判定を、ネットワークに出ないテストで確認している。`gh api` の owner / repo は、使える文字だけに限る
+  - 実機で、アーカイブ済みで `scottlz0310-user/` へ移転済みのリポジトリのクローンが、`▣ archived` と、移転後の名前つきで表示されることを確認した
+
 - **dsx Tools タブ**（#294 PR-D3）。Repository Status / Branch Cleanup に並ぶタブとして、dsx の管理を集約した。これで PR-D（Refresher Dashboard）は完了
   - dsx の版と場所、最新版の確認（バージョン確認）、Self Update。Settings にあった dsx の管理（版の確認・Sys Update・Self Update）を、ここへ移した
   - 実行ボタン: Update All Tools（`dsx sys update`。確認ダイアログつき）、Dry Run（`dsx sys update -n`。計画だけを表示）、Update Repositories（`dsx repo update --root`）、Doctor（`dsx doctor`）。出力は解析せず、実行ログコンソールに流す。別の run の実行中、または dsx が無いときは押せない

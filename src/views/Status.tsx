@@ -3,6 +3,9 @@ import { AppBtn } from '../components/AppBar';
 import { countRepos, filterRepos, statusBadge } from '../lib/repoStatus';
 import { fetchAll, openRepoFolder } from '../lib/invoke';
 import { generateInsights } from '../lib/ruleEngine';
+import { checkAllRemotes, remoteBadge, type RemoteBadge } from '../lib/remoteStatus';
+import { useConsoleStore } from '../stores/consoleStore';
+import { useRemoteStore } from '../stores/remoteStore';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 import type { Insight, RepoInfo, StatusFilter } from '../types';
@@ -16,6 +19,8 @@ const FILTERS: { id: StatusFilter; label: string; color: string }[] = [
 export default function Status() {
   const { repos, selectedRepo, selectRepo, refreshRepo } = useRepoStore();
   const { addToast, statusFilter, setStatusFilter } = useUiStore();
+  const remoteStatuses = useRemoteStore((s) => s.statuses);
+  const busy = useConsoleStore((s) => s.run?.status === 'running');
 
   const insights = useMemo(() => generateInsights(repos), [repos]);
   const counts = useMemo(() => countRepos(repos), [repos]);
@@ -41,32 +46,41 @@ export default function Status() {
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column' }}>
-      <div role="group" aria-label="状態で絞り込み" style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        {FILTERS.map((filter) => {
-          const active = statusFilter === filter.id;
-          return (
-            <button
-              key={filter.id}
-              aria-pressed={active}
-              onClick={() => setStatusFilter(filter.id)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '4px 12px',
-                borderRadius: 999,
-                border: `1px solid ${active ? filter.color : 'var(--border2)'}`,
-                background: active ? 'var(--bg3)' : 'none',
-                color: active ? filter.color : 'var(--text3)',
-                fontSize: 11,
-                cursor: 'pointer',
-              }}
-            >
-              {filter.label}
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>{counts[filter.id]}</span>
-            </button>
-          );
-        })}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
+        <div role="group" aria-label="状態で絞り込み" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1 }}>
+          {FILTERS.map((filter) => {
+            const active = statusFilter === filter.id;
+            return (
+              <button
+                key={filter.id}
+                aria-pressed={active}
+                onClick={() => setStatusFilter(filter.id)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '4px 12px',
+                  borderRadius: 999,
+                  border: `1px solid ${active ? filter.color : 'var(--border2)'}`,
+                  background: active ? 'var(--bg3)' : 'none',
+                  color: active ? filter.color : 'var(--text3)',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                }}
+              >
+                {filter.label}
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>{counts[filter.id]}</span>
+              </button>
+            );
+          })}
+        </div>
+        <AppBtn
+          onClick={() => void checkAllRemotes()}
+          disabled={busy}
+          title="各リポジトリの origin を GitHub に問い合わせ、アーカイブ済み・移転・見つからないものを表示します（gh を使います。リポジトリの数だけ時間がかかります）"
+        >
+          🔍 Remote を確認
+        </AppBtn>
       </div>
 
       {visible.length === 0 && (
@@ -80,6 +94,7 @@ export default function Status() {
           <RepoCard
             key={r.path}
             repo={r}
+            remote={remoteBadge(remoteStatuses[r.path])}
             selected={selectedRepo?.path === r.path}
             onSelect={() => selectRepo(r)}
             onFetch={() => void handleFetch(r)}
@@ -103,13 +118,15 @@ export default function Status() {
 
 interface RepoCardProps {
   repo: RepoInfo;
+  /** リモートの状態のバッジ。未確認・注意が要らない状態は null。 */
+  remote: RemoteBadge | null;
   selected: boolean;
   onSelect: () => void;
   onFetch: () => void;
   onOpenFolder: () => void;
 }
 
-function RepoCard({ repo, selected, onSelect, onFetch, onOpenFolder }: RepoCardProps) {
+function RepoCard({ repo, remote, selected, onSelect, onFetch, onOpenFolder }: RepoCardProps) {
   const badge = statusBadge(repo);
   const dirty = repo.modified_count + repo.untracked_count;
   const edge = selected ? '#818cf850' : 'var(--border)';
@@ -136,17 +153,33 @@ function RepoCard({ repo, selected, onSelect, onFetch, onOpenFolder }: RepoCardP
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--indigo-l)' }}>{repo.name}</div>
           <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{repo.current_branch}</div>
         </div>
-        <span style={{
-          fontSize: 10,
-          fontWeight: 500,
-          padding: '2px 8px',
-          borderRadius: 4,
-          background: badge.bg,
-          color: badge.color,
-          flexShrink: 0,
-        }}>
-          {badge.label}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+          <span style={{
+            fontSize: 10,
+            fontWeight: 500,
+            padding: '2px 8px',
+            borderRadius: 4,
+            background: badge.bg,
+            color: badge.color,
+          }}>
+            {badge.label}
+          </span>
+          {remote && (
+            <span
+              title={remote.title}
+              style={{
+                fontSize: 10,
+                fontWeight: 500,
+                padding: '2px 8px',
+                borderRadius: 4,
+                background: remote.bg,
+                color: remote.color,
+              }}
+            >
+              {remote.label}
+            </span>
+          )}
+        </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 10, marginTop: 8 }}>
         <span style={{ color: 'var(--green)' }}>↑ {repo.ahead}</span>

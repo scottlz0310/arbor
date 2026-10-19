@@ -16,6 +16,7 @@ import type {
   DsxStatus,
   FetchResult,
   FetchSummary,
+  RemoteCheckSummary,
   RepoConfig,
   RepoInfo,
   WorkspaceStatus,
@@ -64,6 +65,10 @@ export const fetchAll = (repoPath: string) =>
 /** 管理対象の全リポジトリを fetch する。進捗は `process_*` イベントで流れ、`cancelRun` で中断できる。 */
 export const fetchRepositories = () =>
   tauriInvoke<FetchSummary>('fetch_repositories');
+
+/** 管理対象の全リポジトリの、リモートの状態（アーカイブ済み・移転・見つからない）を確認する。進捗は `process_*` イベントで流れ、`cancelRun` で中断できる。 */
+export const checkRemotes = () =>
+  tauriInvoke<RemoteCheckSummary>('check_remotes');
 
 // ─── Cleanup Wizard ─────────────────────────────────────────────────────────
 

@@ -68,6 +68,44 @@ pub struct FetchSummary {
     pub cancelled: bool,
 }
 
+// ─── リモートの状態の確認（Issue #313）──────────────────────────────────────────
+
+/// GitHub 側から見た、リポジトリの状態。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RemoteState {
+    /// 存在し、アーカイブされていない。
+    Active,
+    /// アーカイブ済み（更新されない）。
+    Archived,
+    /// 見つからない。削除されたか、権限が無い（GitHub は、権限の無い非公開リポジトリも 404 で答える）。
+    NotFound,
+    /// `origin` が無い、または GitHub 以外のため、確認の対象外。
+    Unsupported,
+    /// 確認に失敗した（`gh` が無い・未ログイン・ネットワークなど）。
+    Error { message: String },
+}
+
+/// リポジトリ 1 件の、リモートの状態。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteStatus {
+    pub path: String,
+    pub name: String,
+    pub state: RemoteState,
+    /// `origin` の URL と、GitHub が答えた現在の `owner/repo` が違うとき（transfer や rename の後）の、現在の名前。
+    pub moved_to: Option<String>,
+}
+
+/// `check_remotes` の結果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteCheckSummary {
+    /// 確認の対象にしたリポジトリ数。
+    pub total: usize,
+    pub statuses: Vec<RemoteStatus>,
+    /// キャンセルで途中までになった。このとき `statuses.len()` は `total` に満たない。
+    pub cancelled: bool,
+}
+
 // ─── Cleanup Wizard (Issue #186) ─────────────────────────────────────────────
 
 /// Cleanup の操作種別。local branch 削除と remote-tracking ref の prune は
