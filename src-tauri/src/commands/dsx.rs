@@ -238,8 +238,17 @@ impl DsxTask {
 
 /// `dsx` を共有の runner で実行し、終了を待つ。出力は `process_*` イベントで流れる。
 pub async fn run_task(state: &RunnerState, task: DsxTask) -> Result<DsxOutput, String> {
+    run_task_with(state, task, check_dsx).await
+}
+
+/// `run_task` の本体。Daily Refresh の前に確認する dsx の状態を、`check` で差し替えられる（テスト用）。
+async fn run_task_with(
+    state: &RunnerState,
+    task: DsxTask,
+    check: fn() -> DsxStatus,
+) -> Result<DsxOutput, String> {
     if matches!(task, DsxTask::DailyRefresh { .. }) {
-        let status = tauri::async_runtime::spawn_blocking(check_dsx)
+        let status = tauri::async_runtime::spawn_blocking(check)
             .await
             .map_err(|e| format!("dsx の確認スレッドが異常終了しました: {e}"))?;
         ensure_run_root_supported(&status)?;
@@ -612,5 +621,173 @@ mod tests {
             assert_eq!(cwd, expected_cwd, "{name}");
             assert_eq!(args, expected_args, "{name}");
         }
+    }
+
+    // ── run_task（起動を差し替えた Runner）──────────────────────────────────────
+
+    use crate::commands::runner::{
+        EventSink, Launched, Launcher, ProcessFinished, ProcessOutput, ProcessStarted, Runner,
+    };
+    use std::sync::{Arc, Mutex};
+
+    /// 起動の依頼だけを記録し、すぐに指定の終了コードで終わる。
+    struct RecordingLauncher {
+        exit_code: i32,
+        launched: Mutex<Vec<(String, Vec<String>, PathBuf)>>,
+    }
+
+    impl RecordingLauncher {
+        fn new(exit_code: i32) -> Arc<Self> {
+            Arc::new(Self {
+                exit_code,
+                launched: Mutex::new(Vec::new()),
+            })
+        }
+    }
+
+    impl Launcher for RecordingLauncher {
+        fn launch(&self, spec: &LaunchSpec) -> io::Result<Launched> {
+            self.launched.lock().unwrap().push((
+                spec.program.clone(),
+                spec.args.clone(),
+                spec.cwd.clone(),
+            ));
+            let exit_code = self.exit_code;
+            Ok(Launched {
+                stdout: Box::new(io::empty()),
+                stderr: Box::new(io::empty()),
+                wait: Box::new(move || Ok(Some(exit_code))),
+                terminate: Arc::new(|| {}),
+            })
+        }
+    }
+
+    struct NullSink;
+
+    impl EventSink for NullSink {
+        fn started(&self, _: &ProcessStarted) {}
+        fn output(&self, _: &ProcessOutput) {}
+        fn finished(&self, _: &ProcessFinished) {}
+    }
+
+    fn state_with(launcher: &Arc<RecordingLauncher>) -> RunnerState {
+        let runner = Runner::new(
+            Arc::clone(launcher) as Arc<dyn Launcher>,
+            Arc::new(NullSink),
+        );
+        RunnerState::with_runner(Arc::new(runner))
+    }
+
+    fn ready_dsx() -> DsxStatus {
+        DsxStatus {
+            available: true,
+            version: Some("dsx version 0.11.0".to_string()),
+            path: None,
+            supports_run_root: true,
+        }
+    }
+
+    fn old_dsx() -> DsxStatus {
+        DsxStatus {
+            available: true,
+            version: Some("dsx version 0.10.2".to_string()),
+            path: None,
+            supports_run_root: false,
+        }
+    }
+
+    fn launched(launcher: &RecordingLauncher) -> Vec<(String, Vec<String>, PathBuf)> {
+        launcher.launched.lock().unwrap().clone()
+    }
+
+    #[test]
+    fn run_task_launches_dsx_with_the_task_invocation() {
+        let launcher = RecordingLauncher::new(0);
+        let state = state_with(&launcher);
+
+        let output =
+            tauri::async_runtime::block_on(run_task_with(&state, DsxTask::Doctor, ready_dsx))
+                .expect("doctor");
+
+        assert_eq!(output.exit_code, 0);
+        assert_eq!(
+            launched(&launcher),
+            [(
+                "dsx".to_string(),
+                vec!["doctor".to_string()],
+                PathBuf::from(".")
+            )]
+        );
+    }
+
+    #[test]
+    fn run_task_reports_a_failing_exit_code() {
+        let launcher = RecordingLauncher::new(3);
+        let state = state_with(&launcher);
+
+        let err =
+            tauri::async_runtime::block_on(run_task_with(&state, DsxTask::SysUpdate, ready_dsx))
+                .unwrap_err();
+
+        assert!(err.contains("exited with code 3"), "{err}");
+    }
+
+    #[test]
+    fn daily_refresh_runs_only_when_dsx_supports_run_root() {
+        let root = "C:/src".to_string();
+
+        let launcher = RecordingLauncher::new(0);
+        let state = state_with(&launcher);
+        tauri::async_runtime::block_on(run_task_with(
+            &state,
+            DsxTask::DailyRefresh { root: root.clone() },
+            ready_dsx,
+        ))
+        .expect("daily refresh");
+        assert_eq!(launched(&launcher).len(), 1);
+        assert_eq!(launched(&launcher)[0].1[..2], ["run", "--root"]);
+
+        let launcher = RecordingLauncher::new(0);
+        let state = state_with(&launcher);
+        let err = tauri::async_runtime::block_on(run_task_with(
+            &state,
+            DsxTask::DailyRefresh { root },
+            old_dsx,
+        ))
+        .unwrap_err();
+        assert!(err.contains("v0.11.0 以上"), "{err}");
+        assert!(launched(&launcher).is_empty(), "古い dsx では起動しない");
+    }
+
+    #[test]
+    fn other_tasks_do_not_check_the_dsx_version() {
+        let launcher = RecordingLauncher::new(0);
+        let state = state_with(&launcher);
+
+        // 古い dsx でも、Daily Refresh 以外は実行できる
+        tauri::async_runtime::block_on(run_task_with(&state, DsxTask::SysUpdateDryRun, old_dsx))
+            .expect("dry run");
+
+        assert_eq!(launched(&launcher).len(), 1);
+    }
+
+    #[test]
+    fn current_bitwarden_state_returns_a_state_even_without_dsx() {
+        // 実行する環境によって結果は変わる（dsx が無ければ Unavailable）。起動の失敗で panic しないことを確かめる。
+        assert!(matches!(
+            current_bitwarden_state(),
+            BitwardenState::Unlocked | BitwardenState::NotUnlocked | BitwardenState::Unavailable
+        ));
+    }
+
+    #[test]
+    fn run_task_uses_the_real_dsx_check_only_for_daily_refresh() {
+        let launcher = RecordingLauncher::new(0);
+        let state = state_with(&launcher);
+
+        // Doctor は dsx の版を確認しないので、実際の dsx を起動せずに、記録だけを確かめられる
+        tauri::async_runtime::block_on(run_task(&state, DsxTask::Doctor)).expect("doctor");
+
+        assert_eq!(launched(&launcher).len(), 1);
     }
 }

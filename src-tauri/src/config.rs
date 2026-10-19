@@ -401,4 +401,66 @@ protected_branches = ["release"]
         assert!(!path.exists(), "失敗した変更は保存しない");
         cleanup(&path);
     }
+
+    // ── load_config / modify_config（設定ファイルの場所を解決する入口）──────────────
+
+    /// `ARBOR_CONFIG_DIR`（debug build のみ有効な、実機テスト用の隔離先）を一時的に差し替える。
+    /// この環境変数を読むのは `load_config` / `modify_config` だけで、他のテストは読まない。
+    #[cfg(debug_assertions)]
+    struct IsolatedConfigDir {
+        base: PathBuf,
+    }
+
+    #[cfg(debug_assertions)]
+    impl IsolatedConfigDir {
+        fn new(prefix: &str) -> Self {
+            let path = temp_config_path(prefix);
+            let base = path
+                .parent()
+                .and_then(Path::parent)
+                .expect("temp path has two parents")
+                .to_path_buf();
+            std::fs::create_dir_all(&base).expect("create isolated dir");
+            std::env::set_var("ARBOR_CONFIG_DIR", &base);
+            Self { base }
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    impl Drop for IsolatedConfigDir {
+        fn drop(&mut self) {
+            std::env::remove_var("ARBOR_CONFIG_DIR");
+            let _ = std::fs::remove_dir_all(&self.base);
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn load_config_and_modify_config_use_the_isolated_config_dir() {
+        let isolated = IsolatedConfigDir::new("isolated");
+
+        // ファイルが無ければ既定値
+        let initial = load_config().expect("load");
+        assert_eq!(initial.settings.stale_threshold_days, 14);
+
+        // 変更は、隔離先の config.toml に保存される
+        let updated = modify_config(|mut config| {
+            config.settings.stale_threshold_days = 21;
+            Ok(config)
+        })
+        .expect("modify");
+        assert_eq!(updated.settings.stale_threshold_days, 21);
+        assert!(isolated.base.join("arbor").join("config.toml").exists());
+        assert_eq!(
+            load_config().expect("reload").settings.stale_threshold_days,
+            21
+        );
+
+        // 失敗した変更は、保存済みの設定を変えない
+        assert!(modify_config(|_| Err("rejected".to_string())).is_err());
+        assert_eq!(
+            load_config().expect("reload").settings.stale_threshold_days,
+            21
+        );
+    }
 }

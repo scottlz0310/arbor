@@ -1615,4 +1615,30 @@ mod tests {
         assert_eq!(result.items[1].status, CleanupExecutionStatus::Failed);
         assert!(result.items[1].error.is_some());
     }
+
+    // ── build_preview（設定を受ける入口）──────────────────────────────────────
+
+    #[test]
+    fn build_preview_covers_every_managed_repository_and_stamps_the_time() {
+        let repo = init_repo_with_commit("first");
+        let mut config = AppConfig::default();
+        config.workspace.root = Some(repo.path_str().to_string());
+
+        let preview = build_preview(&config).expect("preview");
+
+        assert_eq!(preview.repos.len(), 1);
+        assert_eq!(preview.repos[0].repo_path, repo.path_str());
+        assert!(preview.generated_at > 0);
+    }
+
+    #[test]
+    fn build_preview_without_a_usable_root_or_repositories_is_empty() {
+        let missing = TempDir::new("preview-missing").path.join("gone");
+        let mut config = AppConfig::default();
+        config.workspace.root = Some(missing.to_string_lossy().into_owned());
+
+        let preview = build_preview(&config).expect("preview");
+
+        assert!(preview.repos.is_empty());
+    }
 }

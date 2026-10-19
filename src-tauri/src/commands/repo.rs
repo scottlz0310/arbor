@@ -288,8 +288,8 @@ fn upstream_ahead_behind(repo: &Repository, branch: &git2::Branch) -> (u32, u32)
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_effective, fetch_repo, folder_opener, open_folder, repo_info_for_path,
-        scan_repositories, spawn_detached, Os,
+        apply_effective, fetch_repo, folder_opener, list_repos, open_folder, open_managed_folder,
+        repo_info_for_path, repo_status, scan_repositories, spawn_detached, Os,
     };
     use crate::models::{RepoInfo, RepoSource};
     use crate::workspace::EffectiveRepo;
@@ -831,5 +831,82 @@ mod tests {
     #[test]
     fn spawn_detached_reports_a_missing_program() {
         assert!(spawn_detached("arbor-no-such-program-xyz", &[]).is_err());
+    }
+
+    // ── list_repos / repo_status / open_managed_folder（設定を受ける入口）──────────
+
+    fn config_with_root(root: &str) -> crate::config::AppConfig {
+        let mut config = crate::config::AppConfig::default();
+        config.workspace.root = Some(root.to_string());
+        config
+    }
+
+    #[test]
+    fn list_repos_lists_the_workspace_repository_with_its_status() {
+        let repo = init_repo_with_commit("first");
+
+        let repos = list_repos(&config_with_root(repo.path_str()));
+
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].path, repo.path_str());
+        assert_eq!(repos[0].source, RepoSource::Workspace);
+        assert_eq!(repos[0].current_branch, "main");
+    }
+
+    #[test]
+    fn list_repos_keeps_manual_repositories_when_the_root_cannot_be_read() {
+        let manual = init_repo_with_commit("manual");
+        let missing = TempDir::new("list-missing-root").path.join("gone");
+        let mut config = config_with_root(&missing.to_string_lossy());
+        config.repositories = vec![crate::config::RepoConfig {
+            path: manual.path_str().to_string(),
+            name: "manual-tool".to_string(),
+            protected_branches: Vec::new(),
+        }];
+
+        let repos = list_repos(&config);
+
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].name, "manual-tool");
+        assert_eq!(repos[0].source, RepoSource::Manual);
+    }
+
+    #[test]
+    fn repo_status_applies_the_configured_name_to_a_managed_repository() {
+        let repo = init_repo_with_commit("managed");
+        let mut config = config_with_root(repo.path_str());
+        config.repositories = vec![crate::config::RepoConfig {
+            path: repo.path_str().to_string(),
+            name: "Custom Name".to_string(),
+            protected_branches: Vec::new(),
+        }];
+
+        let info = repo_status(&config, repo.path_str()).expect("status");
+
+        assert_eq!(info.name, "Custom Name");
+        assert_eq!(info.source, RepoSource::Workspace);
+    }
+
+    #[test]
+    fn repo_status_reads_a_repository_that_is_not_managed_and_rejects_non_repositories() {
+        let unmanaged = init_repo_with_commit("unmanaged");
+        let plain = TempDir::new("status-plain");
+        let config = crate::config::AppConfig::default();
+
+        let info = repo_status(&config, unmanaged.path_str()).expect("status");
+        let err = repo_status(&config, plain.path_str()).unwrap_err();
+
+        assert_eq!(info.current_branch, "main");
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn open_managed_folder_rejects_unmanaged_paths_before_launching_anything() {
+        let unmanaged = TempDir::new("open-unmanaged");
+
+        let err = open_managed_folder(&crate::config::AppConfig::default(), unmanaged.path_str())
+            .unwrap_err();
+
+        assert!(err.contains("管理対象のリポジトリではありません"), "{err}");
     }
 }

@@ -566,4 +566,41 @@ mod tests {
 
         assert!(result.is_err(), "転送を打ち切ってエラーにする: {result:?}");
     }
+
+    // ── fetch_all_repositories（設定を受ける入口）──────────────────────────────
+
+    #[test]
+    fn fetch_all_repositories_fetches_the_managed_repositories_and_summarizes() {
+        let (_source, _source_repo, target) = source_and_target();
+        let mut config = AppConfig::default();
+        config.workspace.root = Some(target.path_str());
+        let sink = Arc::new(RecordingSink::default());
+        let state = RunnerState::with_runner(runner(&sink));
+
+        let summary =
+            tauri::async_runtime::block_on(fetch_all_repositories(&state, &config)).expect("fetch");
+
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.succeeded, 1);
+        assert!(summary.failed.is_empty());
+        assert!(!summary.cancelled);
+    }
+
+    #[test]
+    fn fetch_all_repositories_reports_a_root_that_cannot_be_read() {
+        let missing = TempDir::new("fetch-missing-root").path.join("gone");
+        let mut config = AppConfig::default();
+        config.workspace.root = Some(missing.to_string_lossy().into_owned());
+        let sink = Arc::new(RecordingSink::default());
+        let state = RunnerState::with_runner(runner(&sink));
+
+        let summary =
+            tauri::async_runtime::block_on(fetch_all_repositories(&state, &config)).expect("fetch");
+
+        assert_eq!(summary.total, 0);
+        assert!(sink
+            .lines(Stream::Stderr)
+            .iter()
+            .any(|line| line.contains("workspace root を読み取れません")));
+    }
 }
