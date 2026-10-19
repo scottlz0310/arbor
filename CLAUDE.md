@@ -160,9 +160,9 @@ Rust backend (Tauri commands)
 `repo_update` などの dsx コマンドは `runner` 経由でストリーミングする。Cleanup コマンドは
 `commands/cleanup.rs` で実装し、dsx を呼び出さない。
 
-### 認証の制約（Phase 1）
+### 認証の制約
 
-`fetch_all` は git2 のシステム git 認証情報ヘルパー / SSH エージェントに依存する。SSH / HTTPS 認証情報 UI は Phase 2 以降。HTTPS リポジトリで認証情報が未設定の場合、`remote.fetch(...)` のエラーが `Result::Err` としてフロントに返され、UI 側で例外を捕捉して Toast 表示される。
+git2 の fetch（`fetch_all` / `fetch_repositories`）は、`commands/fetch.rs` の `credentials_callback` で認証情報を取る。HTTPS は git の認証情報ヘルパー（`credential.helper`。Windows は Git Credential Manager）、SSH は ssh-agent を使う（git2 は、このコールバックを設定しないと、どちらも使わない）。認証情報を入力する UI は無い。認証情報が未設定、または誤っている場合、`remote.fetch(...)` のエラーが `Result::Err` としてフロントに返され、Toast とコンソールに表示される。
 
 ## 実装フェーズ
 

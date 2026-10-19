@@ -106,9 +106,8 @@ pub fn repo_status(config: &AppConfig, repo_path: &str) -> Result<RepoInfo, Stri
 // ─── fetch_all ───────────────────────────────────────────────────────────────
 
 /// Fetches all remotes for the given repository.
-/// Phase 1: uses git2 with no credential callback (relies on the system git
-/// credential helper / SSH agent already being authenticated).
-/// Full SSH / HTTPS credential UI is deferred to Phase 2.
+/// Authentication uses the git credential helper (HTTPS) and ssh-agent (SSH);
+/// there is no credential-entry UI (see `fetch::credentials_callback`).
 pub fn fetch_repo(repo_path: &str) -> Result<FetchResult, String> {
     let updated_refs = fetch_repository(repo_path, &|| false)?;
     Ok(FetchResult { updated_refs })

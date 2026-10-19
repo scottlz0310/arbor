@@ -20,6 +20,7 @@
   - [x] D2: ダッシュボード（サイドバー廃止、Status / Cleanup のタブ、Summary strip、All / Needs Action / Clean フィルタ、カードの Fetch とフォルダを開く操作）
   - [x] D3: dsx Tools タブ（sys update / `-n` / repo update / doctor / self-update の実行ボタン。Settings の dsx 管理を移す）
 - [x] IPC ラッパーの `ipc/` への分離と、カバレッジ対象外化（#309。`ipc/guard.rs` で薄さと登録を検査）
+- [x] 実機検証で見つけた、認証が要る remote の fetch の失敗を修正（#311。`credentials` コールバックを設定）
 - [ ] PR-E: 実機検証・ドキュメント更新
 
 ---
