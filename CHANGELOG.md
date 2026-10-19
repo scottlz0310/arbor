@@ -15,6 +15,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### fix
 
+- **フォルダを開く（`open_repo_folder`）の explorer ウィンドウが、Arbor の背面に開く問題を直した**（#317）。Windows は、前面の権限を持たないプロセスのウィンドウを背面に開く。explorer は、起動済みのシェルへ要求を渡して開くため、Arbor が前面の権限を持つうちに `AllowSetForegroundWindow` で許可を出すようにした。実機で、`Open` を押したあとに、フォルダのウィンドウが前面になることを確認した（Windows 以外は、変更なし）
+
 - **Rust のテストの一時ディレクトリが、並列で同じ名前になり、macOS の CI が不安定だった問題を直した**。名前を時刻（ナノ秒）だけで作っていたが、macOS は時計の分解能がマイクロ秒で、並列のテストが同じ名前を作って衝突していた（`commands/repo.rs` の `repo_info_for_path_*` が、`.git` の作成で失敗していた）。連番を足す共通の補助（`test_util::unique_suffix`）を作り、6 か所の `TempDir` / 一時パスに使う
 
 - **ディスク上に無い手動登録を、一覧・要対応・Fetch の対象から外した**（#314）。削除済みのクローンを指す手動登録が、Status に branch 不明のカードとして表示され、「要対応」と Header の件数に数えられ、`Fetch All` を失敗させていた。`effective_repos` で除くので、一覧・fetch・cleanup・Header・フォルダを開く操作に、まとめて効く。Settings の「無効なリポジトリを検出」からは、これまでどおり登録を外せる
