@@ -216,9 +216,14 @@ mod tests {
         let dir = TempDir::new("workspace-status");
         std::fs::create_dir_all(dir.path.join("alpha").join(".git")).unwrap();
         std::fs::create_dir_all(dir.path.join("beta").join(".git")).unwrap();
+        let elsewhere = TempDir::new("workspace-status-elsewhere");
         let mut config = AppConfig::default();
         config.workspace.root = Some(dir.path_str().to_string());
-        config.repositories = vec![make_repo("/elsewhere/gamma")];
+        config.repositories = vec![
+            make_repo(elsewhere.path_str()),
+            // ディスク上に無い手動登録は数えない。
+            make_repo("/nonexistent/__arbor_test_missing__"),
+        ];
 
         let status = workspace_status(&config);
 
@@ -245,10 +250,11 @@ mod tests {
             ),
         ];
 
+        let elsewhere = TempDir::new("workspace-status-manual");
         for (name, root, expected_root, has_error) in cases {
             let mut config = AppConfig::default();
             config.workspace.root = root;
-            config.repositories = vec![make_repo("/elsewhere/gamma")];
+            config.repositories = vec![make_repo(elsewhere.path_str())];
 
             let status = workspace_status(&config);
 

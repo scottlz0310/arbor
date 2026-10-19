@@ -73,7 +73,7 @@ pub fn find_managed<'a>(repos: &'a [EffectiveRepo], path: &str) -> Option<&'a Ef
     repos.iter().find(|r| path_key(&r.path) == key)
 }
 
-/// 一覧に出すリポジトリ。root 配下を自動検出し、root の外の手動登録を後ろに足す。
+/// 一覧に出すリポジトリ。root 配下を自動検出し、root の外の手動登録を後ろに足す（ディスク上に無いものは除く）。
 /// root 配下のリポジトリを手動登録していれば、その名前を使い、protected branches を追加する。
 ///
 /// 戻り値の 2 つ目は、root を読めなかったときのエラー（手動登録だけは返す）。
@@ -114,7 +114,9 @@ pub fn effective_repos(config: &AppConfig) -> (Vec<EffectiveRepo>, Option<String
 
     let discovered: Vec<String> = repos.iter().map(|r| path_key(&r.path)).collect();
     for manual in &config.repositories {
-        if discovered.contains(&path_key(&manual.path)) {
+        // ディスク上に無い手動登録（削除済みのクローンなど）は、一覧・fetch・cleanup の対象にしない。
+        // Settings の「無効なリポジトリを検出」から、登録を外せる。
+        if discovered.contains(&path_key(&manual.path)) || !Path::new(&manual.path).exists() {
             continue;
         }
         repos.push(EffectiveRepo {
@@ -280,21 +282,45 @@ mod tests {
     fn effective_repos_appends_manual_repositories_outside_the_root() {
         let root = TempDir::new("outside-root");
         root.make_repo("inside");
+        let elsewhere = TempDir::new("elsewhere");
+        let outside = elsewhere.make_repo("outside");
+        let outside = outside.to_string_lossy();
         let mut config = config_with_root(&root);
-        config.repositories = vec![manual("/elsewhere/outside", "outside", &["keep"])];
+        config.repositories = vec![manual(&outside, "outside", &["keep"])];
 
         let (repos, _) = effective_repos(&config);
 
         assert_eq!(names(&repos), ["inside", "outside"]);
         assert_eq!(repos[1].source, RepoSource::Manual);
-        assert_eq!(repos[1].path, "/elsewhere/outside");
+        assert_eq!(repos[1].path, outside);
         assert!(repos[1].protected_branches.contains(&"keep".to_string()));
         assert!(repos[1].protected_branches.contains(&"main".to_string()));
     }
 
     #[test]
+    fn effective_repos_skips_manual_repositories_missing_from_disk() {
+        let root = TempDir::new("missing-manual");
+        root.make_repo("inside");
+        let elsewhere = TempDir::new("missing-manual-else");
+        let kept = elsewhere.make_repo("kept");
+        let gone = elsewhere.path.join("gone");
+        let mut config = config_with_root(&root);
+        config.repositories = vec![
+            manual(&gone.to_string_lossy(), "gone", &[]),
+            manual(&kept.to_string_lossy(), "kept", &[]),
+        ];
+
+        let (repos, error) = effective_repos(&config);
+
+        assert!(error.is_none());
+        assert_eq!(names(&repos), ["inside", "kept"], "存在しない登録は対象外");
+    }
+
+    #[test]
     fn effective_repos_cases_without_a_usable_root() {
         let missing = TempDir::new("no-root").path.join("gone");
+        let manual_dir = TempDir::new("no-root-manual");
+        let manual_repo = manual_dir.make_repo("one");
         let cases = [
             ("root 未設定", None),
             ("自動検出を無効化（空文字列）", Some(String::new())),
@@ -307,7 +333,7 @@ mod tests {
         for (name, root) in cases {
             let mut config = AppConfig::default();
             config.workspace.root = root.clone();
-            config.repositories = vec![manual("/m/one", "one", &[])];
+            config.repositories = vec![manual(&manual_repo.to_string_lossy(), "one", &[])];
 
             let (repos, error) = effective_repos(&config);
 
