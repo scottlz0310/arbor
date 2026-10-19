@@ -5,6 +5,12 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### docs
+
+- **実機検証の結果をドキュメントに反映した**（#294 PR-E）。Windows の実機（28 リポジトリ）で、起動・旧形式の config の読み込み・`open_repo_folder`・`dsx doctor`・`sys update -n` と実行中のキャンセル・`Fetch All`・Settings の保存・Daily Refresh（Bitwarden 解錠済み）・Bitwarden 未解錠のときの表示と確認ダイアログを確認した。見つけた不具合は、認証が要る remote の fetch の失敗（#311）と、存在しない手動登録の扱い（#314）で、いずれも修正済み
+  - README: dsx の前提の版を 0.11.0+ に更新し、「使うときの注意」（Bitwarden の解錠・fetch の認証・管理対象）と、実装の段階の表を追加した
+  - CLAUDE.md: dsx の版、実装の段階の表、実機で動作を確かめるときの起動方法（`ARBOR_CONFIG_DIR`、`BW_SESSION`）を更新した
+
 ### fix
 
 - **Rust のテストの一時ディレクトリが、並列で同じ名前になり、macOS の CI が不安定だった問題を直した**。名前を時刻（ナノ秒）だけで作っていたが、macOS は時計の分解能がマイクロ秒で、並列のテストが同じ名前を作って衝突していた（`commands/repo.rs` の `repo_info_for_path_*` が、`.git` の作成で失敗していた）。連番を足す共通の補助（`test_util::unique_suffix`）を作り、6 か所の `TempDir` / 一時パスに使う

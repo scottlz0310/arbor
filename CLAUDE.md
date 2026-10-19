@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # git2 ビルドに cmake が必要 (Windows: MSVC Build Tools or Visual Studio)
 rustup update           # Rust 1.78+
 bun --version           # .bun-version に準拠（Node.js は不要）
-dsx --version           # dsx CLI v0.2.5+ が PATH に必要
+dsx --version           # dsx CLI が PATH に必要（Daily Refresh は v0.11.0+）
 ```
 
 ### 起動・ビルド
@@ -28,6 +28,15 @@ bun install             # フロントエンド依存インストール
 bun run tauri dev       # 開発サーバー起動 (Vite + Tauri ホットリロード)
 bun run tauri build     # リリースビルド (.msi / .dmg)
 ```
+
+実機で動作を確かめるときは、設定ファイルの置き場所を差し替えて、利用者の `config.toml` を触らないようにする（debug build のみ有効）。
+
+```bash
+# <dir>/arbor/config.toml を使う。config.toml は、あらかじめコピーしておく
+ARBOR_CONFIG_DIR=<dir> bun run tauri dev
+```
+
+Bitwarden の状態は、起動したシェルの `BW_SESSION` で決まる。解錠済みの状態を試すには、解錠したシェルから起動し、未解錠の状態を試すには、`env -u BW_SESSION` をつけて起動する。Daily Refresh や sys update などは、実際にシステムとリポジトリを更新するので、実行前に確認する。
 
 ### Rust チェック
 ```bash
@@ -166,9 +175,15 @@ git2 の fetch（`fetch_all` / `fetch_repositories`）は、`commands/fetch.rs` 
 
 ## 実装フェーズ
 
-| Phase | 内容 | 状態 |
-|-------|------|------|
-| 1 | シェル + dsx ラッパー + git2 可視化コア | スキャフォールド済み |
-| 2〜4 | 旧計画（GitHub 連携・Graph・AI Insight）は廃止。Issue #294 のピボット計画に置き換え | 進行中 |
+旧計画（GitHub 連携・Graph・AI Insight）は廃止し、Issue #294 のピボット計画に置き換えた。
+
+| 段階 | 内容 | 状態 |
+|------|------|------|
+| PR-A | 範囲外の機能の削除 | 完了 |
+| PR-B | 実行基盤（runner）と実行ログコンソール | 完了 |
+| PR-C | workspace のスキャンと一括 fetch | 完了 |
+| PR-D | ダッシュボード（Header・Summary・タブ・dsx Tools） | 完了 |
+| IPC | IPC ラッパーの `ipc/` への分離とカバレッジ対象外化 | 完了 |
+| PR-E | 実機検証とドキュメント | 完了 |
 
 詳細タスクは `tasks.md` を参照。
