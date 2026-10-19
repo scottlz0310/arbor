@@ -5,6 +5,12 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### feat
+
+- **設定ファイルの保存先を、全 OS で `~/.config/arbor/config.toml` に統一した**（#324 PR 1）。これまでは、OS 標準の設定ディレクトリ（Windows の `%APPDATA%\arbor`、macOS の `~/Library/Application Support/arbor`）だった。Windows の配布を MSIX に一本化するため。MSIX は `%APPDATA%` への書き込みをパッケージ領域へ仮想化し、アンインストールで消すが、ユーザープロファイル直下は仮想化されず、外部から編集でき、アンインストールでも残る（dsx の `~/.config/dsx` と同じ）
+  - **旧版の保存先にだけ設定があるときは、初回の読み込みで、新しい場所へコピーする**。旧ファイルは消さない（旧版へ戻しても、設定が残る）。新しい場所に設定があるときは、上書きしない。コピーに失敗したときは、握りつぶさずに、場所を含めてエラーにする
+  - `ARBOR_CONFIG_DIR`（debug build のみ）は、これまでどおり。隔離先を使うときは、旧版の保存先を見ない（実機の設定を持ち込まない）
+
 ### ci
 
 - **リリースの公開前の検証（`verify`）が、draft の Release を読めず、必ず失敗していた問題を直し、同じ種類の失敗を、リリースの前に見つけられる構造にした**。v0.3.0 のリリースで、`verify` が `contents: read` で動いたため、draft（書き込み権限のあるトークンにしか見えない）が `release not found` になり、成果物が揃っていても、公開に進めなかった（`finalize` は実行されず、draft のまま残った）。実行前のレビューでは、`GH_REPO` の指摘までしか、見つからなかった

@@ -78,12 +78,8 @@ Rust backend (Tauri commands)
     └── reqwest      — dsx の最新バージョン確認（GitHub Releases）
 ```
 
-設定ファイルの保存先:
-
-| OS | パス |
-|----|------|
-| Windows | `%APPDATA%\arbor\config.toml` |
-| macOS | `~/Library/Application Support/arbor/config.toml` |
+設定ファイルの保存先は、全 OS で `~/.config/arbor/config.toml`（Windows は `%USERPROFILE%\.config\arbor\config.toml`）。
+旧版の保存先（Windows の `%APPDATA%\arbor\config.toml`、macOS の `~/Library/Application Support/arbor/config.toml`）に設定があり、新しい場所に無いときは、初回の起動でコピーする（旧ファイルは消さない）。
 
 ## ライセンス
 

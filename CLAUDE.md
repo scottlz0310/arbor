@@ -115,7 +115,7 @@ Rust backend (Tauri commands)
 | `lib.rs` | Tauri Builder + 全コマンドの `invoke_handler` 登録 |
 | `ipc/` | `#[tauri::command]` の薄いラッパーだけ（`cleanup` / `config` / `dsx` / `fetch` / `remote_status` / `repo` / `runner`）。ロジックは持たず、`commands/` の関数を呼ぶ。カバレッジの対象外で、`ipc/guard.rs` が薄さと `lib.rs` への登録を検査する |
 | `models.rs` | `RepoInfo` / `BranchInfo` / `CommitNode` / `DsxOutput` 等の共有データ型 |
-| `config.rs` | `AppConfig` の読み書き。`dirs::config_dir()` で OS ごとのパスを解決。未設定の `workspace.root` は、あれば `~/src` で補う |
+| `config.rs` | `AppConfig` の読み書き。保存先は全 OS で `~/.config/arbor/config.toml`（旧版の保存先からは初回にコピー）。未設定の `workspace.root` は、あれば `~/src` で補う |
 | `workspace.rs` | 管理対象リポジトリの決定。`workspace.root` 直下（深さ 1。dsx の `repo.root` と同じ規則）の自動検出と、手動登録（ディスク上に無いものは除く）の和集合（`effective_repos`）。protected branches は、全体の既定（main / master / develop / dev）に、手動登録の設定を追加して解決する |
 | `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories` は実効リポジトリを最大 8 並列でスキャン、`get_repo_status`）、`fetch_all`、`open_repo_folder`（管理対象のリポジトリのフォルダだけを OS のファイルマネージャで開く） |
 | `commands/config_cmd.rs` | config.toml CRUD（手動登録の追加・削除、`update_settings`、存在しない手動登録の検出）と `get_workspace_status`（Header の root 表示用） |
@@ -164,9 +164,8 @@ Rust backend (Tauri commands)
 
 ### 設定ファイル
 
-- **実行時設定**: `dirs::config_dir()/arbor/config.toml`
-  - Windows: `%APPDATA%\arbor\config.toml`
-  - macOS: `~/Library/Application Support/arbor/config.toml`
+- **実行時設定**: 全 OS で `~/.config/arbor/config.toml`（dsx の `~/.config/dsx` と同じ。Windows は `%USERPROFILE%\.config\arbor\config.toml`）。MSIX は `%APPDATA%` への書き込みをパッケージ領域へ仮想化し、アンインストールで消すため、ユーザープロファイル直下に置く（#324）。
+  - 旧版の保存先（`dirs::config_dir()/arbor/config.toml`。Windows は `%APPDATA%\arbor`、macOS は `~/Library/Application Support/arbor`）にだけ設定があるときは、初回の読み込みで新しい場所へコピーする（旧ファイルは消さない）。
 - **リポジトリの範囲**: `workspace.root`（既定 `~/src`。空文字列で自動検出を無効化）の直下を自動検出し、`repositories`（手動登録）を足す。手動登録は root の外のリポジトリの追加と、名前・protected branches の追加に使う。
 - **protected branches**: `settings.protected_branches`（既定 main / master / develop / dev）に、手動登録の `protected_branches` を追加して Cleanup に適用する
 
