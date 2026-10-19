@@ -20,7 +20,7 @@
 | Rust / rustup | 1.78+ | バックエンドビルド |
 | Bun | `.bun-version` に準拠 | パッケージ管理・フロントエンドツールチェーン実行 |
 | cmake | 最新安定版 | git2 クレートのビルドに必要 |
-| [dsx CLI](https://github.com/scottlz0310/dsx) | 0.2.5+ | git 一括操作 |
+| [dsx CLI](https://github.com/scottlz0310/dsx) | 0.11.0+ | Daily Refresh（`dsx run --root`）に必要 |
 
 > **Windows**: MSVC Build Tools または Visual Studio が必要
 >
@@ -59,6 +59,12 @@ cargo check  --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml
 cargo test   --manifest-path src-tauri/Cargo.toml
 ```
+
+## 使うときの注意
+
+- **Bitwarden**: Arbor からは、Bitwarden を解錠できない（パスワードを入力する画面が無い）。Daily Refresh で Bitwarden の環境変数も使うときは、ターミナルで解錠して `BW_SESSION` を設定し、そのターミナルから Arbor を起動する。未解錠のまま Daily Refresh を押すと、確認ダイアログが出る（そのまま実行すると、解錠が必要な処理は失敗するか、省略される）。
+- **fetch の認証**: Fetch / Fetch All は、git の認証情報ヘルパー（HTTPS。Windows は Git Credential Manager）と ssh-agent を使う。認証情報を入力する画面は無いので、先に `git fetch` で認証を通しておく。
+- **管理対象**: `workspace.root` 直下の git リポジトリが、自動で一覧に入る。手動登録のうち、ディスク上に無いものは一覧・Fetch の対象から外れる（Settings の「無効なリポジトリを検出」から、登録を外せる）。
 
 ## アーキテクチャ
 
