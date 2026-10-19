@@ -1,0 +1,42 @@
+name: Prepare Release
+
+# リリース準備 PR（`chore(release): vX.Y.Z`）を作る。手動起動だけで動く。
+# release-automate が、Bot（GitHub App）名義で次をまとめた PR を出す。
+#   - package.json、src-tauri/tauri.conf.json、src-tauri/Cargo.toml、src-tauri/Cargo.lock の版
+#   - CHANGELOG.md の [Unreleased] を、リリースの版の見出しに確定
+# この PR を squash マージすると、release.yml が動く（タグ、draft の Release、3 OS のビルド、検証、公開）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: "リリースする安定版（例: 0.3.0）。MAJOR.MINOR.PATCH の形式のみ"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      # release-automate は rc などの版も通すが、updater の latest.json は、安定版だけを前提にしているため、ここで止める。
+      - name: 安定版の形式を確認
+        env:
+          TARGET_VERSION: ${{ inputs.target_version }}
+        run: |
+          if ! [[ "$TARGET_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::target_version は MAJOR.MINOR.PATCH の形式で指定してください（先頭に v は付けない）: $TARGET_VERSION"
+            exit 1
+          fi
+
+  prepare:
+    needs: validate
+    uses: scottlz0310/release-automate/.github/workflows/reusable-prepare-release.yml@3b5092d9f1a7ed9f29fb33f6e598d1e8534bb8cf # v2.1.0
+    secrets:
+      RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+    with:
+      target_version: ${{ inputs.target_version }}
+      bump_strategy: tauri

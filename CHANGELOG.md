@@ -25,6 +25,11 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### ci
 
+- **リリースを release-automate へ移行した**。リリース準備 PR の作成から、タグ・draft の Release・ビルド・検証・公開までを、手作業なしで行う。これまでの `release.yml`（タグの push で draft を作ってビルドし、公開は手作業）では、v0.2.1 が、成果物が揃ったまま、3 か月、未公開の draft として残っていた
+  - `prepare-release.yml`（新規）: 手動起動で、版（`MAJOR.MINOR.PATCH`）を指定すると、`package.json`・`tauri.conf.json`・`Cargo.toml`・`Cargo.lock` の版の更新と、`CHANGELOG.md` の `[Unreleased]` の確定を含むリリース準備 PR（`chore(release): vX.Y.Z`）を、Bot（GitHub App）名義で作る
+  - `release.yml`（作り替え）: リリース準備 PR の squash マージで動く。release-automate が draft の Release とタグを作り、3 OS のビルドと成果物の添付、updater の `latest.json` の生成を行い、**Release から成果物を取り直して照合（必要な成果物の有無、`latest.json` の版とタグの一致、URL が Release の成果物を指すこと）してから、公開する**。照合に失敗すると、draft のまま残る。タグは `GITHUB_TOKEN` で作られ、タグの push を起点にする別のワークフローを起動しないため、ビルドは、タグの push ではなく、この流れから続ける
+  - 署名（`TAURI_SIGNING_*`）と、成果物の組（msi / setup.exe / dmg / AppImage / deb / rpm と updater の署名）は、これまでと同じ
+
 - **IPC ラッパーを `src-tauri/src/ipc/` に分け、カバレッジ対象から外した**（#309）。`#[tauri::command]` の 24 個の関数を、ロジックを持たない薄いラッパーとして `ipc/` に集め、ロジックは `commands/` のテストできる関数へ切り出した（`DsxTask`・`modify_config`・`register_repository` / `apply_settings` / `build_preview` / `fetch_all_repositories` など）。コマンド名・引数・戻り値は変えていない
   - `ipc/` は CI の `cargo llvm-cov --ignore-filename-regex` と `codecov.yml` の `ignore` で対象外にする。ラッパーは `tauri::State` を要し、Windows では `tauri::test` のテスト実行ファイルが起動しないため、単体テストできない
   - `ipc/guard.rs` のテスト（`syn` で構文木を検査）が、除外の正当性を保つ。`ipc/` には `use` / `mod` と `#[tauri::command]` の関数だけを置け、本文は 4 文以内で分岐・繰り返しを含められない。コマンドと `generate_handler!` の登録が過不足なく一致し、除外の設定が `ipc/` を指していることも検査する。違反すると `cargo test` が失敗する
