@@ -2,7 +2,10 @@ name: Release
 
 # リリース準備 PR（prepare-release.yml が作る `chore(release): vX.Y.Z`）を squash マージすると動く。
 # release-automate が draft の Release とタグを作り、続けて次の順に進む。
-#   draft → 3 OS のビルドと成果物の添付 → updater の latest.json → Release から再取得して照合 → Release の公開
+#   draft → macOS / Linux のビルドと成果物の添付、Windows の MSIX（署名）の作成と添付 → updater の latest.json
+#         → Release から再取得して照合 → Release の公開
+# Windows は、msi / NSIS ではなく、自己署名の MSIX + .appinstaller + install.ps1 で配布する（#324）。
+# MSIX の署名は、Environment `msix-signing`（main からのデプロイだけ）のシークレットで行う（package-msix.yml）。
 # リリース準備 PR 以外の main への push では、draft ジョブが skip され、後続のジョブも動かない。
 #
 # release-automate のタグは GITHUB_TOKEN で作られ、`push: tags` の別のワークフローを起動しない。
@@ -35,7 +38,7 @@ jobs:
     with:
       draft: true
 
-  # ── 2. クロスプラットフォームビルド + 成果物を draft へ添付 ────────────────────
+  # ── 2. macOS / Linux のビルド + 成果物を draft へ添付（Windows は、次の msix） ───────────
   build-tauri:
     needs: draft
     if: needs.draft.outputs.release_state == 'draft'
@@ -45,9 +48,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
-            rust-target: x86_64-pc-windows-msvc
-            tauri-args: ''
           - platform: macos-latest
             rust-target: aarch64-apple-darwin
             tauri-args: '--target aarch64-apple-darwin'
@@ -127,7 +127,53 @@ jobs:
           args: ${{ matrix.tauri-args }}
           includeUpdaterJson: false
 
-  # ── 3. 全プラットフォームの署名を集約して latest.json を生成・アップロード ──
+  # ── 3. Windows の MSIX（署名済み）を作る ─────────────────────────────────────
+  # package-msix.yml（workflow_call）の、署名のジョブ（Environment msix-signing）が動く。呼び出し元の ref
+  # （refs/heads/main）で、Environment のデプロイの制限が評価される。成果物は、artifact `arbor-msix` に入る。
+  msix:
+    needs: draft
+    if: needs.draft.outputs.release_state == 'draft'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/package-msix.yml
+    with:
+      ref: ${{ needs.draft.outputs.target_sha }}
+      tag: ${{ needs.draft.outputs.tag_name }}
+
+  # ── 4. MSIX 一式を draft へ添付する ──────────────────────────────────────────
+  attach-msix:
+    needs: [draft, msix]
+    if: needs.draft.outputs.release_state == 'draft'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download MSIX assets
+        uses: actions/download-artifact@v8
+        with:
+          name: arbor-msix
+          path: msix
+
+      # 想定外のファイルを、draft に載せない。決まった 5 つだけを添付する。
+      - name: Attach MSIX assets to draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.draft.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          files=()
+          for name in arbor_x64.msix arbor.appinstaller arbor.cer install.ps1 checksums-msix.txt; do
+            if [[ ! -s "msix/$name" ]]; then
+              echo "::error::MSIX の成果物がありません（または空です）: $name" >&2
+              ls -la msix >&2
+              exit 1
+            fi
+            files+=("msix/$name")
+          done
+          gh release upload "$TAG" "${files[@]}" --clobber
+
+  # ── 5. 全プラットフォームの署名を集約して latest.json を生成・アップロード ──
+  # updater の対象は、macOS と Linux だけ（Windows は、MSIX の .appinstaller で更新する）。
   publish-updater-manifest:
     needs: [draft, build-tauri]
     if: needs.draft.outputs.release_state == 'draft'
@@ -169,23 +215,18 @@ jobs:
             echo "${matched[0]}"
           }
 
-          WIN_SIG_PATH=$(assert_one_sig "*.msi.zip.sig")
           MAC_SIG_PATH=$(assert_one_sig "*aarch64*.app.tar.gz.sig")
           LIN_SIG_PATH=$(assert_one_sig "*.AppImage.tar.gz.sig")
 
-          WIN_BASE=$(basename "$WIN_SIG_PATH" .sig)
           MAC_BASE=$(basename "$MAC_SIG_PATH" .sig)
           LIN_BASE=$(basename "$LIN_SIG_PATH" .sig)
 
-          WIN_SIG=$(cat "$WIN_SIG_PATH")
           MAC_SIG=$(cat "$MAC_SIG_PATH")
           LIN_SIG=$(cat "$LIN_SIG_PATH")
 
           jq -n \
             --arg version "$VERSION" \
             --arg pub_date "$PUB_DATE" \
-            --arg win_url "${BASE_URL}/${WIN_BASE}" \
-            --arg win_sig "$WIN_SIG" \
             --arg mac_url "${BASE_URL}/${MAC_BASE}" \
             --arg mac_sig "$MAC_SIG" \
             --arg lin_url "${BASE_URL}/${LIN_BASE}" \
@@ -195,7 +236,6 @@ jobs:
               notes: "",
               pub_date: $pub_date,
               platforms: {
-                "windows-x86_64": { url: $win_url, signature: $win_sig },
                 "darwin-aarch64": { url: $mac_url, signature: $mac_sig },
                 "linux-x86_64":  { url: $lin_url, signature: $lin_sig }
               }
@@ -211,11 +251,11 @@ jobs:
           TAG="${{ needs.draft.outputs.tag_name }}"
           gh release upload "$TAG" latest.json --clobber
 
-  # ── 4. Release から成果物を再取得して照合する（公開の前の検証） ───────────────
+  # ── 6. Release から成果物を再取得して照合する（公開の前の検証） ───────────────
   # 検証の実装は verify-release.yml（手動でも実行できる）。失敗すると、finalize は実行されず、draft のまま残る。
   # draft の Release は、書き込み権限のあるトークンにしか見えないため、呼び出し元にも write が要る。
   verify:
-    needs: [draft, publish-updater-manifest]
+    needs: [draft, publish-updater-manifest, attach-msix]
     if: needs.draft.outputs.release_state == 'draft'
     permissions:
       contents: write
@@ -223,7 +263,7 @@ jobs:
     with:
       tag: ${{ needs.draft.outputs.tag_name }}
 
-  # ── 5. Release の公開（release-automate） ──────────────────────────────────
+  # ── 7. Release の公開（release-automate） ──────────────────────────────────
   finalize:
     needs: [draft, verify]
     if: needs.draft.outputs.release_state == 'draft' && needs.verify.result == 'success'

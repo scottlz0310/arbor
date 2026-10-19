@@ -4,7 +4,10 @@ name: Verify Release
 #   - release.yml から、公開（finalize）の前に呼ばれる（workflow_call）。
 #   - 手動でも実行できる（workflow_dispatch）。公開の前に、draft を確認したいとき、また、検証の実装そのものを、
 #     実際の draft で試したいときに使う。タグを指定するだけで、どの draft にも実行できる。
-# 検証の中身は、scripts/verify-release-assets.sh（手元でも、同じものを実行できる）。
+# 検証の中身:
+#   - verify（ubuntu）: scripts/verify-release-assets.sh（手元でも、同じものを実行できる）。成果物の組、latest.json、
+#     MSIX の整合（checksum・.appinstaller の版と URI）。
+#   - verify-msix（windows）: scripts/Test-ReleaseMsix.ps1。MSIX の署名・Identity・Publisher。
 
 on:
   workflow_call:
@@ -40,3 +43,31 @@ jobs:
 
       - name: draft の成果物を検証
         run: bash scripts/verify-release-assets.sh "$TAG"
+
+  # MSIX の署名・Identity・Publisher を検証する（Windows の PowerShell の、Get-AuthenticodeSignature を使う）。
+  # 成果物の組と、checksum・.appinstaller の整合は、上の verify（verify-release-assets.sh）が検査する。
+  verify-msix:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: draft から MSIX と公開証明書を取得
+        shell: pwsh
+        run: |
+          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "タグを v1.2.3 の形で指定してください: '$($env:TAG)'" }
+          $dir = Join-Path $env:RUNNER_TEMP "msix"
+          New-Item -ItemType Directory $dir | Out-Null
+          gh release download $env:TAG --pattern arbor_x64.msix --pattern arbor.cer --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "draft の MSIX を取得できません: $($env:TAG)（draft は、書き込み権限のあるトークンにしか見えません）" }
+
+      - name: MSIX を検証
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          ./scripts/Test-ReleaseMsix.ps1 -Dir "$env:RUNNER_TEMP\msix" -Version $version
