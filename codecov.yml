@@ -16,7 +16,10 @@ flag_management:
 flags:
   frontend:
     paths:
+      # bunfig.toml と coverage-manifest.test.ts がカバレッジの対象にしている lib / components / views に合わせる
       - src/lib/
+      - src/components/
+      - src/views/
     carryforward: true
   rust:
     paths:

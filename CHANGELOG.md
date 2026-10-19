@@ -5,6 +5,10 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### ci
+
+- Codecov の frontend フラグの対象を `src/lib/` のみから `src/lib/`・`src/components/`・`src/views/` に広げた。`bunfig.toml` と `coverage-manifest.test.ts` は、すでに lib / components / views を対象にしていたため、設定のずれを直した（コンポーネントとビューのテストが Codecov の patch に反映されず、`codecov/patch` が Rust のコマンド部分だけで判定されていた）
+
 ### feat
 
 - **dsx Tools タブ**（#294 PR-D3）。Repository Status / Branch Cleanup に並ぶタブとして、dsx の管理を集約した。これで PR-D（Refresher Dashboard）は完了
