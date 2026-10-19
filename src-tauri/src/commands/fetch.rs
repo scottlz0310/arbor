@@ -4,13 +4,12 @@
 //! dsx の `repo update` と同じ枠を使うため、同時に走るのは 1 件だけで、`cancel_run` で中断できる。
 
 use super::runner::{JobContext, Runner, RunnerState, Stream};
-use crate::config::load_config;
+use crate::config::AppConfig;
 use crate::models::{FetchFailure, FetchSummary};
 use crate::workspace::{effective_repos, EffectiveRepo};
 use git2::Repository;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
-use tauri::State;
 
 /// 同時に fetch するリポジトリ数の上限。dsx の `repo update --jobs 4` と合わせる。
 const MAX_FETCH_JOBS: usize = 4;
@@ -178,10 +177,11 @@ fn run_fetch(
 
 /// 管理対象（workspace root 配下の自動検出 + 手動登録）の全リポジトリを fetch する。
 /// 進捗は `process_*` イベントで流れ、`cancel_run` で中断できる。
-#[tauri::command]
-pub async fn fetch_repositories(state: State<'_, RunnerState>) -> Result<FetchSummary, String> {
-    let config = load_config()?;
-    let (repos, root_error) = effective_repos(&config);
+pub async fn fetch_all_repositories(
+    state: &RunnerState,
+    config: &AppConfig,
+) -> Result<FetchSummary, String> {
+    let (repos, root_error) = effective_repos(config);
     let runner = state.runner();
     tauri::async_runtime::spawn_blocking(move || {
         run_fetch(&runner, &repos, root_error.as_deref(), &fetch_repository)
@@ -565,5 +565,42 @@ mod tests {
         let result = fetch_repository(&target.path_str(), &|| true);
 
         assert!(result.is_err(), "転送を打ち切ってエラーにする: {result:?}");
+    }
+
+    // ── fetch_all_repositories（設定を受ける入口）──────────────────────────────
+
+    #[test]
+    fn fetch_all_repositories_fetches_the_managed_repositories_and_summarizes() {
+        let (_source, _source_repo, target) = source_and_target();
+        let mut config = AppConfig::default();
+        config.workspace.root = Some(target.path_str());
+        let sink = Arc::new(RecordingSink::default());
+        let state = RunnerState::with_runner(runner(&sink));
+
+        let summary =
+            tauri::async_runtime::block_on(fetch_all_repositories(&state, &config)).expect("fetch");
+
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.succeeded, 1);
+        assert!(summary.failed.is_empty());
+        assert!(!summary.cancelled);
+    }
+
+    #[test]
+    fn fetch_all_repositories_reports_a_root_that_cannot_be_read() {
+        let missing = TempDir::new("fetch-missing-root").path.join("gone");
+        let mut config = AppConfig::default();
+        config.workspace.root = Some(missing.to_string_lossy().into_owned());
+        let sink = Arc::new(RecordingSink::default());
+        let state = RunnerState::with_runner(runner(&sink));
+
+        let summary =
+            tauri::async_runtime::block_on(fetch_all_repositories(&state, &config)).expect("fetch");
+
+        assert_eq!(summary.total, 0);
+        assert!(sink
+            .lines(Stream::Stderr)
+            .iter()
+            .any(|line| line.contains("workspace root を読み取れません")));
     }
 }

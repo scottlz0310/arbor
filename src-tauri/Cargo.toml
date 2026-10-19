@@ -32,3 +32,7 @@ windows-sys    = { version = "0.61.2", features = [
 
 [target.'cfg(unix)'.dependencies]
 libc           = "0.2.189"
+
+[dev-dependencies]
+# ipc/ のコマンドにロジックが紛れ込んでいないことを、ソースの構文木で検査するため（src/ipc/guard.rs）
+syn            = { version = "2", features = ["full", "visit"] }

@@ -627,15 +627,15 @@ impl RunnerState {
         Self(Arc::new(Runner::new(Arc::new(SystemLauncher), sink)))
     }
 
+    /// テストで、起動とイベント送信を差し替えた Runner を使うため。
+    #[cfg(test)]
+    pub fn with_runner(runner: Arc<Runner>) -> Self {
+        Self(runner)
+    }
+
     pub fn runner(&self) -> Arc<Runner> {
         Arc::clone(&self.0)
     }
-}
-
-/// 実行中のコマンドをキャンセルする。`run_id` は `process_started` イベントで通知される。
-#[tauri::command]
-pub fn cancel_run(state: tauri::State<'_, RunnerState>, run_id: u64) -> Result<(), String> {
-    state.0.cancel(run_id)
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

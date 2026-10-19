@@ -86,9 +86,12 @@ Rust backend (Tauri commands)
 
 ### Rust バックエンド (`src-tauri/src/`)
 
+ロジックは `commands/` などに置き、Tauri のコマンド（フロントエンドからの入口）は `ipc/` に置く。`commands/` の関数は、`ipc/` の同名のコマンドから呼ばれる（コマンド名は、フロントエンドの `invoke` と同じ）。
+
 | ファイル | 責務 |
 |---------|------|
 | `lib.rs` | Tauri Builder + 全コマンドの `invoke_handler` 登録 |
+| `ipc/` | `#[tauri::command]` の薄いラッパーだけ（`cleanup` / `config` / `dsx` / `fetch` / `repo` / `runner`）。ロジックは持たず、`commands/` の関数を呼ぶ。カバレッジの対象外で、`ipc/guard.rs` が薄さと `lib.rs` への登録を検査する |
 | `models.rs` | `RepoInfo` / `BranchInfo` / `CommitNode` / `DsxOutput` 等の共有データ型 |
 | `config.rs` | `AppConfig` の読み書き。`dirs::config_dir()` で OS ごとのパスを解決。未設定の `workspace.root` は、あれば `~/src` で補う |
 | `workspace.rs` | 管理対象リポジトリの決定。`workspace.root` 直下（深さ 1。dsx の `repo.root` と同じ規則）の自動検出と、手動登録の和集合（`effective_repos`）。protected branches は、全体の既定（main / master / develop / dev）に、手動登録の設定を追加して解決する |
@@ -98,7 +101,17 @@ Rust backend (Tauri commands)
 | `commands/fetch.rs` | 管理対象リポジトリの一括 fetch（`fetch_repositories`）。git2 で最大 4 並列に fetch し、1 件ごとの結果を runner の job としてコンソールへ流す。`cancel_run` で転送中の fetch も中断できる |
 | `commands/runner.rs` | 外部コマンドの実行基盤（子プロセスを持たない処理は `run_job` で同じ枠に載せる）。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
 
-新しい Tauri コマンドを追加したら `lib.rs` の `invoke_handler!` に登録する。
+### IPC ラッパーとカバレッジ
+
+`#[tauri::command]` の関数は `src-tauri/src/ipc/` だけに置く。関数は、状態や設定を取り出し、`commands/` 側のテスト済みの関数を呼んで、結果を返すだけにする（分岐・繰り返し・変換などのロジックは `commands/` 側に置く）。
+
+- `ipc/` は、カバレッジの対象から外している（CI の `cargo llvm-cov --ignore-filename-regex` と `codecov.yml` の `ignore`）。ラッパーは `tauri::State` を要し、Windows では `tauri::test` のテスト実行ファイルが起動しないため、単体テストできない。ロジックを持たないので、除外しても測るべきものは減らない。
+- 除外が正当であり続けるように、`ipc/guard.rs` のテストが次を検査する。違反すると `cargo test` が失敗する。
+  - `ipc/` に置けるのは、`use` / `mod` と `#[tauri::command]` の関数だけ。
+  - コマンドの本文は 4 文以内で、`if` / `match` / `for` / `while` / `loop` / `&&` / `||` / `let ... else` を含まない（含むロジックは `commands/` へ切り出す）。
+  - `ipc/` のコマンドと、`lib.rs` の `generate_handler!` の登録が、過不足なく一致する。
+  - 除外の設定が `ipc/` を指している。
+- 新しいコマンドを足すときは、ロジックを `commands/` に書いてテストし、`ipc/` に呼び出すだけの関数を足して、`lib.rs` に登録する。
 
 ### フロントエンド (`src/`)
 

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
@@ -97,25 +97,45 @@ fn apply_defaults(config: &mut AppConfig, default_root: Option<PathBuf>) {
     }
 }
 
-pub fn load_config() -> Result<AppConfig, String> {
-    let path = config_path()?;
+/// `path` の設定を読み込む。無ければ既定値。`default_root` は、workspace root が未設定のときの既定。
+fn load_from(path: &Path, default_root: Option<PathBuf>) -> Result<AppConfig, String> {
     let mut config = if path.exists() {
-        let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         toml::from_str(&content).map_err(|e| e.to_string())?
     } else {
         AppConfig::default()
     };
-    apply_defaults(&mut config, default_workspace_root());
+    apply_defaults(&mut config, default_root);
     Ok(config)
 }
 
-pub fn save_config(config: &AppConfig) -> Result<(), String> {
-    let path = config_path()?;
+fn save_to(path: &Path, config: &AppConfig) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let content = toml::to_string_pretty(config).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+    std::fs::write(path, content).map_err(|e| e.to_string())
+}
+
+pub fn load_config() -> Result<AppConfig, String> {
+    load_from(&config_path()?, default_workspace_root())
+}
+
+/// 設定を読み込み、`change` で変更して保存し、変更後の設定を返す。`change` が失敗したら保存しない。
+pub fn modify_config(
+    change: impl FnOnce(AppConfig) -> Result<AppConfig, String>,
+) -> Result<AppConfig, String> {
+    modify_at(&config_path()?, default_workspace_root(), change)
+}
+
+fn modify_at(
+    path: &Path,
+    default_root: Option<PathBuf>,
+    change: impl FnOnce(AppConfig) -> Result<AppConfig, String>,
+) -> Result<AppConfig, String> {
+    let updated = change(load_from(path, default_root)?)?;
+    save_to(path, &updated)?;
+    Ok(updated)
 }
 
 #[cfg(test)]
@@ -292,5 +312,155 @@ protected_branches = ["release"]
         assert_eq!(cfg.repositories.len(), 1);
         assert_eq!(cfg.repositories[0].name, "arbor");
         assert_eq!(cfg.repositories[0].protected_branches, vec!["release"]);
+    }
+
+    // ── load_from / save_to / modify_at ───────────────────────────────────────
+
+    fn temp_config_path(prefix: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("arbor-{prefix}-{}-{unique}", std::process::id()))
+            .join("arbor")
+            .join("config.toml")
+    }
+
+    fn cleanup(path: &Path) {
+        // config.toml / arbor / 一時ディレクトリの順にたどる
+        if let Some(root) = path.parent().and_then(Path::parent) {
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn load_from_a_missing_file_gives_defaults_with_the_default_root() {
+        let path = temp_config_path("load-missing");
+
+        let config = load_from(&path, Some(PathBuf::from("home-src"))).expect("load");
+
+        assert_eq!(config.workspace.root.as_deref(), Some("home-src"));
+        assert_eq!(config.settings.stale_threshold_days, 14);
+        assert!(config.repositories.is_empty());
+    }
+
+    #[test]
+    fn save_to_creates_the_directory_and_round_trips() {
+        let path = temp_config_path("save");
+        let mut config = AppConfig::default();
+        config.settings.stale_threshold_days = 42;
+        config.workspace.root = Some("/work".to_string());
+
+        save_to(&path, &config).expect("save");
+        let loaded = load_from(&path, None).expect("load");
+
+        assert_eq!(loaded.settings.stale_threshold_days, 42);
+        assert_eq!(loaded.workspace.root.as_deref(), Some("/work"));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn load_from_reports_a_broken_file() {
+        let path = temp_config_path("load-broken");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "this is = = not toml").unwrap();
+
+        assert!(load_from(&path, None).is_err());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn modify_at_saves_the_changed_config_and_returns_it() {
+        let path = temp_config_path("modify");
+
+        let updated = modify_at(&path, None, |mut config| {
+            config.settings.stale_threshold_days = 7;
+            Ok(config)
+        })
+        .expect("modify");
+
+        assert_eq!(updated.settings.stale_threshold_days, 7);
+        assert_eq!(
+            load_from(&path, None)
+                .unwrap()
+                .settings
+                .stale_threshold_days,
+            7
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn modify_at_does_not_save_when_the_change_fails() {
+        let path = temp_config_path("modify-fail");
+
+        let err = modify_at(&path, None, |_| Err("rejected".to_string())).unwrap_err();
+
+        assert_eq!(err, "rejected");
+        assert!(!path.exists(), "失敗した変更は保存しない");
+        cleanup(&path);
+    }
+
+    // ── load_config / modify_config（設定ファイルの場所を解決する入口）──────────────
+
+    /// `ARBOR_CONFIG_DIR`（debug build のみ有効な、実機テスト用の隔離先）を一時的に差し替える。
+    /// この環境変数を読むのは `load_config` / `modify_config` だけで、他のテストは読まない。
+    #[cfg(debug_assertions)]
+    struct IsolatedConfigDir {
+        base: PathBuf,
+    }
+
+    #[cfg(debug_assertions)]
+    impl IsolatedConfigDir {
+        fn new(prefix: &str) -> Self {
+            let path = temp_config_path(prefix);
+            let base = path
+                .parent()
+                .and_then(Path::parent)
+                .expect("temp path has two parents")
+                .to_path_buf();
+            std::fs::create_dir_all(&base).expect("create isolated dir");
+            std::env::set_var("ARBOR_CONFIG_DIR", &base);
+            Self { base }
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    impl Drop for IsolatedConfigDir {
+        fn drop(&mut self) {
+            std::env::remove_var("ARBOR_CONFIG_DIR");
+            let _ = std::fs::remove_dir_all(&self.base);
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn load_config_and_modify_config_use_the_isolated_config_dir() {
+        let isolated = IsolatedConfigDir::new("isolated");
+
+        // ファイルが無ければ既定値
+        let initial = load_config().expect("load");
+        assert_eq!(initial.settings.stale_threshold_days, 14);
+
+        // 変更は、隔離先の config.toml に保存される
+        let updated = modify_config(|mut config| {
+            config.settings.stale_threshold_days = 21;
+            Ok(config)
+        })
+        .expect("modify");
+        assert_eq!(updated.settings.stale_threshold_days, 21);
+        assert!(isolated.base.join("arbor").join("config.toml").exists());
+        assert_eq!(
+            load_config().expect("reload").settings.stale_threshold_days,
+            21
+        );
+
+        // 失敗した変更は、保存済みの設定を変えない
+        assert!(modify_config(|_| Err("rejected".to_string())).is_err());
+        assert_eq!(
+            load_config().expect("reload").settings.stale_threshold_days,
+            21
+        );
     }
 }

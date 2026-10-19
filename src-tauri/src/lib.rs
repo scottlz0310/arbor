@@ -1,22 +1,11 @@
 mod commands;
 mod config;
+mod ipc;
 mod models;
 mod workspace;
 
-use commands::{
-    cleanup::{cleanup_execute, cleanup_preview},
-    config_cmd::{
-        add_repository, get_config, get_workspace_status, remove_repository,
-        scan_missing_repositories, update_settings,
-    },
-    dsx::{
-        bitwarden_status, daily_refresh, dsx_check, dsx_doctor, dsx_latest_version,
-        dsx_self_update, env_inject, repo_update, sys_update, sys_update_dry_run,
-    },
-    fetch::fetch_repositories,
-    repo::{fetch_all, get_repo_status, list_repositories, open_repo_folder},
-    runner::{cancel_run, RunnerState, TauriSink},
-};
+use commands::runner::{RunnerState, TauriSink};
+use ipc::{cleanup, config as settings, dsx, fetch, repo, runner};
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -32,33 +21,33 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // Config
-            get_config,
-            add_repository,
-            remove_repository,
-            scan_missing_repositories,
-            update_settings,
-            get_workspace_status,
+            settings::get_config,
+            settings::add_repository,
+            settings::remove_repository,
+            settings::scan_missing_repositories,
+            settings::update_settings,
+            settings::get_workspace_status,
             // Repo / git2
-            list_repositories,
-            get_repo_status,
-            fetch_all,
-            open_repo_folder,
-            fetch_repositories,
+            repo::list_repositories,
+            repo::get_repo_status,
+            repo::fetch_all,
+            repo::open_repo_folder,
+            fetch::fetch_repositories,
             // Cleanup Wizard (Issue #186)
-            cleanup_preview,
-            cleanup_execute,
+            cleanup::cleanup_preview,
+            cleanup::cleanup_execute,
             // dsx
-            dsx_check,
-            dsx_latest_version,
-            repo_update,
-            daily_refresh,
-            bitwarden_status,
-            env_inject,
-            sys_update,
-            sys_update_dry_run,
-            dsx_doctor,
-            dsx_self_update,
-            cancel_run,
+            dsx::dsx_check,
+            dsx::dsx_latest_version,
+            dsx::repo_update,
+            dsx::daily_refresh,
+            dsx::bitwarden_status,
+            dsx::env_inject,
+            dsx::sys_update,
+            dsx::sys_update_dry_run,
+            dsx::dsx_doctor,
+            dsx::dsx_self_update,
+            runner::cancel_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Arbor");
