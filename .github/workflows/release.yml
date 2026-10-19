@@ -18,6 +18,11 @@ on:
 permissions:
   contents: read
 
+# checkout のないジョブ（verify）でも、gh が対象のリポジトリを解決できるようにする。
+# GITHUB_REPOSITORY だけでは、gh の対象の指定にならない（git のリポジトリが無いと、解決できずに失敗する）。
+env:
+  GH_REPO: ${{ github.repository }}
+
 jobs:
   # ── 1. draft の Release とタグを作る（release-automate） ─────────────────────
   draft:
