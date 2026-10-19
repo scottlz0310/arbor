@@ -37,8 +37,8 @@
 
 Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
 
-- [ ] PR 1: 設定の保存先を、全 OS で `~/.config/arbor/config.toml` にする（旧版の保存先からは初回にコピー）
-- [ ] PR 2: 未使用の Tauri updater の削除（plugin・capability・`plugins.updater`・`createUpdaterArtifacts`・`publish-updater-manifest`・`latest.json` の検査・`TAURI_SIGNING_PRIVATE_KEY*`）
+- [x] PR 1: 設定の保存先を、全 OS で `~/.config/arbor/config.toml` にする（旧版の保存先からは初回にコピー。#325）
+- [x] PR 2: 未使用の Tauri updater の削除（plugin・capability・`plugins.updater`・`createUpdaterArtifacts`・`publish-updater-manifest`・`latest.json` の検査・Release のビルドでの `TAURI_SIGNING_PRIVATE_KEY*`）。リポジトリの Secrets の `TAURI_SIGNING_PRIVATE_KEY*` の削除は、マージ後にユーザーが判断する
 - [ ] PR 3: MSIX（自己署名 + `.appinstaller` + `install.ps1`）、msi / NSIS の廃止、Arbor 専用の署名証明書（生成・バックアップ・Secrets 登録のスクリプト化。バックアップ先は、ハンドオフに手順を書く）、`verify-release-assets.sh` の MSIX 検査、runbook。マージの前に、実機で受け入れ条件を確認する
 
 ---
@@ -208,7 +208,7 @@ Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
 - [x] P4-02: `commands/repo.rs` — `list_stashes` / `apply_stash` / `drop_stash`
 - [x] P4-03: `src/views/Stash.tsx` — Stash Manager UI (一覧 / apply / drop)
 - [x] P4-04: dsx バージョン表示 + アップデート確認 UI (Settings 画面)
-- [x] P4-05: Tauri updater + GitHub Releases 自動更新フロー設定
+- [x] P4-05: Tauri updater + GitHub Releases 自動更新フロー設定（#324 PR 2 で削除。UI から呼ばれておらず未使用だった）
 - [x] P4-06: Windows (.msi) インストーラービルド (`tauri build`)
 - [x] P4-07: macOS (.dmg) インストーラービルド
 - [x] P4-08: README / CHANGELOG 整備

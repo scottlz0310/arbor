@@ -77,7 +77,7 @@ module レベルの spy を作ったファイルには `afterAll(() => mock.rest
 ### リリース（release-automate）
 
 1. Actions の `Prepare Release` を、版（`MAJOR.MINOR.PATCH`）を指定して手動で実行する。リリース準備 PR（`chore(release): vX.Y.Z`。版の更新と、CHANGELOG の `[Unreleased]` の確定）が、Bot 名義で作られる。
-2. レビューして、squash マージする。`Release`（`.github/workflows/release.yml`）が、自動で動く: draft の Release とタグ → 3 OS のビルドと添付 → updater の `latest.json` → `verify`（`verify-release.yml`）→ `finalize`（公開）。`verify` が失敗すると、公開されず、draft のまま残る。
+2. レビューして、squash マージする。`Release`（`.github/workflows/release.yml`）が、自動で動く: draft の Release とタグ → 3 OS のビルドと添付 → `verify`（`verify-release.yml`）→ `finalize`（公開）。`verify` が失敗すると、公開されず、draft のまま残る。
 3. 公開の前に draft を確認したいとき、または検証の実装そのものを試したいときは、Actions の `Verify Release` を、タグを指定して実行する（読み取りのみ）。手元では、`GH_REPO=scottlz0310/arbor scripts/verify-release-assets.sh vX.Y.Z`。
 
 **失敗したとき**

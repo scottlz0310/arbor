@@ -12,6 +12,15 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
   - **移行は、並行した読み込みから保護している**（レビューでの指摘）。起動時は、`list_repositories` と `get_workspace_status` などが並行して `load_config` を呼ぶため、初回の移行が重なると、同じ移行先へ同時にコピーして、Windows で共有違反（os error 32）になりえた。設定の読み込み・変更を 1 つのロックで直列にし、移行は、一時ファイルへコピーし終えてからハードリンクで公開する（読み手は途中のファイルを見ず、別のプロセスが先に公開していても上書きしない）。8 スレッドで同時に移行する回帰テストを追加した（ロックと原子的な公開を外すと、失敗することを確認した）
   - `ARBOR_CONFIG_DIR`（debug build のみ）は、これまでどおり。隔離先を使うときは、旧版の保存先を見ない（実機の設定を持ち込まない）
 
+### refactor
+
+- **未使用の Tauri updater を削除した**（#324 PR 2）。`tauri-plugin-updater` は登録されていたが、フロントエンドから一度も呼ばれておらず（`@tauri-apps/plugin-updater` も未導入）、Arbor に自己更新の UI は無かった。Windows の配布を MSIX（`.appinstaller` で更新）に一本化するにあたり、`latest.json` の用途が無くなるため、先に取り除く。dsx の self-update（Tools タブ）は別物で、変わらない
+  - 削除したもの: `tauri-plugin-updater`（依存の整理で、`zip`・`tar`・`minisign-verify` など 14 クレートが `Cargo.lock` から消える）、`lib.rs` の plugin の登録、capability の `updater:default`、`tauri.conf.json` の `plugins.updater`（公開鍵・エンドポイント）と `bundle.createUpdaterArtifacts`
+  - `release.yml`: `publish-updater-manifest` ジョブ（`latest.json` の生成とアップロード）と、ビルドでの `TAURI_SIGNING_PRIVATE_KEY*` / `includeUpdaterJson` を削除した。`verify` は、ビルドの直後に動く
+  - `scripts/verify-release-assets.sh`: 各 OS のインストーラ（msi・setup.exe・dmg・AppImage・deb）の存在だけを検査する。`.sig` と `latest.json`（版・URL・プラットフォーム数）の検査は外した。公開済みの v0.3.0 に対する成功と、不正なタグに対する失敗を確認した
+  - 以後のリリースの成果物から、updater の署名（`.sig`）と、`*.msi.zip`・`*.nsis.zip`・`*.app.tar.gz`・`*.AppImage.tar.gz` が無くなる。v0.3.0 までの Release の成果物は変わらない
+  - リポジトリの Secrets の `TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD` は、ワークフローから参照されなくなった（削除は、利用者の判断）
+
 ### ci
 
 - **リリースの公開前の検証（`verify`）が、draft の Release を読めず、必ず失敗していた問題を直し、同じ種類の失敗を、リリースの前に見つけられる構造にした**。v0.3.0 のリリースで、`verify` が `contents: read` で動いたため、draft（書き込み権限のあるトークンにしか見えない）が `release not found` になり、成果物が揃っていても、公開に進めなかった（`finalize` は実行されず、draft のまま残った）。実行前のレビューでは、`GH_REPO` の指摘までしか、見つからなかった

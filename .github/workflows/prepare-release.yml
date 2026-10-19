@@ -21,7 +21,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      # release-automate は rc などの版も通すが、updater の latest.json は、安定版だけを前提にしているため、ここで止める。
+      # release-automate は rc などの版も通すが、リリースの成果物の検証（verify-release-assets.sh）は、安定版のタグだけを前提にしているため、ここで止める。
       - name: 安定版の形式を確認
         env:
           TARGET_VERSION: ${{ inputs.target_version }}

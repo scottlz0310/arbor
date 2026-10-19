@@ -2,7 +2,7 @@ name: Release
 
 # リリース準備 PR（prepare-release.yml が作る `chore(release): vX.Y.Z`）を squash マージすると動く。
 # release-automate が draft の Release とタグを作り、続けて次の順に進む。
-#   draft → 3 OS のビルドと成果物の添付 → updater の latest.json → Release から再取得して照合 → Release の公開
+#   draft → 3 OS のビルドと成果物の添付 → Release から再取得して照合 → Release の公開
 # リリース準備 PR 以外の main への push では、draft ジョブが skip され、後続のジョブも動かない。
 #
 # release-automate のタグは GITHUB_TOKEN で作られ、`push: tags` の別のワークフローを起動しない。
@@ -120,102 +120,15 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ steps.release.outputs.release_id }}
           args: ${{ matrix.tauri-args }}
-          includeUpdaterJson: false
 
-  # ── 3. 全プラットフォームの署名を集約して latest.json を生成・アップロード ──
-  publish-updater-manifest:
-    needs: [draft, build-tauri]
-    if: needs.draft.outputs.release_state == 'draft'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.draft.outputs.target_sha }}
-
-      - name: Download updater signatures
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ needs.draft.outputs.tag_name }}"
-          mkdir -p sigs
-          gh release download "$TAG" --pattern '*.sig' --dir sigs
-          echo "Downloaded signatures:"
-          ls -la sigs/
-
-      - name: Build latest.json
-        run: |
-          TAG="${{ needs.draft.outputs.tag_name }}"
-          VERSION="${TAG#v}"
-          BASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
-          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-          # glob + 1件アサート。ファイル名の変動に耐えつつ意図しない複数一致を検出する。
-          assert_one_sig() {
-            local pattern="$1"
-            # shellcheck disable=SC2206 # glob の展開が目的
-            local matched=( sigs/${pattern} )
-            if [[ ${#matched[@]} -ne 1 || ! -f "${matched[0]}" ]]; then
-              echo "ERROR: pattern '${pattern}' matched ${#matched[@]} file(s):"
-              ls sigs/ || true
-              exit 1
-            fi
-            echo "${matched[0]}"
-          }
-
-          WIN_SIG_PATH=$(assert_one_sig "*.msi.zip.sig")
-          MAC_SIG_PATH=$(assert_one_sig "*aarch64*.app.tar.gz.sig")
-          LIN_SIG_PATH=$(assert_one_sig "*.AppImage.tar.gz.sig")
-
-          WIN_BASE=$(basename "$WIN_SIG_PATH" .sig)
-          MAC_BASE=$(basename "$MAC_SIG_PATH" .sig)
-          LIN_BASE=$(basename "$LIN_SIG_PATH" .sig)
-
-          WIN_SIG=$(cat "$WIN_SIG_PATH")
-          MAC_SIG=$(cat "$MAC_SIG_PATH")
-          LIN_SIG=$(cat "$LIN_SIG_PATH")
-
-          jq -n \
-            --arg version "$VERSION" \
-            --arg pub_date "$PUB_DATE" \
-            --arg win_url "${BASE_URL}/${WIN_BASE}" \
-            --arg win_sig "$WIN_SIG" \
-            --arg mac_url "${BASE_URL}/${MAC_BASE}" \
-            --arg mac_sig "$MAC_SIG" \
-            --arg lin_url "${BASE_URL}/${LIN_BASE}" \
-            --arg lin_sig "$LIN_SIG" \
-            '{
-              version: $version,
-              notes: "",
-              pub_date: $pub_date,
-              platforms: {
-                "windows-x86_64": { url: $win_url, signature: $win_sig },
-                "darwin-aarch64": { url: $mac_url, signature: $mac_sig },
-                "linux-x86_64":  { url: $lin_url, signature: $lin_sig }
-              }
-            }' > latest.json
-
-          echo "Generated latest.json:"
-          cat latest.json
-
-      - name: Upload latest.json to release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ needs.draft.outputs.tag_name }}"
-          gh release upload "$TAG" latest.json --clobber
-
-  # ── 4. Release から成果物を再取得して照合する（公開の前の検証） ───────────────
+  # ── 3. Release から成果物を再取得して照合する（公開の前の検証） ───────────────
   # 検証の実装は verify-release.yml（手動でも実行できる）。失敗すると、finalize は実行されず、draft のまま残る。
   # draft の Release は、書き込み権限のあるトークンにしか見えないため、呼び出し元にも write が要る。
   verify:
-    needs: [draft, publish-updater-manifest]
+    needs: [draft, build-tauri]
     if: needs.draft.outputs.release_state == 'draft'
     permissions:
       contents: write
@@ -223,7 +136,7 @@ jobs:
     with:
       tag: ${{ needs.draft.outputs.tag_name }}
 
-  # ── 5. Release の公開（release-automate） ──────────────────────────────────
+  # ── 4. Release の公開（release-automate） ──────────────────────────────────
   finalize:
     needs: [draft, verify]
     if: needs.draft.outputs.release_state == 'draft' && needs.verify.result == 'success'
