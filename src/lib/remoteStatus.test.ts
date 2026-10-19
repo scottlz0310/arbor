@@ -3,6 +3,7 @@ import { act } from 'react';
 import {
   checkAllRemotes,
   countRemote,
+  statusesFor,
   describeRemoteCheck,
   remoteBadge,
   remoteNote,
@@ -10,7 +11,7 @@ import {
 import * as invoke from './invoke';
 import { useRemoteStore } from '../stores/remoteStore';
 import { useUiStore } from '../stores/uiStore';
-import type { RemoteCheckSummary, RemoteState, RemoteStatus } from '../types';
+import type { RemoteCheckSummary, RemoteState, RemoteStatus, RepoInfo } from '../types';
 
 const mockCheckRemotes = spyOn(invoke, 'checkRemotes');
 const mockAddToast = mock();
@@ -60,16 +61,14 @@ describe('remoteBadge', () => {
 });
 
 describe('countRemote と remoteNote', () => {
-  const statuses = Object.fromEntries(
-    [
-      status('a', { kind: 'archived' }, 'me/a'),
-      status('b', { kind: 'archived' }),
-      status('c', { kind: 'not_found' }),
-      status('d', active, 'me/d'),
-      status('e', { kind: 'error', message: 'x' }),
-      status('f', active),
-    ].map((s) => [s.path, s]),
-  );
+  const statuses = [
+    status('a', { kind: 'archived' }, 'me/a'),
+    status('b', { kind: 'archived' }),
+    status('c', { kind: 'not_found' }),
+    status('d', active, 'me/d'),
+    status('e', { kind: 'error', message: 'x' }),
+    status('f', active),
+  ];
 
   it('状態ごとに数える（移転は、アーカイブ・通常のどちらでも数える）', () => {
     expect(countRemote(statuses)).toEqual({ archived: 2, notFound: 1, moved: 2, errors: 1 });
@@ -142,5 +141,35 @@ describe('checkAllRemotes', () => {
 
     expect(useRemoteStore.getState().statuses['/src/a']).toEqual(previous);
     expect(mockAddToast).toHaveBeenCalledWith('別のコマンドが実行中です', 'error');
+  });
+});
+
+describe('statusesFor', () => {
+  const repo = (name: string): RepoInfo => ({
+    path: `/src/${name}`,
+    name,
+    current_branch: 'main',
+    ahead: 0,
+    behind: 0,
+    modified_count: 0,
+    untracked_count: 0,
+    stash_count: 0,
+    is_detached: false,
+    has_upstream: true,
+    source: 'workspace',
+    last_fetched_at: null,
+  });
+  const stored = Object.fromEntries(
+    [status('kept', { kind: 'archived' }), status('removed', { kind: 'archived' })].map((s) => [s.path, s]),
+  );
+
+  it('現在の管理対象の結果だけを返す（フォルダの削除・登録解除・root の変更で外れたリポジトリは含めない）', () => {
+    const result = statusesFor([repo('kept'), repo('other')], stored);
+
+    expect(result.map((s) => s.name)).toEqual(['kept']);
+  });
+
+  it('確認の結果が無いリポジトリ（未確認）は、飛ばす', () => {
+    expect(statusesFor([repo('other')], {})).toEqual([]);
   });
 });

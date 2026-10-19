@@ -176,3 +176,28 @@ describe('SummaryStrip — リモートの状態', () => {
     expect(card(/NEEDS ACTION/).textContent).toContain('2');
   });
 });
+
+describe('SummaryStrip — 管理対象から外れたリポジトリ', () => {
+  it('確認の後に管理対象から外れたリポジトリの結果は、再確認するまで残っていても、数えない', () => {
+    const stale: RemoteStatus = { path: '/src/removed', name: 'removed', state: { kind: 'archived' }, moved_to: 'me/removed' };
+    const kept: RemoteStatus = { path: '/src/a', name: 'a', state: { kind: 'not_found' }, moved_to: null };
+    act(() => useRemoteStore.setState({ statuses: { [stale.path]: stale, [kept.path]: kept } }));
+
+    render(<SummaryStrip />);
+
+    const text = card(/TOTAL REPOSITORIES/).textContent ?? '';
+    expect(text).toContain('1 remote なし');
+    expect(text).not.toMatch(/Archived|移転/);
+  });
+
+  it('管理対象の一覧が変わると、注意の 1 行も追従する', () => {
+    const status: RemoteStatus = { path: '/src/a', name: 'a', state: { kind: 'archived' }, moved_to: null };
+    act(() => useRemoteStore.setState({ statuses: { [status.path]: status } }));
+    render(<SummaryStrip />);
+    expect(card(/TOTAL REPOSITORIES/).textContent).toContain('1 Archived');
+
+    act(() => useRepoStore.setState({ repos: [repo('b')] }));
+
+    expect(card(/TOTAL REPOSITORIES/).textContent).not.toMatch(/Archived/);
+  });
+});

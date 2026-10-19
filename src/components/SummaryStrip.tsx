@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { dailyRefreshBlockReason, shortVersion } from '../lib/dsxActions';
-import { countRemote, remoteNote } from '../lib/remoteStatus';
+import { countRemote, remoteNote, statusesFor } from '../lib/remoteStatus';
 import { countRepos } from '../lib/repoStatus';
 import { useCleanupStore } from '../stores/cleanupStore';
 import { useEnvStore } from '../stores/envStore';
@@ -86,7 +86,7 @@ export default function SummaryStrip() {
         valueColor="var(--text1)"
         tag={`${counts.clean} Clean`}
         tagColor="var(--green)"
-        note={remoteNote(countRemote(remoteStatuses))}
+        note={remoteNote(countRemote(statusesFor(repos, remoteStatuses)))}
         title="すべてのリポジトリを表示"
         onClick={() => showStatus('all')}
       />

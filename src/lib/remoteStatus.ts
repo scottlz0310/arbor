@@ -1,7 +1,7 @@
 import { useRemoteStore } from '../stores/remoteStore';
 import { useUiStore } from '../stores/uiStore';
 import { checkRemotes } from './invoke';
-import type { RemoteCheckSummary, RemoteStatus, Toast } from '../types';
+import type { RemoteCheckSummary, RemoteStatus, RepoInfo, Toast } from '../types';
 
 export interface RemoteBadge {
   label: string;
@@ -62,9 +62,17 @@ export interface RemoteCounts {
   errors: number;
 }
 
-export function countRemote(statuses: Record<string, RemoteStatus>): RemoteCounts {
+/**
+ * 現在の管理対象（`repos`）の、確認の結果。管理対象から外れたリポジトリ（フォルダの削除・登録解除・root の変更の後）の
+ * 結果は、store に残っていても含めない。
+ */
+export function statusesFor(repos: RepoInfo[], statuses: Record<string, RemoteStatus>): RemoteStatus[] {
+  return repos.flatMap((repo) => statuses[repo.path] ?? []);
+}
+
+export function countRemote(statuses: RemoteStatus[]): RemoteCounts {
   const counts: RemoteCounts = { archived: 0, notFound: 0, moved: 0, errors: 0 };
-  for (const status of Object.values(statuses)) {
+  for (const status of statuses) {
     if (status.state.kind === 'archived') counts.archived += 1;
     if (status.state.kind === 'not_found') counts.notFound += 1;
     if (status.state.kind === 'error') counts.errors += 1;
@@ -85,7 +93,7 @@ export function remoteNote(counts: RemoteCounts): string | null {
 
 /** 確認の結果を、Toast に出す 1 行にまとめる。詳細はコンソールに出ている。 */
 export function describeRemoteCheck(summary: RemoteCheckSummary): { message: string; kind: Toast['kind'] } {
-  const counts = countRemote(Object.fromEntries(summary.statuses.map((s) => [s.path, s])));
+  const counts = countRemote(summary.statuses);
   if (summary.cancelled) {
     return { message: `Remote の確認を中断しました（${summary.statuses.length}/${summary.total} 件を確認済み）`, kind: 'info' };
   }
