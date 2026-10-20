@@ -1,5 +1,6 @@
+use super::dsx_report::{EventsFile, ReportState, EVENTS_MIN_VERSION};
 use super::runner::{hide_console, LaunchSpec, RunOutcome, RunnerState};
-use crate::config::AppConfig;
+use crate::config::{events_dir, AppConfig};
 use crate::models::DsxOutput;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -35,6 +36,13 @@ fn supports_daily_refresh(version: Option<&str>) -> bool {
     version
         .and_then(parse_dsx_version)
         .is_some_and(|v| v >= DAILY_REFRESH_MIN_VERSION)
+}
+
+/// 機械可読なイベント出力（`--events-file`。dsx#152）を使える版か（v0.13.0 以上）。
+fn supports_events(version: Option<&str>) -> bool {
+    version
+        .and_then(parse_dsx_version)
+        .is_some_and(|v| v >= EVENTS_MIN_VERSION)
 }
 
 pub fn check_dsx() -> DsxStatus {
@@ -183,6 +191,17 @@ pub enum DsxTask {
 }
 
 impl DsxTask {
+    /// 実行結果を、dsx のイベント出力（`--events-file`）で受け取れるか。dsx が対応するのは、更新系の 4 つ。
+    fn reports_events(&self) -> bool {
+        matches!(
+            self,
+            Self::SysUpdate
+                | Self::SysUpdateDryRun
+                | Self::RepoUpdate { .. }
+                | Self::DailyRefresh { .. }
+        )
+    }
+
     /// 作業ディレクトリと、`dsx` に渡す引数。
     fn invocation(&self) -> (String, Vec<String>) {
         let strings = |args: &[&str]| args.iter().map(|a| (*a).to_string()).collect();
@@ -203,24 +222,57 @@ impl DsxTask {
 }
 
 /// `dsx` を共有の runner で実行し、終了を待つ。出力は `process_*` イベントで流れる。
-pub async fn run_task(state: &RunnerState, task: DsxTask) -> Result<DsxOutput, String> {
-    run_task_with(state, task, check_dsx).await
+/// dsx がイベント出力に対応していれば、終了後に報告を `reports` へ置く（失敗した実行も含む）。
+pub async fn run_task(
+    state: &RunnerState,
+    reports: &ReportState,
+    task: DsxTask,
+) -> Result<DsxOutput, String> {
+    run_task_with(state, reports, task, check_dsx, events_dir).await
 }
 
-/// `run_task` の本体。Daily Refresh の前に確認する dsx の状態を、`check` で差し替えられる（テスト用）。
+/// `run_task` の本体。確認する dsx の状態を `check`、イベントファイルの置き場を `events_dir` で差し替えられる（テスト用）。
 async fn run_task_with(
     state: &RunnerState,
+    reports: &ReportState,
     task: DsxTask,
     check: fn() -> DsxStatus,
+    events_dir: fn() -> Result<PathBuf, String>,
 ) -> Result<DsxOutput, String> {
-    if matches!(task, DsxTask::DailyRefresh { .. }) {
-        let status = tauri::async_runtime::spawn_blocking(check)
-            .await
-            .map_err(|e| format!("dsx の確認スレッドが異常終了しました: {e}"))?;
-        ensure_daily_refresh_supported(&status)?;
+    let is_daily_refresh = matches!(task, DsxTask::DailyRefresh { .. });
+    let status = if is_daily_refresh || task.reports_events() {
+        Some(
+            tauri::async_runtime::spawn_blocking(check)
+                .await
+                .map_err(|e| format!("dsx の確認スレッドが異常終了しました: {e}"))?,
+        )
+    } else {
+        None
+    };
+    if let (true, Some(status)) = (is_daily_refresh, &status) {
+        ensure_daily_refresh_supported(status)?;
     }
-    let (cwd, args) = task.invocation();
-    run_dsx_args(state, &cwd, args).await
+
+    // 対応しない版の dsx には `--events-file` を渡さない（これまでどおり、テキストのログだけ）。
+    let events = match &status {
+        Some(status) if task.reports_events() && supports_events(status.version.as_deref()) => {
+            Some(EventsFile::create_in(&events_dir()?)?)
+        }
+        _ => None,
+    };
+
+    let (cwd, mut args) = task.invocation();
+    if let Some(events) = &events {
+        args.push("--events-file".to_string());
+        args.push(events.path().to_string_lossy().into_owned());
+    }
+    let result = run_dsx_args(state, &cwd, args).await;
+
+    // 失敗（終了コード 1）した実行ほど、警告・スキップ・失敗の内訳が要るので、結果に関わらず読む。
+    if let Some(report) = events.as_ref().and_then(EventsFile::read_report) {
+        reports.set(report);
+    }
+    result
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -578,21 +630,29 @@ mod tests {
 
     // ── run_task（起動を差し替えた Runner）──────────────────────────────────────
 
+    use crate::commands::dsx_report::RunReport;
     use crate::commands::runner::{
         EventSink, Launched, Launcher, ProcessFinished, ProcessOutput, ProcessStarted, Runner,
     };
     use std::sync::{Arc, Mutex};
 
     /// 起動の依頼だけを記録し、すぐに指定の終了コードで終わる。
+    /// `events_body` を指定すると、`--events-file` で渡されたファイルへ、dsx の代わりに書き込む。
     struct RecordingLauncher {
         exit_code: i32,
+        events_body: Option<String>,
         launched: Mutex<Vec<(String, Vec<String>, PathBuf)>>,
     }
 
     impl RecordingLauncher {
         fn new(exit_code: i32) -> Arc<Self> {
+            Self::with_events(exit_code, None)
+        }
+
+        fn with_events(exit_code: i32, events_body: Option<&str>) -> Arc<Self> {
             Arc::new(Self {
                 exit_code,
+                events_body: events_body.map(str::to_string),
                 launched: Mutex::new(Vec::new()),
             })
         }
@@ -605,6 +665,9 @@ mod tests {
                 spec.args.clone(),
                 spec.cwd.clone(),
             ));
+            if let (Some(body), Some(path)) = (&self.events_body, events_file_arg(&spec.args)) {
+                std::fs::write(path, body)?;
+            }
             let exit_code = self.exit_code;
             Ok(Launched {
                 stdout: Box::new(io::empty()),
@@ -613,6 +676,12 @@ mod tests {
                 terminate: Arc::new(|| {}),
             })
         }
+    }
+
+    /// 引数の `--events-file` の値。
+    fn events_file_arg(args: &[String]) -> Option<&String> {
+        let index = args.iter().position(|a| a == "--events-file")?;
+        args.get(index + 1)
     }
 
     struct NullSink;
@@ -631,36 +700,64 @@ mod tests {
         RunnerState::with_runner(Arc::new(runner))
     }
 
-    fn ready_dsx() -> DsxStatus {
+    fn dsx_with_version(version: &str) -> DsxStatus {
         DsxStatus {
             available: true,
-            version: Some("dsx version 0.12.0".to_string()),
+            version: Some(format!("dsx version {version}")),
             path: None,
-            supports_daily_refresh: true,
+            supports_daily_refresh: supports_daily_refresh(Some(version)),
         }
     }
 
+    /// イベント出力に対応する dsx（v0.13.0）。
+    fn ready_dsx() -> DsxStatus {
+        dsx_with_version("0.13.0")
+    }
+
+    /// Daily Refresh は使えるが、イベント出力には対応しない dsx（v0.12.0）。
+    fn no_events_dsx() -> DsxStatus {
+        dsx_with_version("0.12.0")
+    }
+
+    /// Daily Refresh も使えない dsx（v0.11.0）。
     fn old_dsx() -> DsxStatus {
-        DsxStatus {
-            available: true,
-            version: Some("dsx version 0.11.0".to_string()),
-            path: None,
-            supports_daily_refresh: false,
-        }
+        dsx_with_version("0.11.0")
     }
 
     fn launched(launcher: &RecordingLauncher) -> Vec<(String, Vec<String>, PathBuf)> {
         launcher.launched.lock().unwrap().clone()
     }
 
+    /// テスト用のイベントファイルの置き場。
+    fn test_events_dir() -> Result<PathBuf, String> {
+        Ok(std::env::temp_dir().join(format!("arbor-dsx-tests-{}", std::process::id())))
+    }
+
+    fn broken_events_dir() -> Result<PathBuf, String> {
+        Err("イベントの保存先を決められません".to_string())
+    }
+
+    fn run(
+        launcher: &Arc<RecordingLauncher>,
+        reports: &ReportState,
+        task: DsxTask,
+        check: fn() -> DsxStatus,
+    ) -> Result<DsxOutput, String> {
+        let state = state_with(launcher);
+        tauri::async_runtime::block_on(run_task_with(&state, reports, task, check, test_events_dir))
+    }
+
     #[test]
     fn run_task_launches_dsx_with_the_task_invocation() {
         let launcher = RecordingLauncher::new(0);
-        let state = state_with(&launcher);
 
-        let output =
-            tauri::async_runtime::block_on(run_task_with(&state, DsxTask::Doctor, ready_dsx))
-                .expect("doctor");
+        let output = run(
+            &launcher,
+            &ReportState::default(),
+            DsxTask::Doctor,
+            ready_dsx,
+        )
+        .expect("doctor");
 
         assert_eq!(output.exit_code, 0);
         assert_eq!(
@@ -676,11 +773,14 @@ mod tests {
     #[test]
     fn run_task_reports_a_failing_exit_code() {
         let launcher = RecordingLauncher::new(3);
-        let state = state_with(&launcher);
 
-        let err =
-            tauri::async_runtime::block_on(run_task_with(&state, DsxTask::SysUpdate, ready_dsx))
-                .unwrap_err();
+        let err = run(
+            &launcher,
+            &ReportState::default(),
+            DsxTask::SysUpdate,
+            ready_dsx,
+        )
+        .unwrap_err();
 
         assert!(err.contains("exited with code 3"), "{err}");
     }
@@ -690,48 +790,252 @@ mod tests {
         let root = "C:/src".to_string();
 
         let launcher = RecordingLauncher::new(0);
-        let state = state_with(&launcher);
-        tauri::async_runtime::block_on(run_task_with(
-            &state,
+        run(
+            &launcher,
+            &ReportState::default(),
             DsxTask::DailyRefresh { root: root.clone() },
-            ready_dsx,
-        ))
+            no_events_dsx,
+        )
         .expect("daily refresh");
         assert_eq!(launched(&launcher).len(), 1);
         assert_eq!(launched(&launcher)[0].1[..2], ["run", "--root"]);
 
         let launcher = RecordingLauncher::new(0);
-        let state = state_with(&launcher);
-        let err = tauri::async_runtime::block_on(run_task_with(
-            &state,
+        let err = run(
+            &launcher,
+            &ReportState::default(),
             DsxTask::DailyRefresh { root },
             old_dsx,
-        ))
+        )
         .unwrap_err();
         assert!(err.contains("v0.12.0 以上"), "{err}");
         assert!(launched(&launcher).is_empty(), "古い dsx では起動しない");
     }
 
     #[test]
-    fn other_tasks_do_not_check_the_dsx_version() {
+    fn tasks_other_than_daily_refresh_run_on_old_dsx() {
         let launcher = RecordingLauncher::new(0);
-        let state = state_with(&launcher);
 
-        // 古い dsx でも、Daily Refresh 以外は実行できる
-        tauri::async_runtime::block_on(run_task_with(&state, DsxTask::SysUpdateDryRun, old_dsx))
-            .expect("dry run");
+        // 古い dsx でも、Daily Refresh 以外は実行できる（イベント出力なしで）
+        run(
+            &launcher,
+            &ReportState::default(),
+            DsxTask::SysUpdateDryRun,
+            old_dsx,
+        )
+        .expect("dry run");
 
         assert_eq!(launched(&launcher).len(), 1);
+        assert_eq!(events_file_arg(&launched(&launcher)[0].1), None);
     }
 
     #[test]
-    fn run_task_uses_the_real_dsx_check_only_for_daily_refresh() {
+    fn run_task_uses_the_real_dsx_check_only_for_tasks_that_need_it() {
         let launcher = RecordingLauncher::new(0);
         let state = state_with(&launcher);
 
         // Doctor は dsx の版を確認しないので、実際の dsx を起動せずに、記録だけを確かめられる
-        tauri::async_runtime::block_on(run_task(&state, DsxTask::Doctor)).expect("doctor");
+        tauri::async_runtime::block_on(run_task(&state, &ReportState::default(), DsxTask::Doctor))
+            .expect("doctor");
 
         assert_eq!(launched(&launcher).len(), 1);
+    }
+
+    // ── イベント出力（--events-file。dsx#152）────────────────────────────────────
+
+    #[test]
+    fn supports_events_cases() {
+        let cases = [
+            (None, false),
+            (Some("dsx version 0.12.0"), false),
+            (Some("dsx version 0.12.9"), false),
+            (Some("dsx version 0.13.0"), true),
+            (Some("v0.13.0"), true),
+            (Some("dsx version 0.13.1-rc1"), true),
+            (Some("dsx version 1.0.0"), true),
+            (Some("dev"), false),
+        ];
+
+        for (version, expected) in cases {
+            assert_eq!(supports_events(version), expected, "{version:?}");
+        }
+    }
+
+    #[test]
+    fn only_update_tasks_report_events() {
+        let root = "/src".to_string();
+        let cases = [
+            (DsxTask::SysUpdate, true),
+            (DsxTask::SysUpdateDryRun, true),
+            (DsxTask::RepoUpdate { root: root.clone() }, true),
+            (DsxTask::DailyRefresh { root }, true),
+            (DsxTask::Doctor, false),
+            (DsxTask::SelfUpdate, false),
+            (
+                DsxTask::EnvRun {
+                    cwd: ".".to_string(),
+                    command: "ls".to_string(),
+                },
+                false,
+            ),
+        ];
+
+        for (task, expected) in cases {
+            assert_eq!(task.reports_events(), expected, "{task:?}");
+        }
+    }
+
+    const EVENTS_OK: &str = concat!(
+        r#"{"schema":1,"type":"start","command":"sys update","version":"v0.13.0"}"#,
+        "\n",
+        r#"{"schema":1,"type":"summary","command":"sys update","ok":true,"jobs":{"success":1,"failed":0,"skipped":1},"updated":0,"warnings":0,"issues":[{"phase":"sys","kind":"manager","name":"gem","status":"skipped","code":"unavailable","reason":"未インストール"}],"warning_items":[]}"#,
+        "\n"
+    );
+
+    const EVENTS_FAILED: &str = concat!(
+        r#"{"schema":1,"type":"start","command":"run","version":"v0.13.0"}"#,
+        "\n",
+        r#"{"schema":1,"type":"summary","command":"run","ok":false,"error":"1 件のフェーズでエラーが発生しました","jobs":{"success":0,"failed":1,"skipped":0},"updated":0,"warnings":0,"issues":[{"phase":"repo","kind":"phase","name":"repo","status":"failed","code":"error","reason":"root が存在しません"}],"warning_items":[]}"#,
+        "\n"
+    );
+
+    #[test]
+    fn events_file_is_passed_to_dsx_and_the_report_is_kept() {
+        let launcher = RecordingLauncher::with_events(0, Some(EVENTS_OK));
+        let reports = ReportState::default();
+
+        run(&launcher, &reports, DsxTask::SysUpdate, ready_dsx).expect("sys update");
+
+        let args = launched(&launcher)[0].1.clone();
+        assert_eq!(&args[..3], ["sys", "update", "--no-tui"]);
+        let path = events_file_arg(&args).expect("--events-file が渡される");
+        assert!(
+            Path::new(path).starts_with(test_events_dir().unwrap()),
+            "{path}"
+        );
+
+        let report = reports.take().expect("報告が残る");
+        assert_eq!(report.command, "sys update");
+        assert_eq!(report.jobs.skipped, 1);
+        assert_eq!(report.issues[0].name, "gem");
+        assert!(
+            !Path::new(path).exists(),
+            "読み終えたイベントファイルは消す"
+        );
+    }
+
+    /// dsx が失敗（終了コード 1）した実行ほど、報告が要る。
+    #[test]
+    fn the_report_is_kept_even_when_dsx_fails() {
+        let launcher = RecordingLauncher::with_events(1, Some(EVENTS_FAILED));
+        let reports = ReportState::default();
+
+        let err = run(
+            &launcher,
+            &reports,
+            DsxTask::DailyRefresh {
+                root: "C:/src".to_string(),
+            },
+            ready_dsx,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("exited with code 1"), "{err}");
+        let report: RunReport = reports.take().expect("失敗した実行の報告も残る");
+        assert!(!report.ok);
+        assert_eq!(report.issues[0].reason, "root が存在しません");
+    }
+
+    /// 対応しない版の dsx には `--events-file` を渡さず、報告も作らない（これまでどおり）。
+    #[test]
+    fn dsx_without_events_support_gets_no_events_file() {
+        let launcher = RecordingLauncher::with_events(0, Some(EVENTS_OK));
+        let reports = ReportState::default();
+
+        run(&launcher, &reports, DsxTask::SysUpdate, no_events_dsx).expect("sys update");
+
+        assert_eq!(events_file_arg(&launched(&launcher)[0].1), None);
+        assert_eq!(reports.take(), None);
+    }
+
+    #[test]
+    fn tasks_that_do_not_report_events_get_no_events_file() {
+        let launcher = RecordingLauncher::with_events(0, Some(EVENTS_OK));
+        let reports = ReportState::default();
+
+        run(&launcher, &reports, DsxTask::Doctor, ready_dsx).expect("doctor");
+
+        assert_eq!(events_file_arg(&launched(&launcher)[0].1), None);
+        assert_eq!(reports.take(), None);
+    }
+
+    /// dsx が契約に合わない出力を書いたとき（版違い・途中で終了）は、報告を作らない。
+    #[test]
+    fn an_event_file_that_does_not_meet_the_contract_yields_no_report() {
+        let bodies = [
+            (
+                "schema が未対応",
+                EVENTS_OK.replace("\"schema\":1", "\"schema\":2"),
+            ),
+            (
+                "summary が無い",
+                EVENTS_OK.lines().next().unwrap().to_string() + "\n",
+            ),
+            ("空", String::new()),
+        ];
+
+        for (name, body) in bodies {
+            let launcher = RecordingLauncher::with_events(0, Some(&body));
+            let reports = ReportState::default();
+
+            run(&launcher, &reports, DsxTask::SysUpdate, ready_dsx).expect(name);
+
+            assert_eq!(reports.take(), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_previous_report_is_not_replaced_by_a_run_without_events() {
+        let reports = ReportState::default();
+        run(
+            &RecordingLauncher::with_events(0, Some(EVENTS_OK)),
+            &reports,
+            DsxTask::SysUpdate,
+            ready_dsx,
+        )
+        .expect("sys update");
+
+        // 報告を取り出す前に、イベントの無い実行（doctor）が走っても、報告は消えない
+        run(
+            &RecordingLauncher::new(0),
+            &reports,
+            DsxTask::Doctor,
+            ready_dsx,
+        )
+        .expect("doctor");
+
+        assert_eq!(
+            reports.take().map(|r| r.command),
+            Some("sys update".to_string())
+        );
+    }
+
+    /// イベントの置き場を用意できないときは、黙って省かず、実行の前にエラーにする。
+    #[test]
+    fn an_unusable_events_dir_fails_before_launching() {
+        let launcher = RecordingLauncher::new(0);
+        let state = state_with(&launcher);
+
+        let err = tauri::async_runtime::block_on(run_task_with(
+            &state,
+            &ReportState::default(),
+            DsxTask::SysUpdate,
+            ready_dsx,
+            broken_events_dir,
+        ))
+        .unwrap_err();
+
+        assert!(err.contains("イベントの保存先"), "{err}");
+        assert!(launched(&launcher).is_empty(), "起動しない");
     }
 }

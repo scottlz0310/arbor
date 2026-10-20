@@ -8,9 +8,9 @@
 
 - **Header** — dsx の版・workspace root を表示し、Scan / Fetch All / dsx sys update / Daily Refresh（`dsx run --root`）を実行
 - **Repository Status** — 全リポジトリの状態（ahead / behind / dirty / detached / no upstream）をカードで俯瞰し、要対応のリポジトリを先頭に提示。リポジトリごとの Fetch とフォルダを開く操作。「Remote を確認」で、各リポジトリの origin を GitHub に問い合わせ、アーカイブ済み・移転・見つからないクローンをバッジで示す（`gh` を使う。削除は、Arbor では行わない）
-- **Summary** — リポジトリ数・要対応の数・Cleanup 候補・dsx 環境の状態を一覧し、クリックで該当のビューへ移動
+- **Summary** — リポジトリ数・要対応の数・Cleanup 候補・dsx 環境の状態を一覧し、クリックで該当のビューへ移動。dsx v0.13.0 以上では、直近の更新（Daily Refresh / sys update / Update All）の結果（失敗・スキップ・警告の件数）を「LAST RUN」に出す
 - **Cleanup Wizard** — 全登録リポジトリの local branch 削除と remote-tracking ref prune を、実行直前の再検証付きで一括管理
-- **dsx Tools** — dsx CLI の版の確認と self-update、`dsx sys update`（確認つき）・`-n`（ドライラン）・`repo update`・`doctor` の実行。出力は実行ログコンソールに流れる
+- **dsx Tools** — dsx CLI の版の確認と self-update、`dsx sys update`（確認つき）・`-n`（ドライラン）・`repo update`・`doctor` の実行。出力は実行ログコンソールに流れる。dsx v0.13.0 以上では、実行後に、失敗・スキップ・警告の内訳（どのマネージャ・リポジトリが、なぜ）を「LAST RUN」に出す
 - **Settings** — workspace root と手動登録リポジトリの管理
 
 ## インストール

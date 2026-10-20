@@ -147,6 +147,7 @@ Rust backend (Tauri commands)
 | `commands/fetch.rs` | 管理対象リポジトリの一括 fetch（`fetch_repositories`）。git2 で最大 4 並列に fetch し、1 件ごとの結果を runner の job としてコンソールへ流す。`cancel_run` で転送中の fetch も中断できる |
 | `commands/remote_status.rs` | リモートの状態の確認（`check_remotes`）。各リポジトリの `origin`（GitHub のもの）について、`gh api repos/{owner}/{repo}` で、アーカイブ済み・移転（transfer / rename）・見つからない（404）を調べる。最大 4 並列で、1 件ごとの結果を runner の job としてコンソールへ流す（fetch と同じ枠）。ネットワークを使うため、自動では走らせず、Status タブの「Remote を確認」で手動で行う。`gh` の呼び出しは `Looker` で差し替えられる |
 | `commands/updater.rs` | Arbor 自身の更新（Tauri updater。macOS と Linux の AppImage 向け）。`updater_check`（リリースの `latest.json` で新しい版の有無を調べる）、`updater_install`（ダウンロードして適用し、再起動する。適用から再起動までは runner の枠に載せ、他のコマンドと同時に走らせない）。Windows（MSIX の `.appinstaller` が更新する）と Linux の deb は、ネットワークに出ず `unsupported` を返す。確認と適用は、外部を関数で受け取り、テストで差し替える。外部への接続部は `commands/updater_tauri.rs`（カバレッジの対象外。下の「IPC ラッパーとカバレッジ」） |
+| `commands/dsx_report.rs` | dsx のイベント出力（`--events-file`。dsx v0.13.0 以上、スキーマ版 1。契約は dsx の `docs/Events_Schema.md`）を、実行後の報告（`RunReport`）にする。`parse_report`（`summary` を読む。版違い・`summary` なし・読めない場合は `None` で、テキストのログだけにする。未知のフィールドと `type` は無視）、`EventsFile`（`~/.config/arbor/events/` に実行ごとのファイルを予約し、破棄で削除。異常終了で残った 24 時間より古いものを片付ける）、`ReportState`（直近の報告を、フロントエンドが `take_run_report` で取りに来るまで保持。失敗した実行の報告も要るので、`Result` には載せない）。`commands/dsx.rs` の `run_task` が、更新系の 4 つ（`SysUpdate` / `SysUpdateDryRun` / `RepoUpdate` / `DailyRefresh`）で、dsx が対応する版のときだけ `--events-file` を渡す |
 | `commands/runner.rs` | 外部コマンドの実行基盤（子プロセスを持たない処理は `run_job` で同じ枠に載せる）。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
 
 ### IPC ラッパーとカバレッジ
@@ -174,12 +175,14 @@ Rust backend (Tauri commands)
 | `stores/repoStore.ts` | リポジトリ一覧と選択状態（Zustand） |
 | `stores/uiStore.ts` | ナビゲーション状態・Toast（Zustand） |
 | `stores/consoleStore.ts` | 実行ログ（リングバッファ 10,000 行）と実行状態（Zustand） |
+| `stores/reportStore.ts` | 直近の更新系の実行の報告（`RunReport`）と受け取った時刻。Summary の「LAST RUN」と Tools の「LAST RUN」が読む。報告の無い実行（doctor・古い dsx）では更新しない（Zustand） |
+| `lib/runReport.ts` | 報告の判定（`reportTone`: ok / attention / error。スキップ・警告だけなら attention）、件数の文言、`code` / `category` の表示名 |
 | `stores/envStore.ts` | dsx の版・workspace root の現況（Header の pill 用。Zustand） |
 | `stores/updateStore.ts` | Arbor 自身の更新の状態（idle / checking / done / installing / error）。起動時に `App.tsx` が静かに確認し、新しい版があれば Toast で知らせる。適用は Tools タブの操作だけ（Zustand） |
 | `lib/dsxActions.ts` | Daily Refresh / sys update / Update All の実行と Toast、Daily Refresh を実行できない理由の判定 |
 | `lib/rescanAfterRun.ts` | run の終了を検知して、一覧と環境の状態を自動で読み直す |
 | `views/` | ページコンポーネント（Status / Cleanup / Tools / Settings）。Status・Cleanup・Tools が Summary の下のタブで、Settings は Header から開く。Tools は dsx の版の確認・self-update と、sys update / `-n` / repo update / doctor の実行ボタン（出力は解析せず、コンソールに流すだけ） |
-| `components/` | 共通 UI（Header, SummaryStrip, TabBar, AppBar, ConfirmDialog, Toast, LogConsole） |
+| `components/` | 共通 UI（Header, SummaryStrip（「LAST RUN」カードを含む）, RunReportPanel（失敗・スキップ・警告の内訳。Tools の「LAST RUN」）, TabBar, AppBar, ConfirmDialog, Toast, LogConsole） |
 | `lib/dsxVersion.ts` | `v0.11.0` / `dsx version 0.11.0` 形式の版の比較 |
 | `lib/repoStatus.ts` | 要対応の判定（`needsAction`）、状態バッジ、Status タブの絞り込みと並び順 |
 | `lib/remoteStatus.ts` | リモートの状態のバッジ（archived / remote なし / 移転 / 確認失敗）と件数、確認の実行と Toast |
@@ -204,6 +207,7 @@ Rust backend (Tauri commands)
 | `dsx_doctor` | `dsx doctor` | 依存ツールと設定の診断。出力は `process_output` イベントでストリーム |
 | `repo_update` | `dsx repo update --root <workspace root> --no-tui --jobs 4` | root 配下の全リポジトリを更新。stdout / stderr を `process_output` イベントでストリーム |
 | `daily_refresh` | `dsx run --root <workspace root> --no-tui --jobs 4` | システム更新 → リポジトリ更新（Bitwarden には触れない）。dsx v0.12.0 未満では拒否する |
+| `take_run_report` | `commands/dsx_report.rs` | 直近の dsx の実行の報告（失敗・スキップ・警告の内訳）を取り出す（取り出すと空になる）。Daily Refresh / sys update / Update All の完了後に、フロントエンドが呼ぶ。dsx v0.13.0 未満、または契約に合わない出力では `null` |
 | `cleanup_preview` | git2 | 管理対象（自動検出 + 手動登録）の全リポジトリの削除候補を読み取り専用で列挙 |
 | `cleanup_execute` | git2 | 選択候補を再検証して local branch 削除または remote-tracking ref prune を実行 |
 | `fetch_repositories` | git2（`commands/fetch.rs`） | 全管理対象を最大 4 並列で fetch。進捗は `process_*` イベント、結果は `FetchSummary`。実行枠は dsx と共有（同時に 1 件） |

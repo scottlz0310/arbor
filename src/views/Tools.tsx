@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { AppBtn } from '../components/AppBar';
 import ConfirmDialog from '../components/ConfirmDialog';
+import RunReportPanel from '../components/RunReportPanel';
 import { compareSemverLike } from '../lib/dsxVersion';
 import {
   runDoctor,
@@ -14,6 +15,7 @@ import {
 import { dsxLatestVersion } from '../lib/invoke';
 import { useConsoleStore } from '../stores/consoleStore';
 import { useEnvStore } from '../stores/envStore';
+import { useReportStore } from '../stores/reportStore';
 import { useUpdateStore } from '../stores/updateStore';
 import type { UpdateStatus } from '../stores/updateStore';
 
@@ -40,6 +42,8 @@ export default function Tools() {
   const dsx = useEnvStore((s) => s.dsx);
   const busy = useConsoleStore((s) => s.run?.status === 'running');
   const updateStatus = useUpdateStore((s) => s.status);
+  const report = useReportStore((s) => s.report);
+  const reportReceivedAt = useReportStore((s) => s.receivedAt);
   const [confirming, setConfirming] = useState<Confirming>(null);
   const [latestCheck, setLatestCheck] = useState<LatestCheck>({ state: 'idle' });
   // self-update を実行したのに版が上がらなかった（MSIX 版など）
@@ -139,6 +143,15 @@ export default function Tools() {
             <InstallGuide />
           )}
         </section>
+
+        {report && (
+          <>
+            <SectionTitle>LAST RUN</SectionTitle>
+            <section style={{ marginBottom: 28 }}>
+              <RunReportPanel report={report} receivedAt={reportReceivedAt} />
+            </section>
+          </>
+        )}
 
         <SectionTitle>ACTIONS</SectionTitle>
         <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12, lineHeight: 1.6 }}>

@@ -1,15 +1,35 @@
 import { useUiStore } from '../stores/uiStore';
-import { dailyRefresh, dsxDoctor, dsxSelfUpdate, repoUpdate, sysUpdate, sysUpdateDryRun } from './invoke';
-import type { DsxOutput, DsxStatus, WorkspaceStatus } from '../types';
+import { useReportStore } from '../stores/reportStore';
+import { dailyRefresh, dsxDoctor, dsxSelfUpdate, repoUpdate, sysUpdate, sysUpdateDryRun, takeRunReport } from './invoke';
+import { toastSuffix } from './runReport';
+import type { DsxOutput, DsxStatus, RunReport, WorkspaceStatus } from '../types';
+
+/**
+ * 直近の実行の報告（警告・スキップ・失敗の内訳。dsx v0.13.0 以上）を取り出し、あれば保持する。
+ * 失敗した実行にも報告があるので、成功・失敗のどちらの後にも呼ぶ。取得に失敗しても、実行の結果は変えない。
+ */
+async function collectReport(): Promise<RunReport | null> {
+  try {
+    const report = await takeRunReport();
+    if (!report) return null;
+    useReportStore.getState().setReport(report);
+    return report;
+  } catch (e) {
+    useUiStore.getState().addToast(`実行結果の詳細を取得できませんでした: ${String(e)}`, 'error');
+    return null;
+  }
+}
 
 /** dsx の実行を始め、終了を Toast で知らせる。出力は実行ログコンソールに流れる。成功したかを返す。 */
 async function runAction(label: string, action: () => Promise<DsxOutput>): Promise<boolean> {
   const { addToast } = useUiStore.getState();
   try {
     await action();
-    addToast(`${label} 完了`, 'success');
+    const report = await collectReport();
+    addToast(`${label} 完了${toastSuffix(report)}`, 'success');
     return true;
   } catch (e) {
+    await collectReport();
     addToast(`${label}: ${String(e)}`, 'error');
     return false;
   }

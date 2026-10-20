@@ -6,8 +6,10 @@ import SummaryStrip from './SummaryStrip';
 import { useCleanupStore } from '../stores/cleanupStore';
 import { useEnvStore } from '../stores/envStore';
 import { useRemoteStore } from '../stores/remoteStore';
+import { useReportStore } from '../stores/reportStore';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
+import { gemSkipped, runReport } from '../test/runReportFixtures';
 import type { DsxStatus, RemoteStatus, RepoInfo, WorkspaceStatus } from '../types';
 
 function repo(name: string, overrides: Partial<RepoInfo> = {}): RepoInfo {
@@ -196,5 +198,47 @@ describe('SummaryStrip — 管理対象から外れたリポジトリ', () => {
     act(() => useRepoStore.setState({ repos: [repo('b')] }));
 
     expect(card(/TOTAL REPOSITORIES/).textContent).not.toMatch(/Archived/);
+  });
+});
+
+describe('SummaryStrip — LAST RUN', () => {
+  const setReport = (report: ReturnType<typeof runReport>) => act(() => useReportStore.getState().setReport(report));
+
+  it('報告が無ければカードを出さない', () => {
+    render(<SummaryStrip />);
+
+    expect(screen.queryByRole('button', { name: /LAST RUN/ })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { name: '問題なし', report: runReport(), value: 'OK', tag: 'dsx run' },
+    {
+      name: 'スキップと警告（終了コード 0）は気づけるように出す',
+      report: runReport({ jobs: { success: 4, failed: 0, skipped: 1 }, warnings: 1, issues: [gemSkipped] }),
+      value: 'Attention',
+      tag: 'スキップ 1・警告 1',
+    },
+    {
+      name: '失敗',
+      report: runReport({ ok: false, jobs: { success: 3, failed: 2, skipped: 0 } }),
+      value: 'Failed',
+      tag: '失敗 2',
+    },
+  ])('$name', ({ report, value, tag }) => {
+    setReport(report);
+
+    render(<SummaryStrip />);
+
+    expect(card(/LAST RUN/).textContent).toContain(value);
+    expect(card(/LAST RUN/).textContent).toContain(tag);
+  });
+
+  it('クリックで内訳のある Tools タブへ移る', async () => {
+    setReport(runReport());
+    render(<SummaryStrip />);
+
+    await userEvent.click(card(/LAST RUN/));
+
+    expect(useUiStore.getState().activeView).toBe('tools');
   });
 });

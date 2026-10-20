@@ -2,12 +2,15 @@ import { afterAll, beforeEach, describe, expect, it, jest, mock, spyOn } from 'b
 import { act } from 'react';
 import { dailyRefreshBlockReason, runDailyRefresh, runRepoUpdate, runSysUpdate, shortVersion } from './dsxActions';
 import * as invoke from './invoke';
+import { useReportStore } from '../stores/reportStore';
 import { useUiStore } from '../stores/uiStore';
+import { gemSkipped, npmFailed, runReport, unknownManager } from '../test/runReportFixtures';
 import type { DsxStatus, WorkspaceStatus } from '../types';
 
 const mockDailyRefresh = spyOn(invoke, 'dailyRefresh');
 const mockSysUpdate = spyOn(invoke, 'sysUpdate');
 const mockRepoUpdate = spyOn(invoke, 'repoUpdate');
+const mockTakeRunReport = spyOn(invoke, 'takeRunReport');
 const mockAddToast = mock();
 
 // module export への spy をファイル外へ漏らさない
@@ -33,6 +36,7 @@ function workspace(overrides: Partial<WorkspaceStatus> = {}): WorkspaceStatus {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockTakeRunReport.mockResolvedValue(null);
   act(() => {
     useUiStore.setState({ addToast: mockAddToast });
   });
@@ -101,5 +105,72 @@ describe('run actions', () => {
     await run();
 
     expect(mockAddToast).toHaveBeenCalledWith(`${name}: 別のコマンドを実行中です（run 3）`, 'error');
+  });
+});
+
+describe('run actions — 実行の報告（dsx v0.13.0 以上のイベント出力）', () => {
+  const skippedReport = runReport({
+    jobs: { success: 4, failed: 0, skipped: 1 },
+    warnings: 1,
+    issues: [gemSkipped],
+    warning_items: [unknownManager],
+  });
+
+  it('成功した実行の報告を保持し、件数を Toast に添える', async () => {
+    mockDailyRefresh.mockResolvedValue(output);
+    mockTakeRunReport.mockResolvedValue(skippedReport);
+
+    await runDailyRefresh();
+
+    expect(useReportStore.getState().report).toEqual(skippedReport);
+    expect(useReportStore.getState().receivedAt).not.toBeNull();
+    expect(mockAddToast).toHaveBeenCalledWith('Daily Refresh 完了（スキップ 1・警告 1）', 'success');
+  });
+
+  it('件数が無い報告は、Toast を変えない', async () => {
+    mockSysUpdate.mockResolvedValue(output);
+    mockTakeRunReport.mockResolvedValue(runReport());
+
+    await runSysUpdate();
+
+    expect(useReportStore.getState().report).not.toBeNull();
+    expect(mockAddToast).toHaveBeenCalledWith('sys update 完了', 'success');
+  });
+
+  it('失敗した実行でも報告を保持する（失敗の内訳が要る）', async () => {
+    const failedReport = runReport({
+      ok: false,
+      jobs: { success: 4, failed: 1, skipped: 0 },
+      issues: [npmFailed],
+    });
+    mockRepoUpdate.mockRejectedValue('dsx exited with code 1: ');
+    mockTakeRunReport.mockResolvedValue(failedReport);
+
+    const succeeded = await runRepoUpdate();
+
+    expect(succeeded).toBe(false);
+    expect(useReportStore.getState().report).toEqual(failedReport);
+    expect(mockAddToast).toHaveBeenCalledWith('Update All: dsx exited with code 1: ', 'error');
+  });
+
+  it('報告が無い実行（古い dsx、doctor など）は、直前の報告を消さない', async () => {
+    act(() => useReportStore.getState().setReport(skippedReport));
+    mockSysUpdate.mockResolvedValue(output);
+    mockTakeRunReport.mockResolvedValue(null);
+
+    await runSysUpdate();
+
+    expect(useReportStore.getState().report).toEqual(skippedReport);
+  });
+
+  it('報告の取得に失敗しても、実行の結果は変えず、取得の失敗を知らせる', async () => {
+    mockSysUpdate.mockResolvedValue(output);
+    mockTakeRunReport.mockRejectedValue('ipc failure');
+
+    const succeeded = await runSysUpdate();
+
+    expect(succeeded).toBe(true);
+    expect(mockAddToast).toHaveBeenCalledWith('実行結果の詳細を取得できませんでした: ipc failure', 'error');
+    expect(mockAddToast).toHaveBeenCalledWith('sys update 完了', 'success');
   });
 });
