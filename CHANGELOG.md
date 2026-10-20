@@ -5,6 +5,10 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### docs
+
+- **v0.5.0 のリリースの記録**（2026-10-20）: `Release`（run 39362529258）が、msix-build → msix-sign → attach-msix → publish-updater-manifest → verify → finalize を通しで成功し、自動で公開まで進んだ。v0.4.0 で直した「署名のジョブを再利用ワークフローの外に出す」構成の通しを確認した（例外の手順は不要）。draft は残っていない。残りは、実機での `.appinstaller` の自動更新の確認（`tasks.md`）。
+
 ## [0.5.0] - 2026-10-20
 
 ### breaking
