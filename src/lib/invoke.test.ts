@@ -10,6 +10,7 @@ import {
   openRepoFolder,
   sysUpdate,
   sysUpdateDryRun,
+  takeRunReport,
 } from './invoke';
 
 const candidate: CleanupCandidate = {
@@ -58,6 +59,7 @@ describe('Process IPC wrappers', () => {
     { name: 'sysUpdate', call: sysUpdate, command: 'sys_update' },
     { name: 'sysUpdateDryRun', call: sysUpdateDryRun, command: 'sys_update_dry_run' },
     { name: 'dsxDoctor', call: dsxDoctor, command: 'dsx_doctor' },
+    { name: 'takeRunReport', call: takeRunReport, command: 'take_run_report' },
   ])('$name は引数なしで $command を呼ぶ', async ({ call, command }) => {
     await call();
 

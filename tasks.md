@@ -4,6 +4,19 @@
 
 ---
 
+## Issue #341: dsx のイベント出力（JSON Lines）を受け取り、警告・スキップ・失敗を画面に出す
+
+スキーマは dsx の `docs/Events_Schema.md`（schema 1、dsx v0.13.0 以上）。
+
+- [x] `commands/dsx_report.rs`: 契約の検査つきのパーサ（版違い・`summary` なし・未知のフィールドと `type`）、イベントファイル、報告の受け渡し
+- [x] `commands/dsx.rs`: 更新系の 4 つで、対応する版の dsx にだけ `--events-file` を渡す。失敗した実行の報告も保持
+- [x] `take_run_report` コマンドと、フロントエンド（`reportStore`・`runReport`・Summary の「LAST RUN」・Tools の内訳）
+- [x] テスト: パーサ（実際の dsx の出力を fixture に）、版の判定、失敗した実行、契約に合わない出力、フロントの判定と表示
+- [ ] PR のレビューサイクルを完了して main にマージ
+- [ ] 実機（dsx v0.13.0）で、Daily Refresh のスキップと警告が「LAST RUN」に出ることを確認（ユーザーの環境の dsx が v0.13.0 になってから）
+
+---
+
 ## Issue #294: dsx 実行・表示基盤 兼 開発環境リフレッシュナーへのピボット
 
 設計合意と PR 構成は `Dropbox/src/arbor-dsx/handoff/completed/2026-10-19_arbor_pivot-294-refresher.md` を参照（#294 は完了・クローズ済み）。

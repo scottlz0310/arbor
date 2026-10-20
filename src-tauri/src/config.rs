@@ -186,6 +186,20 @@ fn save_to(path: &Path, config: &AppConfig) -> Result<(), String> {
     std::fs::write(path, content).map_err(|e| e.to_string())
 }
 
+/// dsx のイベントファイル（`--events-file`）を置くディレクトリ。設定ファイルと同じ場所の `events/`。
+/// MSIX の書き込み仮想化（`%APPDATA%` など）の対象外なので、別パッケージの dsx が書いたファイルを、そのまま読める。
+/// debug build の `ARBOR_CONFIG_DIR` による隔離にも従う。
+pub fn events_dir() -> Result<PathBuf, String> {
+    Ok(events_dir_for(&config_paths()?.path))
+}
+
+fn events_dir_for(config_path: &Path) -> PathBuf {
+    config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("events")
+}
+
 /// 旧版の場所にだけ設定があれば、先に移行してから読み込む。他の読み込み・変更は、移行が終わるまで待つ。
 pub fn load_config() -> Result<AppConfig, String> {
     load_migrated(&config_paths()?, default_workspace_root())
@@ -763,5 +777,26 @@ protected_branches = ["release"]
             load_config().expect("reload").settings.stale_threshold_days,
             21
         );
+    }
+
+    /// イベントファイルの置き場は、設定ファイルと同じディレクトリの `events/`（`ARBOR_CONFIG_DIR` の隔離にも従う）。
+    #[test]
+    fn events_dir_sits_next_to_the_config_file() {
+        let cases = [
+            (
+                "/home/u/.config/arbor/config.toml",
+                "/home/u/.config/arbor/events",
+            ),
+            ("/tmp/iso/arbor/config.toml", "/tmp/iso/arbor/events"),
+            ("config.toml", "events"),
+        ];
+
+        for (config_path, expected) in cases {
+            assert_eq!(
+                events_dir_for(Path::new(config_path)),
+                PathBuf::from(expected),
+                "{config_path}"
+            );
+        }
     }
 }

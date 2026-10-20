@@ -1,0 +1,29 @@
+{"schema":1,"type":"start","time":"2026-10-20T20:16:29.4319234Z","command":"sys update","version":"v0.13.0"}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:29.5393475Z","phase":"sys","kind":"manager","name":"gem","status":"skipped","code":"unavailable","reason":"未インストールまたは利用不可のためスキップ","updated":0,"duration_ms":0}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:29.5393475Z","phase":"sys","kind":"manager_self_update","name":"pnpm"}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:30.576736Z","phase":"sys","kind":"manager_self_update","name":"pnpm","status":"success","updated":0,"duration_ms":1037}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:30.5777675Z","phase":"sys","kind":"manager_self_update","name":"bun"}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:31.3431106Z","phase":"sys","kind":"manager_self_update","name":"bun","status":"success","updated":0,"duration_ms":765}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:31.3431106Z","phase":"sys","kind":"manager_self_update","name":"uv"}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:31.6088691Z","phase":"sys","kind":"manager_self_update","name":"uv","status":"success","updated":0,"duration_ms":265}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:31.6088691Z","phase":"sys","kind":"manager","name":"bun"}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:32.2420169Z","phase":"sys","kind":"manager","name":"bun","status":"success","updated":0,"duration_ms":633}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:32.2420169Z","phase":"sys","kind":"manager","name":"npm"}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:32.2420169Z","phase":"sys","kind":"manager","name":"scoop"}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:32.2420169Z","phase":"sys","kind":"manager","name":"pnpm"}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:32.2420169Z","phase":"sys","kind":"manager","name":"nvm"}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:32.2420169Z","phase":"sys","kind":"manager","name":"cargo"}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:32.2425207Z","phase":"sys","kind":"manager","name":"uv"}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:32.2425207Z","phase":"sys","kind":"manager","name":"rustup"}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:32.2425207Z","phase":"sys","kind":"manager","name":"go"}
+{"schema":1,"type":"job_started","time":"2026-10-20T20:16:32.24306Z","phase":"sys","kind":"manager","name":"winget"}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:32.3265308Z","phase":"sys","kind":"manager","name":"uv","status":"success","updated":0,"duration_ms":84}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:32.4226983Z","phase":"sys","kind":"manager","name":"cargo","status":"success","updated":0,"duration_ms":180}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:32.6861552Z","phase":"sys","kind":"manager","name":"nvm","status":"success","updated":0,"duration_ms":444}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:32.9333859Z","phase":"sys","kind":"manager","name":"rustup","status":"success","updated":0,"duration_ms":690}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:33.0775978Z","phase":"sys","kind":"manager","name":"npm","status":"success","updated":0,"duration_ms":835}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:35.6477319Z","phase":"sys","kind":"manager","name":"pnpm","status":"success","updated":0,"duration_ms":3405}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:36.8793844Z","phase":"sys","kind":"manager","name":"winget","status":"success","updated":0,"duration_ms":4636}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:40.796952Z","phase":"sys","kind":"manager","name":"scoop","status":"success","updated":0,"duration_ms":8554}
+{"schema":1,"type":"job_finished","time":"2026-10-20T20:16:43.791238Z","phase":"sys","kind":"manager","name":"go","status":"success","updated":0,"duration_ms":11548}
+{"schema":1,"type":"summary","time":"2026-10-20T20:16:44.0725066Z","command":"sys update","ok":true,"jobs":{"success":13,"failed":0,"skipped":1},"updated":0,"warnings":0,"issues":[{"phase":"sys","kind":"manager","name":"gem","status":"skipped","code":"unavailable","reason":"未インストールまたは利用不可のためスキップ"}],"warning_items":[]}

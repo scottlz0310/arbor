@@ -18,6 +18,7 @@ import type {
   RemoteCheckSummary,
   RepoConfig,
   RepoInfo,
+  RunReport,
   UpdateCheck,
   WorkspaceStatus,
 } from '../types';
@@ -110,6 +111,13 @@ export const dsxDoctor = () =>
 
 export const dsxSelfUpdate = () =>
   tauriInvoke<DsxOutput>('dsx_self_update');
+
+/**
+ * 直近の dsx の実行の報告（警告・スキップ・失敗の内訳）を取り出す。取り出したら空になる。
+ * 実行が失敗した場合も、dsx がイベントを書き終えていれば報告がある。dsx v0.13.0 未満では常に null。
+ */
+export const takeRunReport = () =>
+  tauriInvoke<RunReport | null>('take_run_report');
 
 export const cancelRun = (runId: number) =>
   tauriInvoke<void>('cancel_run', { runId });

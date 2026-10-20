@@ -6,6 +6,7 @@ mod models;
 mod test_util;
 mod workspace;
 
+use commands::dsx_report::ReportState;
 use commands::runner::{RunnerState, TauriSink};
 use ipc::{cleanup, config as settings, dsx, fetch, remote_status, repo, runner, updater};
 use std::sync::Arc;
@@ -19,6 +20,7 @@ pub fn run() {
         .setup(|app| {
             let sink = Arc::new(TauriSink::new(app.handle().clone()));
             app.manage(RunnerState::new(sink));
+            app.manage(ReportState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -49,6 +51,7 @@ pub fn run() {
             dsx::sys_update_dry_run,
             dsx::dsx_doctor,
             dsx::dsx_self_update,
+            dsx::take_run_report,
             // Arbor 自身の更新
             updater::updater_check,
             updater::updater_install,

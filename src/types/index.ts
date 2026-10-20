@@ -104,6 +104,49 @@ export interface DsxStatus {
   supports_daily_refresh: boolean;
 }
 
+/** dsx のイベント出力（`--events-file`。dsx v0.13.0 以上）の終了時の要約のジョブ件数。 */
+export interface ReportJobCounts {
+  success: number;
+  failed: number;
+  skipped: number;
+}
+
+/** 失敗またはスキップしたジョブ。`status` / `code` / `kind` は dsx が値を足しうるため string。 */
+export interface ReportIssue {
+  phase: string;
+  /** `manager` / `manager_self_update` / `repo` / `phase`（sys・repo の段階そのものの失敗）。 */
+  kind: string;
+  name: string;
+  /** `failed` / `skipped`。 */
+  status: string;
+  /** `error` / `unavailable` / `pull_skipped` / `cancelled`。 */
+  code: string;
+  reason: string;
+}
+
+/** 警告。終了コードには影響しない。 */
+export interface ReportWarning {
+  phase: string;
+  category: string;
+  subject: string;
+  message: string;
+}
+
+/** 1 回の dsx の実行の報告（`summary` イベント。commands/dsx_report.rs）。 */
+export interface RunReport {
+  /** `run` / `sys update` / `repo update`。 */
+  command: string;
+  /** dsx の終了コードが 0 だったか。 */
+  ok: boolean;
+  error: string | null;
+  jobs: ReportJobCounts;
+  /** 更新したパッケージの合計。 */
+  updated: number;
+  warnings: number;
+  issues: ReportIssue[];
+  warning_items: ReportWarning[];
+}
+
 /** Header の root 表示に使う workspace の現況（commands/config_cmd.rs）。 */
 export interface WorkspaceStatus {
   /** 自動検出の root。未設定・無効化なら null。 */

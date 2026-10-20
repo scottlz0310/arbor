@@ -6,8 +6,10 @@ import Tools from './Tools';
 import * as invoke from '../lib/invoke';
 import { useConsoleStore } from '../stores/consoleStore';
 import { useEnvStore } from '../stores/envStore';
+import { useReportStore } from '../stores/reportStore';
 import { useUiStore } from '../stores/uiStore';
 import { useUpdateStore } from '../stores/updateStore';
+import { gemSkipped, runReport, unknownManager } from '../test/runReportFixtures';
 import type { DsxStatus, UpdateCheck } from '../types';
 
 const mockDsxLatestVersion = spyOn(invoke, 'dsxLatestVersion');
@@ -294,5 +296,33 @@ describe('Tools — Arbor の更新', () => {
     render(<Tools />);
 
     expect((button('ダウンロードして再起動') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('Tools — 直近の実行の報告', () => {
+  it('報告が無ければ LAST RUN を出さない', () => {
+    render(<Tools />);
+
+    expect(screen.queryByText('LAST RUN')).not.toBeInTheDocument();
+  });
+
+  it('報告があれば、失敗・スキップ・警告の内訳を出す', () => {
+    act(() =>
+      useReportStore.getState().setReport(
+        runReport({
+          jobs: { success: 4, failed: 0, skipped: 1 },
+          warnings: 1,
+          issues: [gemSkipped],
+          warning_items: [unknownManager],
+        }),
+      ),
+    );
+
+    render(<Tools />);
+
+    expect(screen.getByText('LAST RUN')).toBeInTheDocument();
+    expect(screen.getByText('gem')).toBeInTheDocument();
+    expect(screen.getByText('未インストールまたは利用不可のためスキップ')).toBeInTheDocument();
+    expect(screen.getByText('foo')).toBeInTheDocument();
   });
 });

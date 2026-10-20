@@ -1,10 +1,13 @@
 import type { CSSProperties } from 'react';
+import type { RunReport } from '../types';
 import { dailyRefreshBlockReason, shortVersion } from '../lib/dsxActions';
 import { countRemote, remoteNote, statusesFor } from '../lib/remoteStatus';
 import { countRepos } from '../lib/repoStatus';
+import { countsLabel, reportTone } from '../lib/runReport';
 import { useCleanupStore } from '../stores/cleanupStore';
 import { useEnvStore } from '../stores/envStore';
 import { useRemoteStore } from '../stores/remoteStore';
+import { useReportStore } from '../stores/reportStore';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
 
@@ -59,11 +62,35 @@ function dsxEnvironment(
   return { value: 'Ready', color: 'var(--green)', tag, title: 'Daily Refresh を実行できます' };
 }
 
+const LAST_RUN_TONE = {
+  ok: { value: 'OK', color: 'var(--green)' },
+  attention: { value: 'Attention', color: 'var(--amber)' },
+  error: { value: 'Failed', color: 'var(--red)' },
+} as const;
+
+/** 直近の dsx の実行の判定。失敗・スキップ・警告の件数を出し、内訳は Tools タブに出す。 */
+function LastRunCard({ report, onClick }: { report: RunReport; onClick: () => void }) {
+  const tone = LAST_RUN_TONE[reportTone(report)];
+  const counts = countsLabel(report);
+  return (
+    <Card
+      label="LAST RUN"
+      value={tone.value}
+      valueColor={tone.color}
+      tag={counts ?? `dsx ${report.command}`}
+      tagColor={counts ? tone.color : 'var(--text3)'}
+      title={`直近の dsx ${report.command} の結果です。内訳（理由）は Tools タブに表示します`}
+      onClick={onClick}
+    />
+  );
+}
+
 export default function SummaryStrip() {
   const repos = useRepoStore((s) => s.repos);
   const { dsx, workspace } = useEnvStore();
   const candidateCount = useCleanupStore((s) => s.candidateCount);
   const remoteStatuses = useRemoteStore((s) => s.statuses);
+  const report = useReportStore((s) => s.report);
   const { navigate, setStatusFilter } = useUiStore();
 
   const counts = countRepos(repos);
@@ -104,6 +131,7 @@ export default function SummaryStrip() {
         title="Cleanup の候補は、全リポジトリの remote へ接続して集計するため、Cleanup を開いたときだけ読み込みます"
         onClick={() => navigate('cleanup')}
       />
+      {report && <LastRunCard report={report} onClick={() => navigate('tools')} />}
       <Card
         label="DSX ENVIRONMENT"
         value={env.value}
