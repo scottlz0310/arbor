@@ -5,6 +5,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-20
+
 ### breaking
 
 - **Daily Refresh が要求する dsx を、v0.12.0 以上にした。Arbor から Bitwarden の状態の表示と、未解錠の確認ダイアログを外した**（scottlz0310/dsx#144。dsx v0.12.0 で、`dsx run` が Bitwarden のアンロックと環境変数の読み込みをしなくなったため）。
