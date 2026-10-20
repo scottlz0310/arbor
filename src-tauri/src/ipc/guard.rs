@@ -7,6 +7,9 @@
 //! 3. コマンドが `lib.rs` の `generate_handler!` の登録と過不足なく一致する（除外している以上、登録漏れはここで検出する）。
 //! 4. ディレクトリのファイルがすべて `mod.rs` に宣言されている。
 //! 5. 除外の設定（CI の `cargo llvm-cov` と `codecov.yml`）が、このディレクトリを指している。
+//!
+//! `commands/updater_tauri.rs`（`AppHandle` と updater プラグインへの接続部）も、同じ理由で除外している。下の `glue_violations` が、
+//! `use` と関数だけ・本文の文の数・分岐と繰り返し・ファイルの行数を検査する。
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -132,6 +135,53 @@ fn command_names(source: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// カバレッジの対象外にしている、`ipc/` 以外のファイル（外部への接続部だけ）。`ipc/` と同じく、
+/// ロジックを置ける場所にならないよう、分岐・繰り返しと、関数以外の定義を検査する。
+const EXCLUDED_GLUE: &str = "updater_tauri.rs";
+
+/// 接続部のファイルの行数の上限。除外する範囲が、気づかないうちに広がらないようにする。
+const MAX_GLUE_LINES: usize = 90;
+
+/// `commands/` の接続部のファイルを検査し、違反を返す。置いてよいのは `use` と関数だけで、
+/// 関数の本文に分岐・繰り返しは置けない（テストする流れは、呼ぶ側の `commands/` の関数に置く）。
+fn glue_violations(file_name: &str, source: &str) -> Vec<String> {
+    let file = match syn::parse_file(source) {
+        Ok(file) => file,
+        Err(e) => return vec![format!("{file_name}: 解析できません: {e}")],
+    };
+
+    let mut violations = Vec::new();
+    for item in &file.items {
+        match item {
+            Item::Use(_) => {}
+            Item::Fn(function) => {
+                let name = &function.sig.ident;
+                let statements = function.block.stmts.len();
+                if statements > MAX_STATEMENTS {
+                    violations.push(format!(
+                        "{file_name}: {name} の本文が長すぎます（{statements} 文 > {MAX_STATEMENTS} 文）。流れは、テストできる関数へ"
+                    ));
+                }
+                let mut finder = LogicFinder::default();
+                finder.visit_block(&function.block);
+                for kind in finder.found {
+                    violations.push(format!(
+                        "{file_name}: {name} に {kind} があります。流れは、テストできる関数へ"
+                    ));
+                }
+            }
+            _ => violations.push(format!("{file_name}: use と関数以外は置けません")),
+        }
+    }
+    if source.lines().count() > MAX_GLUE_LINES {
+        violations.push(format!(
+            "{file_name}: ファイルが長すぎます（{} 行 > {MAX_GLUE_LINES} 行）。除外する範囲を広げず、流れは、テストできる関数へ",
+            source.lines().count()
+        ));
+    }
+    violations
 }
 
 /// `generate_handler![ ... ]` に並んでいるコマンド名（`モジュール::名前` の名前）。
@@ -354,4 +404,74 @@ fn coverage_exclusions_point_at_the_ipc_directory() {
         codecov.contains("src-tauri/src/ipc/"),
         "codecov.yml の ignore が ipc/ を除外していません"
     );
+}
+
+#[test]
+fn coverage_exclusions_point_at_the_glue_file() {
+    let root = manifest_dir().join("..");
+    let ci = read(&root.join(".github").join("workflows").join("ci.yml"));
+    let codecov = read(&root.join("codecov.yml"));
+    let pattern = EXCLUDED_GLUE.replace('.', "\\.");
+
+    assert!(
+        ci.contains(&pattern),
+        "CI の cargo llvm-cov が {EXCLUDED_GLUE} を除外していません"
+    );
+    assert!(
+        codecov.contains(&format!("src-tauri/src/commands/{EXCLUDED_GLUE}")),
+        "codecov.yml の ignore が {EXCLUDED_GLUE} を除外していません"
+    );
+}
+
+#[test]
+fn the_excluded_glue_file_has_no_logic() {
+    let path = manifest_dir()
+        .join("src")
+        .join("commands")
+        .join(EXCLUDED_GLUE);
+
+    assert_eq!(
+        glue_violations(EXCLUDED_GLUE, &read(&path)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn logic_in_the_glue_file_is_reported() {
+    let cases = [
+        ("if", "async fn f() { if flag { a() } else { b() } }"),
+        (
+            "match",
+            "fn f() { match flag { true => a(), false => b() } }",
+        ),
+        ("&& / ||", "fn f() { let ok = flag && other; a(ok) }"),
+        ("use と関数以外", "#[cfg(test)] mod tests {}"),
+        ("use と関数以外", "struct Holder;"),
+        ("長すぎます（5 文", "fn f() { a(); b(); c(); d(); e() }"),
+    ];
+
+    for (kind, source) in cases {
+        let violations = glue_violations("x.rs", source);
+        assert!(
+            violations.iter().any(|v| v.contains(kind)),
+            "{kind}: {violations:?}"
+        );
+    }
+
+    let long_file = "use a::b;\n".repeat(MAX_GLUE_LINES + 1);
+    assert!(glue_violations("x.rs", &long_file)
+        .iter()
+        .any(|v| v.contains("ファイルが長すぎます")));
+}
+
+#[test]
+fn a_thin_glue_file_passes() {
+    let source = r#"
+        use crate::x::y;
+        async fn f(app: &AppHandle) -> Result<u8, String> {
+            y(app).await.map_err(|e| format!("失敗: {e}"))
+        }
+    "#;
+
+    assert_eq!(glue_violations("x.rs", source), Vec::<String>::new());
 }

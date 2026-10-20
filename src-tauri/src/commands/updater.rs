@@ -3,12 +3,11 @@
 //! 更新の有無は、リリースの `latest.json`（`tauri.conf.json` の `plugins.updater.endpoints`）で調べる。
 //! Windows は MSIX の `.appinstaller` が更新するため、アプリ内では更新しない。
 //! 確認と適用の流れは、外部（ネットワーク・ファイル置き換え）を関数で受け取り、テストで差し替える。
+//! 外部に触れる接続部（`AppHandle` と updater プラグイン）は `updater_tauri.rs` に分けている。
 
-use super::runner::{JobContext, Runner, RunnerState, Stream};
+use super::runner::{JobContext, Runner, Stream};
 use serde::Serialize;
 use std::future::Future;
-use tauri::AppHandle;
-use tauri_plugin_updater::UpdaterExt;
 
 /// 利用できる更新。
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -51,7 +50,8 @@ pub fn unsupported_reason(os: &str, appimage: bool) -> Option<&'static str> {
     }
 }
 
-fn current_unsupported_reason() -> Option<&'static str> {
+/// 実行中の環境について、アプリ内の更新に対応していない理由。
+pub fn current_unsupported_reason() -> Option<&'static str> {
     unsupported_reason(std::env::consts::OS, std::env::var_os("APPIMAGE").is_some())
 }
 
@@ -134,63 +134,6 @@ fn fail(ctx: &JobContext, message: String) -> (i32, Result<(), String>) {
     (1, Err(message))
 }
 
-async fn fetch_update(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>, String> {
-    app.updater()
-        .map_err(|e| format!("更新の確認を準備できませんでした: {e}"))?
-        .check()
-        .await
-        .map_err(|e| format!("更新の確認に失敗しました: {e}"))
-}
-
-/// リリースの `latest.json` で、新しい版の有無を調べる。
-pub async fn check_for_update(app: &AppHandle) -> Result<UpdateCheck, String> {
-    check_update(
-        current_unsupported_reason(),
-        &app.package_info().version.to_string(),
-        || async {
-            Ok(fetch_update(app).await?.map(|update| UpdateInfo {
-                current_version: update.current_version,
-                version: update.version,
-                notes: update.body,
-            }))
-        },
-    )
-    .await
-}
-
-/// 新しい版をダウンロードして適用し、再起動する（成功すると戻らない）。
-/// 別のコマンドの実行中は、何もせず、エラーを返す。
-pub async fn install_available_update(app: &AppHandle, state: &RunnerState) -> Result<(), String> {
-    let runner = state.runner();
-    let app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        install_update(
-            &runner,
-            current_unsupported_reason(),
-            || {
-                tauri::async_runtime::block_on(async {
-                    let update = fetch_update(&app)
-                        .await?
-                        .ok_or_else(|| "利用できる更新がありません".to_string())?;
-                    let bytes = update
-                        .download(|_, _| {}, || {})
-                        .await
-                        .map_err(|e| format!("更新のダウンロードに失敗しました: {e}"))?;
-                    Ok((update, bytes))
-                })
-            },
-            |(update, bytes)| {
-                update
-                    .install(bytes)
-                    .map_err(|e| format!("更新の適用に失敗しました: {e}"))
-            },
-            || app.restart(),
-        )
-    })
-    .await
-    .map_err(|e| format!("更新の実行スレッドが異常終了しました: {e}"))?
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,6 +161,14 @@ mod tests {
                 "{os} (appimage={appimage})"
             );
         }
+    }
+
+    #[test]
+    fn current_unsupported_reason_reads_the_running_environment() {
+        assert_eq!(
+            current_unsupported_reason(),
+            unsupported_reason(std::env::consts::OS, std::env::var_os("APPIMAGE").is_some())
+        );
     }
 
     #[test]

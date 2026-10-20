@@ -1,5 +1,6 @@
 use crate::commands::runner::RunnerState;
-use crate::commands::updater::{check_for_update, install_available_update, UpdateCheck};
+use crate::commands::updater::UpdateCheck;
+use crate::commands::updater_tauri::{check_for_update, install_available_update};
 use tauri::{AppHandle, State};
 
 /// Arbor の新しい版の有無を調べる（macOS と Linux の AppImage 向け）。
