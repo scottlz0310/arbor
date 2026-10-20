@@ -13,6 +13,7 @@ import Settings from './views/Settings';
 import { useRepoStore } from './stores/repoStore';
 import { useUiStore } from './stores/uiStore';
 import { useEnvStore } from './stores/envStore';
+import { useUpdateStore } from './stores/updateStore';
 import { subscribeProcessEvents } from './lib/processEvents';
 import { subscribeRescanAfterRun } from './lib/rescanAfterRun';
 
@@ -31,6 +32,15 @@ export default function App() {
       if (!useEnvStore.getState().dsx?.available) {
         navigate('tools');
         addToast('dsx CLI が見つかりません。dsx Tools タブからインストール手順を確認してください。', 'error');
+      }
+    });
+
+    // 新しい版があれば知らせるだけで、適用はしない（Tools タブの操作）。失敗は Tools タブに表示される。
+    useUpdateStore.getState().check().then(() => {
+      if (cancelled) return;
+      const { status } = useUpdateStore.getState();
+      if (status.state === 'done' && status.result.kind === 'available') {
+        addToast(`Arbor v${status.result.version} が利用できます。Tools タブから更新できます。`);
       }
     });
 

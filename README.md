@@ -31,7 +31,12 @@ iex ([Text.Encoding]::UTF8.GetString((iwr -UseBasicParsing https://github.com/sc
 
 ### macOS / Linux
 
-[Releases](https://github.com/scottlz0310/arbor/releases) の、dmg（macOS）、AppImage・deb（Linux）。アプリ内の自動更新は、まだ無い（[#327](https://github.com/scottlz0310/arbor/issues/327)）。macOS は、署名・公証をしていない。
+[Releases](https://github.com/scottlz0310/arbor/releases) の、dmg（macOS）、AppImage・deb（Linux）。macOS は、署名・公証をしていない。
+
+**アプリ内の更新**: 起動時に新しい版を確認し、あれば Toast で知らせる（適用はしない）。Tools タブの「ARBOR」で「更新を確認」→「ダウンロードして再起動」。
+
+- **Linux**: AppImage だけが更新できる。deb は更新できないので、新しい deb を入れ直す（Tools タブにその旨を表示する）。AppImage での実機検証は、次のリリースで行う。
+- **macOS**: 実装は Linux と同じだが、**未検証**（実機がなく、署名・公証もしていないため、CI のビルドだけ）。更新できない場合は、dmg を入れ直す。
 
 ## 前提ツール
 

@@ -4,6 +4,7 @@ import { act } from 'react';
 import App from './App';
 import * as invoke from './lib/invoke';
 import { useUiStore } from './stores/uiStore';
+import { useUpdateStore } from './stores/updateStore';
 import type { RepoInfo } from './types';
 
 const mockListRepositories = spyOn(invoke, 'listRepositories');
@@ -11,6 +12,7 @@ const mockDsxCheck = spyOn(invoke, 'dsxCheck');
 const mockGetWorkspaceStatus = spyOn(invoke, 'getWorkspaceStatus');
 const mockGetConfig = spyOn(invoke, 'getConfig');
 const mockScanMissing = spyOn(invoke, 'scanMissingRepositories');
+const mockUpdaterCheck = spyOn(invoke, 'updaterCheck');
 
 // module export への spy をファイル外へ漏らさない
 afterAll(() => {
@@ -47,6 +49,7 @@ beforeEach(() => {
     repositories: [],
   } as never);
   mockScanMissing.mockResolvedValue([]);
+  mockUpdaterCheck.mockResolvedValue({ kind: 'up_to_date', current_version: '0.5.0' });
   act(() => useUiStore.setState({ activeView: 'status' }));
 });
 
@@ -104,5 +107,42 @@ describe('App — 起動時の画面', () => {
     await waitFor(() => expect(useUiStore.getState().activeView).toBe('tools'));
     expect(await screen.findByText(/go install github.com\/scottlz0310\/dsx@latest/)).toBeTruthy();
     expect(useUiStore.getState().toasts.some((t) => t.message.includes('dsx Tools タブ'))).toBe(true);
+  });
+});
+
+describe('App — 起動時の更新の確認', () => {
+  it('新しい版があれば Toast で知らせるだけで、適用はしない', async () => {
+    mockListRepositories.mockResolvedValue([repo]);
+    mockUpdaterCheck.mockResolvedValue({ kind: 'available', current_version: '0.5.0', version: '0.6.0', notes: null });
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(useUiStore.getState().toasts.some((t) => t.message === 'Arbor v0.6.0 が利用できます。Tools タブから更新できます。')).toBe(true),
+    );
+    expect(useUiStore.getState().activeView).toBe('status');
+  });
+
+  it.each([
+    { name: '最新版', result: { kind: 'up_to_date', current_version: '0.5.0' } },
+    { name: '対応していない環境', result: { kind: 'unsupported', reason: 'deb です' } },
+  ] as const)(' のときは、何も知らせない', async ({ result }) => {
+    mockListRepositories.mockResolvedValue([repo]);
+    mockUpdaterCheck.mockResolvedValue(result);
+
+    render(<App />);
+
+    await waitFor(() => expect(useUpdateStore.getState().status.state).toBe('done'));
+    expect(useUiStore.getState().toasts).toEqual([]);
+  });
+
+  it('確認に失敗しても Toast では騒がず、Tools タブに表示する状態にする', async () => {
+    mockListRepositories.mockResolvedValue([repo]);
+    mockUpdaterCheck.mockRejectedValue('更新の確認に失敗しました: offline');
+
+    render(<App />);
+
+    await waitFor(() => expect(useUpdateStore.getState().status.state).toBe('error'));
+    expect(useUiStore.getState().toasts).toEqual([]);
   });
 });

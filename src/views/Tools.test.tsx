@@ -7,7 +7,8 @@ import * as invoke from '../lib/invoke';
 import { useConsoleStore } from '../stores/consoleStore';
 import { useEnvStore } from '../stores/envStore';
 import { useUiStore } from '../stores/uiStore';
-import type { DsxStatus } from '../types';
+import { useUpdateStore } from '../stores/updateStore';
+import type { DsxStatus, UpdateCheck } from '../types';
 
 const mockDsxLatestVersion = spyOn(invoke, 'dsxLatestVersion');
 const mockSysUpdate = spyOn(invoke, 'sysUpdate');
@@ -15,6 +16,8 @@ const mockSysUpdateDryRun = spyOn(invoke, 'sysUpdateDryRun');
 const mockRepoUpdate = spyOn(invoke, 'repoUpdate');
 const mockDsxDoctor = spyOn(invoke, 'dsxDoctor');
 const mockDsxSelfUpdate = spyOn(invoke, 'dsxSelfUpdate');
+const mockUpdaterCheck = spyOn(invoke, 'updaterCheck');
+const mockUpdaterInstall = spyOn(invoke, 'updaterInstall');
 const mockEnvRefresh = mock();
 const mockAddToast = mock();
 
@@ -44,6 +47,8 @@ beforeEach(() => {
     m.mockResolvedValue(output);
   }
   mockEnvRefresh.mockResolvedValue(undefined);
+  mockUpdaterCheck.mockResolvedValue({ kind: 'up_to_date', current_version: '0.5.0' });
+  mockUpdaterInstall.mockResolvedValue(undefined);
   act(() => {
     useUiStore.setState({ addToast: mockAddToast });
     useEnvStore.setState({ refresh: mockEnvRefresh });
@@ -204,5 +209,90 @@ describe('Tools — アクション', () => {
     for (const name of [/Update All Tools/, /Dry Run/, /Update Repositories/, /Doctor/]) {
       expect((button(name) as HTMLButtonElement).disabled).toBe(true);
     }
+  });
+});
+
+describe('Tools — Arbor の更新', () => {
+  const available: UpdateCheck = { kind: 'available', current_version: '0.5.0', version: '0.6.0', notes: '新機能: 自動更新' };
+
+  function setUpdate(status: Partial<ReturnType<typeof useUpdateStore.getState>>) {
+    act(() => useUpdateStore.setState(status));
+  }
+
+  it.each([
+    { name: '未確認', status: { state: 'idle' } as const, text: '更新を確認していません' },
+    { name: '確認中', status: { state: 'checking' } as const, text: '更新を確認しています…' },
+    {
+      name: '最新版',
+      status: { state: 'done', result: { kind: 'up_to_date', current_version: '0.5.0' } } as const,
+      text: '✓ 最新版です（v0.5.0）',
+    },
+    {
+      name: '対応していない環境',
+      status: { state: 'done', result: { kind: 'unsupported', reason: 'Windows 版は MSIX で自動更新されます' } } as const,
+      text: 'Windows 版は MSIX で自動更新されます',
+    },
+    { name: '失敗', status: { state: 'error', message: '更新の確認に失敗しました: timeout' } as const, text: '更新の確認に失敗しました: timeout' },
+    {
+      name: '適用中',
+      status: { state: 'installing', version: '0.6.0' } as const,
+      text: 'v0.6.0 をダウンロードして適用しています。完了すると再起動します…',
+    },
+  ])('$name の状態を表示する', ({ status, text }) => {
+    setUpdate({ status });
+
+    render(<Tools />);
+
+    expect(screen.getByText(text)).toBeTruthy();
+  });
+
+  it('更新を確認 → 結果を表示する', async () => {
+    mockUpdaterCheck.mockResolvedValue(available);
+    render(<Tools />);
+
+    await userEvent.click(button('更新を確認'));
+
+    expect(await screen.findByText('↑ v0.6.0 が利用可能です（現在 v0.5.0）')).toBeTruthy();
+    expect(screen.getByText('新機能: 自動更新')).toBeTruthy();
+  });
+
+  it('対応していない環境では、更新の確認を押せない', () => {
+    setUpdate({ status: { state: 'done', result: { kind: 'unsupported', reason: 'x' } } });
+
+    render(<Tools />);
+
+    expect((button('更新を確認') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('確認ダイアログで承認すると、更新を適用する', async () => {
+    setUpdate({ status: { state: 'done', result: available } });
+    render(<Tools />);
+
+    await userEvent.click(button('ダウンロードして再起動'));
+    expect(screen.getByText('Arbor を v0.6.0 に更新しますか？')).toBeTruthy();
+    await userEvent.click(button('更新して再起動'));
+
+    await waitFor(() => expect(mockUpdaterInstall).toHaveBeenCalledTimes(1));
+  });
+
+  it('確認ダイアログでキャンセルすると、適用しない', async () => {
+    setUpdate({ status: { state: 'done', result: available } });
+    render(<Tools />);
+
+    await userEvent.click(button('ダウンロードして再起動'));
+    await userEvent.click(button('Cancel'));
+
+    expect(mockUpdaterInstall).not.toHaveBeenCalled();
+  });
+
+  it('別のコマンドを実行中は、適用できない（再起動で中断するため）', () => {
+    setUpdate({ status: { state: 'done', result: available } });
+    act(() => {
+      useConsoleStore.getState().handleStarted({ runId: 1, label: 'dsx run', argv: [], startedAt: 0 });
+    });
+
+    render(<Tools />);
+
+    expect((button('ダウンロードして再起動') as HTMLButtonElement).disabled).toBe(true);
   });
 });

@@ -14,12 +14,14 @@ import {
 import { dsxLatestVersion } from '../lib/invoke';
 import { useConsoleStore } from '../stores/consoleStore';
 import { useEnvStore } from '../stores/envStore';
+import { useUpdateStore } from '../stores/updateStore';
+import type { UpdateStatus } from '../stores/updateStore';
 
 /** MSIX 版の dsx は `dsx self-update` では更新されない（.appinstaller による自動更新）。公式のインストーラで更新する。 */
 const MSIX_UPDATE_COMMAND =
   'iex ([Text.Encoding]::UTF8.GetString((iwr -UseBasicParsing https://github.com/scottlz0310/dsx/releases/latest/download/install.ps1).Content))';
 
-type Confirming = 'sys-update' | 'self-update' | null;
+type Confirming = 'sys-update' | 'self-update' | 'arbor-update' | null;
 type LatestCheck =
   | { state: 'idle' }
   | { state: 'checking' }
@@ -37,6 +39,7 @@ interface ToolAction {
 export default function Tools() {
   const dsx = useEnvStore((s) => s.dsx);
   const busy = useConsoleStore((s) => s.run?.status === 'running');
+  const updateStatus = useUpdateStore((s) => s.status);
   const [confirming, setConfirming] = useState<Confirming>(null);
   const [latestCheck, setLatestCheck] = useState<LatestCheck>({ state: 'idle' });
   // self-update を実行したのに版が上がらなかった（MSIX 版など）
@@ -99,6 +102,11 @@ export default function Tools() {
   return (
     <div style={{ height: '100%', overflowY: 'auto' }}>
       <div style={{ padding: 16, maxWidth: 760 }}>
+        <SectionTitle>ARBOR</SectionTitle>
+        <section style={{ marginBottom: 28 }}>
+          <ArborUpdate status={updateStatus} busy={busy} onInstall={() => setConfirming('arbor-update')} />
+        </section>
+
         <SectionTitle>dsx CLI</SectionTitle>
         <section style={{ marginBottom: 28 }}>
           {!dsx ? (
@@ -178,6 +186,19 @@ export default function Tools() {
         />
       )}
 
+      {confirming === 'arbor-update' && updateStatus.state === 'done' && updateStatus.result.kind === 'available' && (
+        <ConfirmDialog
+          title={`Arbor を v${updateStatus.result.version} に更新しますか？`}
+          message={'新しい版をダウンロードして適用し、Arbor を再起動します。\n実行中の作業は、完了してから行ってください。'}
+          confirmLabel="更新して再起動"
+          onConfirm={() => {
+            setConfirming(null);
+            void useUpdateStore.getState().install();
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+
       {confirming === 'self-update' && (
         <ConfirmDialog
           title="dsx self-update を実行しますか？"
@@ -192,6 +213,85 @@ export default function Tools() {
       )}
     </div>
   );
+}
+
+function ArborUpdate({
+  status,
+  busy,
+  onInstall,
+}: {
+  status: UpdateStatus;
+  busy: boolean;
+  onInstall: () => void;
+}) {
+  const working = status.state === 'checking' || status.state === 'installing';
+  const unsupported = status.state === 'done' && status.result.kind === 'unsupported';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <ArborUpdateResult status={status} />
+        </div>
+        <AppBtn onClick={() => void useUpdateStore.getState().check()} disabled={working || unsupported}>
+          {status.state === 'checking' ? '確認中…' : '更新を確認'}
+        </AppBtn>
+      </div>
+      {status.state === 'done' && status.result.kind === 'available' && (
+        <>
+          {status.result.notes && (
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text2)',
+                lineHeight: 1.6,
+                whiteSpace: 'pre-wrap',
+                maxHeight: 160,
+                overflowY: 'auto',
+                background: 'var(--bg3)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r)',
+                padding: '8px 12px',
+              }}
+            >
+              {status.result.notes}
+            </div>
+          )}
+          <div>
+            <AppBtn onClick={onInstall} disabled={busy || working}>
+              ダウンロードして再起動
+            </AppBtn>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ArborUpdateResult({ status }: { status: UpdateStatus }) {
+  switch (status.state) {
+    case 'idle':
+      return <Muted>更新を確認していません</Muted>;
+    case 'checking':
+      return <Muted>更新を確認しています…</Muted>;
+    case 'installing':
+      return <Muted>v{status.version} をダウンロードして適用しています。完了すると再起動します…</Muted>;
+    case 'error':
+      return <div style={{ fontSize: 11, color: 'var(--red)' }}>{status.message}</div>;
+    case 'done':
+      switch (status.result.kind) {
+        case 'unsupported':
+          return <Muted>{status.result.reason}</Muted>;
+        case 'up_to_date':
+          return <div style={{ fontSize: 12, color: 'var(--green)' }}>✓ 最新版です（v{status.result.current_version}）</div>;
+        case 'available':
+          return (
+            <div style={{ fontSize: 12, color: 'var(--amber)' }}>
+              ↑ v{status.result.version} が利用可能です（現在 v{status.result.current_version}）
+            </div>
+          );
+      }
+  }
 }
 
 function LatestResult({
