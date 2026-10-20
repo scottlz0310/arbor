@@ -49,7 +49,8 @@ Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
 - [x] dsx v0.12.0 への追従（Daily Refresh の最低版を v0.12.0 へ。Bitwarden の pill・確認ダイアログ・`bitwarden_status` を削除。`supports_run_root` → `supports_daily_refresh`）
 - [x] v0.5.0 のリリース（2026-10-20。準備 PR #337、`Release` run 39362529258。msix-build → msix-sign → attach-msix → verify → finalize が自動で通り、draft は残っていない）
 - [ ] 実機で、v0.4.0 → v0.5.0 が `.appinstaller` で自動更新されることの確認（約 8 時間ごと。すぐ確かめるときは、最新の Release の `arbor.appinstaller` を開く）と、Header に Bitwarden の pill が無いことの目視（ユーザーの実機）
-- [ ] macOS / Linux の自動更新（Tauri updater）の完成（#327）
+- [x] macOS / Linux の自動更新（Tauri updater）の完成（#327。Tools タブの「ARBOR」で手動の確認・適用 + 起動時に新しい版があれば Toast で通知。Rust の updater API を使い、JS のプラグインは足さない。macOS は実装共通で README に「未検証」と明記）
+- [ ] #327 の Linux AppImage での実機検証（使い捨て Docker かネイティブ Ubuntu で、旧版の AppImage → 次のリリースの版へ更新できること）
 - [ ] `Package MSIX` の所要時間を短くする（#331。PR の検証では、ダミーの exe でパッケージ化だけを通す。キャッシュが効いた署名の実行は、約 3.5 分）
 
 ---

@@ -18,6 +18,7 @@ import type {
   RemoteCheckSummary,
   RepoConfig,
   RepoInfo,
+  UpdateCheck,
   WorkspaceStatus,
 } from '../types';
 
@@ -112,3 +113,13 @@ export const dsxSelfUpdate = () =>
 
 export const cancelRun = (runId: number) =>
   tauriInvoke<void>('cancel_run', { runId });
+
+// ─── Arbor 自身の更新 ────────────────────────────────────────────────────────
+
+/** リリースの `latest.json` で、Arbor の新しい版の有無を調べる（macOS と Linux の AppImage 向け）。 */
+export const updaterCheck = () =>
+  tauriInvoke<UpdateCheck>('updater_check');
+
+/** 新しい版をダウンロードして適用する。成功するとアプリは再起動する。 */
+export const updaterInstall = () =>
+  tauriInvoke<void>('updater_install');

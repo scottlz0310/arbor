@@ -7,7 +7,7 @@ mod test_util;
 mod workspace;
 
 use commands::runner::{RunnerState, TauriSink};
-use ipc::{cleanup, config as settings, dsx, fetch, remote_status, repo, runner};
+use ipc::{cleanup, config as settings, dsx, fetch, remote_status, repo, runner, updater};
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -49,6 +49,9 @@ pub fn run() {
             dsx::sys_update_dry_run,
             dsx::dsx_doctor,
             dsx::dsx_self_update,
+            // Arbor 自身の更新
+            updater::updater_check,
+            updater::updater_install,
             runner::cancel_run,
         ])
         .run(tauri::generate_context!())

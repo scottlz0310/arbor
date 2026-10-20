@@ -114,6 +114,13 @@ export interface WorkspaceStatus {
   manual_count: number;
 }
 
+/** Arbor 自身の更新の確認結果（commands/updater.rs の `UpdateCheck`）。 */
+export type UpdateCheck =
+  /** アプリ内では更新できない（Windows の MSIX、Linux の deb など）。 */
+  | { kind: 'unsupported'; reason: string }
+  | { kind: 'up_to_date'; current_version: string }
+  | { kind: 'available'; current_version: string; version: string; notes: string | null };
+
 // ─── Cleanup Wizard (Issue #186) ────────────────────────────────────────────
 
 export type CleanupOperation = 'delete_local_branch' | 'prune_remote_tracking_ref';
