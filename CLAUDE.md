@@ -146,7 +146,7 @@ Rust backend (Tauri commands)
 | `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する。`dsx_check`（版と `supports_daily_refresh`）、`repo_update` / `daily_refresh`（どちらも Arbor の `workspace.root` を `--root` で渡す。Daily Refresh は dsx v0.12.0 以上が必要） |
 | `commands/fetch.rs` | 管理対象リポジトリの一括 fetch（`fetch_repositories`）。git2 で最大 4 並列に fetch し、1 件ごとの結果を runner の job としてコンソールへ流す。`cancel_run` で転送中の fetch も中断できる |
 | `commands/remote_status.rs` | リモートの状態の確認（`check_remotes`）。各リポジトリの `origin`（GitHub のもの）について、`gh api repos/{owner}/{repo}` で、アーカイブ済み・移転（transfer / rename）・見つからない（404）を調べる。最大 4 並列で、1 件ごとの結果を runner の job としてコンソールへ流す（fetch と同じ枠）。ネットワークを使うため、自動では走らせず、Status タブの「Remote を確認」で手動で行う。`gh` の呼び出しは `Looker` で差し替えられる |
-| `commands/updater.rs` | Arbor 自身の更新（Tauri updater。macOS と Linux の AppImage 向け）。`updater_check`（リリースの `latest.json` で新しい版の有無を調べる）、`updater_install`（ダウンロードして適用し、再起動する）。Windows（MSIX の `.appinstaller` が更新する）と Linux の deb は、ネットワークに出ず `unsupported` を返す。確認と適用は、外部を関数で受け取り、テストで差し替える |
+| `commands/updater.rs` | Arbor 自身の更新（Tauri updater。macOS と Linux の AppImage 向け）。`updater_check`（リリースの `latest.json` で新しい版の有無を調べる）、`updater_install`（ダウンロードして適用し、再起動する。適用から再起動までは runner の枠に載せ、他のコマンドと同時に走らせない）。Windows（MSIX の `.appinstaller` が更新する）と Linux の deb は、ネットワークに出ず `unsupported` を返す。確認と適用は、外部を関数で受け取り、テストで差し替える |
 | `commands/runner.rs` | 外部コマンドの実行基盤（子プロセスを持たない処理は `run_job` で同じ枠に載せる）。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
 
 ### IPC ラッパーとカバレッジ

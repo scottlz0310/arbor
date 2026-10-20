@@ -4,6 +4,7 @@
 //! Windows は MSIX の `.appinstaller` が更新するため、アプリ内では更新しない。
 //! 確認と適用の流れは、外部（ネットワーク・ファイル置き換え）を関数で受け取り、テストで差し替える。
 
+use super::runner::{Runner, RunnerState, Stream};
 use serde::Serialize;
 use std::future::Future;
 use tauri::AppHandle;
@@ -82,17 +83,35 @@ where
     })
 }
 
-/// 更新をダウンロードして適用する（再起動は呼び出し側）。対応していない環境では、何もせず、エラーを返す。
-pub async fn install_update<F, Fut>(unsupported: Option<&str>, install: F) -> Result<(), String>
-where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<(), String>>,
-{
+/// 更新を適用して再起動する。適用から再起動までを runner の `run_job` に載せ、実行中の他のコマンド
+/// （dsx・fetch など）と同時に走らせない（再起動で、実行中のコマンドを途中で切らないため）。
+/// 対応していない環境では、枠を取らず、何もせずに、エラーを返す。
+pub fn install_update(
+    runner: &Runner,
+    unsupported: Option<&str>,
+    install: impl FnOnce() -> Result<(), String>,
+    restart: impl FnOnce(),
+) -> Result<(), String> {
     if let Some(reason) = unsupported {
         return Err(reason.to_string());
     }
 
-    install().await
+    runner
+        .run_job("Arbor update", |ctx| {
+            ctx.log(Stream::Stdout, "[arbor] 更新をダウンロードして適用します");
+            match install() {
+                Ok(()) => {
+                    ctx.log(Stream::Stdout, "[arbor] 適用しました。再起動します");
+                    restart();
+                    (0, Ok(()))
+                }
+                Err(e) => {
+                    ctx.log(Stream::Stderr, format!("[arbor] {e}"));
+                    (1, Err(e))
+                }
+            }
+        })?
+        .value
 }
 
 async fn fetch_update(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>, String> {
@@ -119,24 +138,42 @@ pub async fn check_for_update(app: &AppHandle) -> Result<UpdateCheck, String> {
     .await
 }
 
-/// 新しい版をダウンロードして適用する。適用後の再起動は、呼び出し側が行う。
-pub async fn install_available_update(app: &AppHandle) -> Result<(), String> {
-    install_update(current_unsupported_reason(), || async {
-        let update = fetch_update(app)
-            .await?
-            .ok_or_else(|| "利用できる更新がありません".to_string())?;
+/// 新しい版をダウンロードして適用し、再起動する（成功すると戻らない）。
+/// 別のコマンドの実行中は、何もせず、エラーを返す。
+pub async fn install_available_update(app: &AppHandle, state: &RunnerState) -> Result<(), String> {
+    let runner = state.runner();
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        install_update(
+            &runner,
+            current_unsupported_reason(),
+            || {
+                tauri::async_runtime::block_on(async {
+                    let update = fetch_update(&app)
+                        .await?
+                        .ok_or_else(|| "利用できる更新がありません".to_string())?;
 
-        update
-            .download_and_install(|_, _| {}, || {})
-            .await
-            .map_err(|e| format!("更新のダウンロードと適用に失敗しました: {e}"))
+                    update
+                        .download_and_install(|_, _| {}, || {})
+                        .await
+                        .map_err(|e| format!("更新のダウンロードと適用に失敗しました: {e}"))
+                })
+            },
+            || app.restart(),
+        )
     })
     .await
+    .map_err(|e| format!("更新の実行スレッドが異常終了しました: {e}"))?
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::runner::{
+        EventSink, ProcessFinished, ProcessOutput, ProcessStarted, SystemLauncher,
+    };
+    use std::cell::Cell;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn unsupported_reason_per_platform() {
@@ -227,30 +264,128 @@ mod tests {
         );
     }
 
-    #[test]
-    fn install_update_runs_the_installer() {
-        let result = tauri::async_runtime::block_on(install_update(None, || async { Ok(()) }));
+    #[derive(Default)]
+    struct RecordingSink {
+        lines: Mutex<Vec<(Stream, String)>>,
+        finished: Mutex<Vec<ProcessFinished>>,
+    }
 
-        assert_eq!(result, Ok(()));
+    impl EventSink for RecordingSink {
+        fn started(&self, _: &ProcessStarted) {}
+
+        fn output(&self, event: &ProcessOutput) {
+            self.lines
+                .lock()
+                .unwrap()
+                .push((event.stream, event.text.clone()));
+        }
+
+        fn finished(&self, event: &ProcessFinished) {
+            self.finished.lock().unwrap().push(event.clone());
+        }
+    }
+
+    fn runner(sink: &Arc<RecordingSink>) -> Arc<Runner> {
+        Arc::new(Runner::new(
+            Arc::new(SystemLauncher),
+            Arc::clone(sink) as Arc<dyn EventSink>,
+        ))
     }
 
     #[test]
-    fn install_update_propagates_installer_error() {
-        let result = tauri::async_runtime::block_on(install_update(None, || async {
-            Err("disk full".to_string())
-        }));
+    fn install_update_installs_then_restarts_inside_the_slot() {
+        let sink = Arc::new(RecordingSink::default());
+        let runner = runner(&sink);
+        let restarted = Cell::new(false);
+
+        let result = install_update(
+            &runner,
+            None,
+            || {
+                // 適用の最中は枠が埋まっていて、他のコマンドを始められない。
+                assert!(runner.run_job("other", |_| (0, ())).is_err());
+                Ok(())
+            },
+            || {
+                assert!(runner.run_job("other", |_| (0, ())).is_err());
+                restarted.set(true);
+            },
+        );
+
+        assert_eq!(result, Ok(()));
+        assert!(restarted.get());
+        assert_eq!(sink.finished.lock().unwrap()[0].exit_code, Some(0));
+        // 終わったら枠が空く。
+        assert!(runner.run_job("other", |_| (0, ())).is_ok());
+    }
+
+    #[test]
+    fn install_update_reports_installer_error_without_restarting() {
+        let sink = Arc::new(RecordingSink::default());
+        let runner = runner(&sink);
+
+        let result = install_update(
+            &runner,
+            None,
+            || Err("disk full".to_string()),
+            || panic!("適用に失敗したら、再起動しない"),
+        );
 
         assert_eq!(result, Err("disk full".to_string()));
+        assert_eq!(sink.finished.lock().unwrap()[0].exit_code, Some(1));
+        assert!(sink
+            .lines
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(s, t)| *s == Stream::Stderr && t.contains("disk full")));
+        assert!(runner.run_job("other", |_| (0, ())).is_ok());
     }
 
     #[test]
     fn install_update_refuses_when_unsupported() {
-        let result =
-            tauri::async_runtime::block_on(install_update(Some("Windows です"), || async {
-                panic!("対応していない環境では、適用しない")
-            }));
+        let sink = Arc::new(RecordingSink::default());
+        let runner = runner(&sink);
+
+        let result = install_update(
+            &runner,
+            Some("Windows です"),
+            || panic!("対応していない環境では、適用しない"),
+            || panic!("対応していない環境では、再起動しない"),
+        );
 
         assert_eq!(result, Err("Windows です".to_string()));
+        assert!(sink.finished.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn install_update_is_rejected_while_another_command_is_running() {
+        let sink = Arc::new(RecordingSink::default());
+        let runner = runner(&sink);
+        let (inside_tx, inside_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let holder = {
+            let runner = Arc::clone(&runner);
+            std::thread::spawn(move || {
+                runner.run_job("other", |_| {
+                    inside_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    (0, ())
+                })
+            })
+        };
+        inside_rx.recv().unwrap();
+
+        let result = install_update(
+            &runner,
+            None,
+            || panic!("別のコマンドの実行中は、適用しない"),
+            || panic!("別のコマンドの実行中は、再起動しない"),
+        );
+
+        release_tx.send(()).unwrap();
+        holder.join().unwrap().unwrap();
+        assert!(result.unwrap_err().contains("別のコマンドを実行中"));
     }
 
     #[test]
