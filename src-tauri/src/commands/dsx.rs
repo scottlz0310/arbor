@@ -1,12 +1,12 @@
 use super::runner::{hide_console, LaunchSpec, RunOutcome, RunnerState};
 use crate::config::AppConfig;
 use crate::models::DsxOutput;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// `dsx run --root` を受け付ける最初の版（dsx#137）。
-const RUN_ROOT_MIN_VERSION: (u32, u32, u32) = (0, 11, 0);
+/// Daily Refresh（`dsx run --root`）に必要な最初の版。`--root` は v0.11.0（dsx#137）、`run` が Bitwarden に
+/// 触れなくなったのは v0.12.0（dsx#144）。
+const DAILY_REFRESH_MIN_VERSION: (u32, u32, u32) = (0, 12, 0);
 
 // ─── dsx_check ───────────────────────────────────────────────────────────────
 
@@ -15,8 +15,8 @@ pub struct DsxStatus {
     pub available: bool,
     pub version: Option<String>,
     pub path: Option<String>,
-    /// `dsx run --root`（Daily Refresh）を使える版か。
-    pub supports_run_root: bool,
+    /// Daily Refresh（`dsx run --root`）を使える版か（v0.12.0 以上）。
+    pub supports_daily_refresh: bool,
 }
 
 /// `dsx --version` の出力（例: `dsx version 0.10.2`）から版を取り出す。
@@ -31,18 +31,10 @@ fn parse_dsx_version(output: &str) -> Option<(u32, u32, u32)> {
     Some((parts.next()??, parts.next()??, parts.next()??))
 }
 
-fn supports_run_root(version: Option<&str>) -> bool {
+fn supports_daily_refresh(version: Option<&str>) -> bool {
     version
         .and_then(parse_dsx_version)
-        .is_some_and(|v| v >= RUN_ROOT_MIN_VERSION)
-}
-
-/// 起動して終了コードを返す。信号などで終了コードが無ければ None。
-fn probe_exit_code(program: &str, args: &[&str]) -> io::Result<Option<i32>> {
-    let mut command = Command::new(program);
-    command.args(args);
-    hide_console(&mut command);
-    Ok(command.output()?.status.code())
+        .is_some_and(|v| v >= DAILY_REFRESH_MIN_VERSION)
 }
 
 pub fn check_dsx() -> DsxStatus {
@@ -56,7 +48,7 @@ pub fn check_dsx() -> DsxStatus {
             let path = which_dsx();
             DsxStatus {
                 available: true,
-                supports_run_root: supports_run_root(Some(&version)),
+                supports_daily_refresh: supports_daily_refresh(Some(&version)),
                 version: Some(version),
                 path,
             }
@@ -65,7 +57,7 @@ pub fn check_dsx() -> DsxStatus {
             available: false,
             version: None,
             path: None,
-            supports_run_root: false,
+            supports_daily_refresh: false,
         },
     }
 }
@@ -84,32 +76,6 @@ fn which_dsx() -> Option<String> {
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-}
-
-// ─── bitwarden_status ────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BitwardenState {
-    Unlocked,
-    /// ロック中、または確認できなかった（`bw` 未導入など）。dsx は理由を終了コードで区別しない。
-    NotUnlocked,
-    /// dsx を起動できなかった。
-    Unavailable,
-}
-
-fn bitwarden_state(exit: io::Result<Option<i32>>) -> BitwardenState {
-    match exit {
-        Ok(Some(0)) => BitwardenState::Unlocked,
-        Ok(_) => BitwardenState::NotUnlocked,
-        Err(_) => BitwardenState::Unavailable,
-    }
-}
-
-/// Bitwarden が解錠済みかを `dsx env status --quiet` の終了コードで確認する。
-/// GUI は解錠のためのパスワード入力を受けられないため、状態の表示だけを行う。
-pub fn current_bitwarden_state() -> BitwardenState {
-    bitwarden_state(probe_exit_code("dsx", &["env", "status", "--quiet"]))
 }
 
 // ─── dsx_latest_version ──────────────────────────────────────────────────────
@@ -171,14 +137,14 @@ fn daily_refresh_args(root: &str) -> Vec<String> {
 }
 
 /// `dsx run --root` を使えない状態なら、理由を返す。
-fn ensure_run_root_supported(status: &DsxStatus) -> Result<(), String> {
+fn ensure_daily_refresh_supported(status: &DsxStatus) -> Result<(), String> {
     if !status.available {
         return Err("dsx が見つかりません".to_string());
     }
-    if status.supports_run_root {
+    if status.supports_daily_refresh {
         return Ok(());
     }
-    let (major, minor, patch) = RUN_ROOT_MIN_VERSION;
+    let (major, minor, patch) = DAILY_REFRESH_MIN_VERSION;
     Err(format!(
         "Daily Refresh には dsx v{major}.{minor}.{patch} 以上が必要です（現在: {}）。dsx self-update で更新してください",
         status.version.as_deref().unwrap_or("不明")
@@ -210,7 +176,7 @@ pub enum DsxTask {
     SelfUpdate,
     /// `dsx repo update --root <root>`: root 配下の全リポジトリを更新する。
     RepoUpdate { root: String },
-    /// `dsx run --root <root>`: Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新。
+    /// `dsx run --root <root>`: システム更新 → リポジトリ更新。
     DailyRefresh { root: String },
     /// `dsx env run -- <command>`: 環境変数を注入してコマンドを実行する。
     EnvRun { cwd: String, command: String },
@@ -251,7 +217,7 @@ async fn run_task_with(
         let status = tauri::async_runtime::spawn_blocking(check)
             .await
             .map_err(|e| format!("dsx の確認スレッドが異常終了しました: {e}"))?;
-        ensure_run_root_supported(&status)?;
+        ensure_daily_refresh_supported(&status)?;
     }
     let (cwd, args) = task.invocation();
     run_dsx_args(state, &cwd, args).await
@@ -302,6 +268,7 @@ fn into_dsx_output(outcome: RunOutcome) -> Result<DsxOutput, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
 
     fn run_dsx_sync(args: &[&str]) -> Result<DsxOutput, String> {
         let output = Command::new("dsx")
@@ -473,35 +440,19 @@ mod tests {
     }
 
     #[test]
-    fn supports_run_root_cases() {
+    fn supports_daily_refresh_cases() {
         let cases = [
             (Some("dsx version 0.10.2"), false),
-            (Some("dsx version 0.10.99"), false),
-            (Some("dsx version 0.11.0"), true),
-            (Some("dsx version 0.11.1"), true),
+            (Some("dsx version 0.11.0"), false),
+            (Some("dsx version 0.11.99"), false),
+            (Some("dsx version 0.12.0"), true),
+            (Some("dsx version 0.12.1"), true),
             (Some("dsx version 1.0.0"), true),
             (Some("dsx version dev"), false),
             (None, false),
         ];
         for (version, expected) in cases {
-            assert_eq!(supports_run_root(version), expected, "{version:?}");
-        }
-    }
-
-    #[test]
-    fn bitwarden_state_cases() {
-        let cases = [
-            ("解錠済み", Ok(Some(0)), BitwardenState::Unlocked),
-            ("ロック中", Ok(Some(1)), BitwardenState::NotUnlocked),
-            ("信号で終了", Ok(None), BitwardenState::NotUnlocked),
-            (
-                "dsx を起動できない",
-                Err(io::Error::from(io::ErrorKind::NotFound)),
-                BitwardenState::Unavailable,
-            ),
-        ];
-        for (name, exit, expected) in cases {
-            assert_eq!(bitwarden_state(exit), expected, "{name}");
+            assert_eq!(supports_daily_refresh(version), expected, "{version:?}");
         }
     }
 
@@ -546,23 +497,25 @@ mod tests {
     }
 
     #[test]
-    fn ensure_run_root_supported_cases() {
+    fn ensure_daily_refresh_supported_cases() {
         let status = |available, version: Option<&str>, supported| DsxStatus {
             available,
             version: version.map(String::from),
             path: None,
-            supports_run_root: supported,
+            supports_daily_refresh: supported,
         };
 
-        assert!(ensure_run_root_supported(&status(true, Some("dsx version 0.11.0"), true)).is_ok());
+        assert!(
+            ensure_daily_refresh_supported(&status(true, Some("dsx version 0.12.0"), true)).is_ok()
+        );
 
-        let old = ensure_run_root_supported(&status(true, Some("dsx version 0.10.2"), false))
+        let old = ensure_daily_refresh_supported(&status(true, Some("dsx version 0.11.0"), false))
             .unwrap_err();
-        assert!(old.contains("v0.11.0 以上"), "{old}");
-        assert!(old.contains("0.10.2"), "{old}");
+        assert!(old.contains("v0.12.0 以上"), "{old}");
+        assert!(old.contains("0.11.0"), "{old}");
         assert!(old.contains("self-update"), "{old}");
 
-        let missing = ensure_run_root_supported(&status(false, None, false)).unwrap_err();
+        let missing = ensure_daily_refresh_supported(&status(false, None, false)).unwrap_err();
         assert!(missing.contains("見つかりません"), "{missing}");
     }
 
@@ -681,18 +634,18 @@ mod tests {
     fn ready_dsx() -> DsxStatus {
         DsxStatus {
             available: true,
-            version: Some("dsx version 0.11.0".to_string()),
+            version: Some("dsx version 0.12.0".to_string()),
             path: None,
-            supports_run_root: true,
+            supports_daily_refresh: true,
         }
     }
 
     fn old_dsx() -> DsxStatus {
         DsxStatus {
             available: true,
-            version: Some("dsx version 0.10.2".to_string()),
+            version: Some("dsx version 0.11.0".to_string()),
             path: None,
-            supports_run_root: false,
+            supports_daily_refresh: false,
         }
     }
 
@@ -733,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn daily_refresh_runs_only_when_dsx_supports_run_root() {
+    fn daily_refresh_runs_only_when_dsx_supports_daily_refresh() {
         let root = "C:/src".to_string();
 
         let launcher = RecordingLauncher::new(0);
@@ -755,7 +708,7 @@ mod tests {
             old_dsx,
         ))
         .unwrap_err();
-        assert!(err.contains("v0.11.0 以上"), "{err}");
+        assert!(err.contains("v0.12.0 以上"), "{err}");
         assert!(launched(&launcher).is_empty(), "古い dsx では起動しない");
     }
 
@@ -769,15 +722,6 @@ mod tests {
             .expect("dry run");
 
         assert_eq!(launched(&launcher).len(), 1);
-    }
-
-    #[test]
-    fn current_bitwarden_state_returns_a_state_even_without_dsx() {
-        // 実行する環境によって結果は変わる（dsx が無ければ Unavailable）。起動の失敗で panic しないことを確かめる。
-        assert!(matches!(
-            current_bitwarden_state(),
-            BitwardenState::Unlocked | BitwardenState::NotUnlocked | BitwardenState::Unavailable
-        ));
     }
 
     #[test]

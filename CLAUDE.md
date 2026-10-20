@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # git2 ビルドに cmake が必要 (Windows: MSVC Build Tools or Visual Studio)
 rustup update           # Rust 1.78+
 bun --version           # .bun-version に準拠（Node.js は不要）
-dsx --version           # dsx CLI が PATH に必要（Daily Refresh は v0.11.0+）
+dsx --version           # dsx CLI が PATH に必要（Daily Refresh は v0.12.0+）
 ```
 
 ### 起動・ビルド
@@ -36,7 +36,7 @@ bun run tauri build     # リリースビルド (macOS: .app / .dmg、Linux: App
 ARBOR_CONFIG_DIR=<dir> bun run tauri dev
 ```
 
-Bitwarden の状態は、起動したシェルの `BW_SESSION` で決まる。解錠済みの状態を試すには、解錠したシェルから起動し、未解錠の状態を試すには、`env -u BW_SESSION` をつけて起動する。Daily Refresh や sys update などは、実際にシステムとリポジトリを更新するので、実行前に確認する。
+Daily Refresh や sys update などは、実際にシステムとリポジトリを更新するので、実行前に確認する。
 
 ### Rust チェック
 ```bash
@@ -108,7 +108,7 @@ Windows の配布は、自己署名の MSIX + `.appinstaller` + `install.ps1`（
 - **ローテーション**（期限の前、または鍵が漏れたとき）: 同じ Subject で新しい証明書を生成して、Environment のシークレットを更新（既存の物がある場合は `-Force`。Bitwarden の同名の項目は、先に削除するか、`-BitwardenItemName` を変える）→ 次のリリース → 各 PC で `install.ps1` を再実行（新しい `.cer` を信頼登録するため UAC が出る）。Subject を変えると Package Identity の Publisher が変わり、更新できない。
 - **署名のパスの確認**: Environment が main に限定されているため、作業ブランチでは動かない。ワークフローを main に入れてから、Actions の `Package MSIX` を `workflow_dispatch` で実行して、成果物 `arbor-msix` を確認する。
 - **手元で確認する**: `bun run tauri build --no-bundle` で `arbor.exe` を作り、`pwsh packaging/msix/Build-Msix.ps1 -BinaryPath src-tauri/target/release/arbor.exe -Tag v0.0.0 -OutDir <出力先>` で MSIX を組む（未署名）。署名した MSIX の確認は、Actions の `Package MSIX` を実行して、成果物 `arbor-msix` を取得する。手元で署名まで試すときは、Bitwarden の項目からパスワードを取り出して `-PfxPath` / `-PfxPassword` に渡す（パスワードを画面やログに出さない）。
-- **Bitwarden の解錠状態（`BW_SESSION`）**: 起動の経路で決まる。スタートメニューや explorer からの起動は、シェルの環境変数を引き継がないため、ヘッダーは「Bitwarden: 未解錠」になる。Daily Refresh で Bitwarden を使うときは、解錠したシェルから、実行エイリアス `arbor`（`AppxManifest.xml` で宣言。`WindowsApps` に置かれる）で起動する。
+- **Bitwarden（`BW_SESSION`）**: dsx v0.12.0 から、Daily Refresh（`dsx run`）は Bitwarden に触れない。スタートメニューからの起動（シェルの環境変数を引き継がない）でも動くので、Arbor は Bitwarden の状態を表示も操作もしない。シークレットが要る用途は `dsx env`。実行エイリアス `arbor` は `AppxManifest.xml` で宣言する（`WindowsApps` に置かれる。シェルから起動するとき用）。
 - **書き込み仮想化**: MSIX は既定（有効）のままにしている（`AppxManifest.xml` のコメントに、理由と実機の結果）。新しく作られるファイルは、アンインストールで消える。**すでに実在するディレクトリ**（旧版が作った `%LOCALAPPDATA%\dev.scottlz0310.arbor` など）への書き込みは、仮想化されず、実フォルダに入る。パッケージ内の挙動を調べるときは、`Invoke-CommandInDesktopPackage -PackageFamilyName <PFN> -AppId Arbor -Command powershell.exe -Args "..."` が使える。
 
 ## アーキテクチャ
@@ -143,7 +143,7 @@ Rust backend (Tauri commands)
 | `workspace.rs` | 管理対象リポジトリの決定。`workspace.root` 直下（深さ 1。dsx の `repo.root` と同じ規則）の自動検出と、手動登録（ディスク上に無いものは除く）の和集合（`effective_repos`）。protected branches は、全体の既定（main / master / develop / dev）に、手動登録の設定を追加して解決する |
 | `commands/repo.rs` | git2 によるリポジトリ情報コマンド群（`list_repositories` は実効リポジトリを最大 8 並列でスキャン、`get_repo_status`）、`fetch_all`、`open_repo_folder`（管理対象のリポジトリのフォルダだけを OS のファイルマネージャで開く） |
 | `commands/config_cmd.rs` | config.toml CRUD（手動登録の追加・削除、`update_settings`、存在しない手動登録の検出）と `get_workspace_status`（Header の root 表示用） |
-| `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する。`dsx_check`（版と `supports_run_root`）、`bitwarden_status`、`repo_update` / `daily_refresh`（どちらも Arbor の `workspace.root` を `--root` で渡す。Daily Refresh は dsx v0.11.0 以上が必要） |
+| `commands/dsx.rs` | dsx CLI ラッパー。実行は `commands/runner.rs` に委譲する。`dsx_check`（版と `supports_daily_refresh`）、`repo_update` / `daily_refresh`（どちらも Arbor の `workspace.root` を `--root` で渡す。Daily Refresh は dsx v0.12.0 以上が必要） |
 | `commands/fetch.rs` | 管理対象リポジトリの一括 fetch（`fetch_repositories`）。git2 で最大 4 並列に fetch し、1 件ごとの結果を runner の job としてコンソールへ流す。`cancel_run` で転送中の fetch も中断できる |
 | `commands/remote_status.rs` | リモートの状態の確認（`check_remotes`）。各リポジトリの `origin`（GitHub のもの）について、`gh api repos/{owner}/{repo}` で、アーカイブ済み・移転（transfer / rename）・見つからない（404）を調べる。最大 4 並列で、1 件ごとの結果を runner の job としてコンソールへ流す（fetch と同じ枠）。ネットワークを使うため、自動では走らせず、Status タブの「Remote を確認」で手動で行う。`gh` の呼び出しは `Looker` で差し替えられる |
 | `commands/runner.rs` | 外部コマンドの実行基盤（子プロセスを持たない処理は `run_job` で同じ枠に載せる）。stdout / stderr を行単位で `process_*` イベントとして送信し、同時実行は 1 件に制限する。`cancel_run` でプロセスツリーごと強制終了する（Windows は Job Object、Unix はプロセスグループ） |
@@ -172,7 +172,7 @@ Rust backend (Tauri commands)
 | `stores/repoStore.ts` | リポジトリ一覧と選択状態（Zustand） |
 | `stores/uiStore.ts` | ナビゲーション状態・Toast（Zustand） |
 | `stores/consoleStore.ts` | 実行ログ（リングバッファ 10,000 行）と実行状態（Zustand） |
-| `stores/envStore.ts` | dsx の版・Bitwarden の状態・workspace root の現況（Header の pill 用。Zustand） |
+| `stores/envStore.ts` | dsx の版・workspace root の現況（Header の pill 用。Zustand） |
 | `lib/dsxActions.ts` | Daily Refresh / sys update / Update All の実行と Toast、Daily Refresh を実行できない理由の判定 |
 | `lib/rescanAfterRun.ts` | run の終了を検知して、一覧と環境の状態を自動で読み直す |
 | `views/` | ページコンポーネント（Status / Cleanup / Tools / Settings）。Status・Cleanup・Tools が Summary の下のタブで、Settings は Header から開く。Tools は dsx の版の確認・self-update と、sys update / `-n` / repo update / doctor の実行ボタン（出力は解析せず、コンソールに流すだけ） |
@@ -200,7 +200,7 @@ Rust backend (Tauri commands)
 | `sys_update` / `sys_update_dry_run` | `dsx sys update --no-tui` / `... -n` | dry run は計画だけを表示する。dsx が管理するツール群を更新する（dsx 本体は更新しない） |
 | `dsx_doctor` | `dsx doctor` | 依存ツールと設定の診断。出力は `process_output` イベントでストリーム |
 | `repo_update` | `dsx repo update --root <workspace root> --no-tui --jobs 4` | root 配下の全リポジトリを更新。stdout / stderr を `process_output` イベントでストリーム |
-| `daily_refresh` | `dsx run --root <workspace root> --no-tui --jobs 4` | Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新。dsx v0.11.0 未満では拒否する |
+| `daily_refresh` | `dsx run --root <workspace root> --no-tui --jobs 4` | システム更新 → リポジトリ更新（Bitwarden には触れない）。dsx v0.12.0 未満では拒否する |
 | `cleanup_preview` | git2 | 管理対象（自動検出 + 手動登録）の全リポジトリの削除候補を読み取り専用で列挙 |
 | `cleanup_execute` | git2 | 選択候補を再検証して local branch 削除または remote-tracking ref prune を実行 |
 | `fetch_repositories` | git2（`commands/fetch.rs`） | 全管理対象を最大 4 並列で fetch。進捗は `process_*` イベント、結果は `FetchSummary`。実行枠は dsx と共有（同時に 1 件） |

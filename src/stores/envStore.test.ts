@@ -4,7 +4,6 @@ import * as invoke from '../lib/invoke';
 import type { DsxStatus, WorkspaceStatus } from '../types';
 
 const mockDsxCheck = spyOn(invoke, 'dsxCheck');
-const mockBitwardenStatus = spyOn(invoke, 'bitwardenStatus');
 const mockGetWorkspaceStatus = spyOn(invoke, 'getWorkspaceStatus');
 
 afterAll(() => {
@@ -13,9 +12,9 @@ afterAll(() => {
 
 const dsx: DsxStatus = {
   available: true,
-  version: 'dsx version 0.11.0',
+  version: 'dsx version 0.12.0',
   path: '/bin/dsx',
-  supports_run_root: true,
+  supports_daily_refresh: true,
 };
 const workspace: WorkspaceStatus = {
   root: '/home/src',
@@ -27,24 +26,22 @@ const workspace: WorkspaceStatus = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockDsxCheck.mockResolvedValue(dsx);
-  mockBitwardenStatus.mockResolvedValue('unlocked');
   mockGetWorkspaceStatus.mockResolvedValue(workspace);
 });
 
 describe('envStore.refresh', () => {
   it('起動前は未確認（null）', () => {
-    expect(useEnvStore.getState()).toMatchObject({ dsx: null, bitwarden: null, workspace: null });
+    expect(useEnvStore.getState()).toMatchObject({ dsx: null, workspace: null });
   });
 
-  it('dsx・Bitwarden・workspace の状態を取り込む', async () => {
+  it('dsx・workspace の状態を取り込む', async () => {
     await useEnvStore.getState().refresh();
 
-    expect(useEnvStore.getState()).toMatchObject({ dsx, bitwarden: 'unlocked', workspace });
+    expect(useEnvStore.getState()).toMatchObject({ dsx, workspace });
   });
 
   it('失敗した項目だけ「確認できない」状態にし、他は取り込む', async () => {
     mockDsxCheck.mockRejectedValue(new Error('ipc failed'));
-    mockBitwardenStatus.mockRejectedValue(new Error('ipc failed'));
     mockGetWorkspaceStatus.mockRejectedValue(new Error('ipc failed'));
 
     await useEnvStore.getState().refresh();
@@ -53,18 +50,16 @@ describe('envStore.refresh', () => {
       available: false,
       version: null,
       path: null,
-      supports_run_root: false,
+      supports_daily_refresh: false,
     });
-    expect(useEnvStore.getState().bitwarden).toBe('unavailable');
     expect(useEnvStore.getState().workspace).toBeNull();
   });
 
   it('一部だけ失敗しても、成功した項目は更新される', async () => {
-    mockBitwardenStatus.mockResolvedValue('not_unlocked');
     mockGetWorkspaceStatus.mockRejectedValue(new Error('ipc failed'));
 
     await useEnvStore.getState().refresh();
 
-    expect(useEnvStore.getState()).toMatchObject({ dsx, bitwarden: 'not_unlocked', workspace: null });
+    expect(useEnvStore.getState()).toMatchObject({ dsx, workspace: null });
   });
 });

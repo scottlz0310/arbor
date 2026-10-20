@@ -1,6 +1,5 @@
 use crate::commands::dsx::{
-    check_dsx, current_bitwarden_state, latest_dsx_version, run_task, update_root, BitwardenState,
-    DsxStatus, DsxTask,
+    check_dsx, latest_dsx_version, run_task, update_root, DsxStatus, DsxTask,
 };
 use crate::commands::runner::RunnerState;
 use crate::config::load_config;
@@ -10,12 +9,6 @@ use tauri::State;
 #[tauri::command]
 pub fn dsx_check() -> DsxStatus {
     check_dsx()
-}
-
-/// Bitwarden が解錠済みかを返す。
-#[tauri::command(async)]
-pub fn bitwarden_status() -> BitwardenState {
-    current_bitwarden_state()
 }
 
 /// dsx の最新版のタグを返す。取得できなければ `None`（エラーにはしない）。
@@ -31,7 +24,7 @@ pub async fn repo_update(state: State<'_, RunnerState>) -> Result<DsxOutput, Str
     run_task(&state, DsxTask::RepoUpdate { root }).await
 }
 
-/// `dsx run --root`: Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新。
+/// `dsx run --root`: システム更新 → リポジトリ更新。
 #[tauri::command]
 pub async fn daily_refresh(state: State<'_, RunnerState>) -> Result<DsxOutput, String> {
     let root = update_root(&load_config()?)?;

@@ -20,9 +20,9 @@ const output = { stdout: '', stderr: '', exit_code: 0 };
 function dsx(overrides: Partial<DsxStatus> = {}): DsxStatus {
   return {
     available: true,
-    version: 'dsx version 0.11.0',
+    version: 'dsx version 0.12.0',
     path: '/bin/dsx',
-    supports_run_root: true,
+    supports_daily_refresh: true,
     ...overrides,
   };
 }
@@ -58,9 +58,9 @@ describe('dailyRefreshBlockReason', () => {
     { name: 'dsx が無い', dsx: dsx({ available: false, version: null }), ws: workspace(), expected: /見つかりません/ },
     {
       name: 'dsx が古い',
-      dsx: dsx({ version: 'dsx version 0.10.2', supports_run_root: false }),
+      dsx: dsx({ version: 'dsx version 0.11.0', supports_daily_refresh: false }),
       ws: workspace(),
-      expected: /v0\.11\.0 以上.*v0\.10\.2.*dsx Tools.*self-update/,
+      expected: /v0\.12\.0 以上.*v0\.11\.0.*dsx Tools.*self-update/,
     },
     { name: 'root 未設定', dsx: dsx(), ws: workspace({ root: null }), expected: /未設定/ },
     {

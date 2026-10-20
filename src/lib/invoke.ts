@@ -8,7 +8,6 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type {
   AppConfig,
-  BitwardenState,
   CleanupCandidate,
   CleanupExecutionResult,
   CleanupPreview,
@@ -90,12 +89,9 @@ export const dsxLatestVersion = () =>
 export const repoUpdate = () =>
   tauriInvoke<DsxOutput>('repo_update');
 
-/** `dsx run --root`: Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新。dsx v0.11.0 以上が必要。 */
+/** `dsx run --root`: システム更新 → リポジトリ更新。dsx v0.12.0 以上が必要。 */
 export const dailyRefresh = () =>
   tauriInvoke<DsxOutput>('daily_refresh');
-
-export const bitwardenStatus = () =>
-  tauriInvoke<BitwardenState>('bitwarden_status');
 
 export const envInject = (repoPath: string, cmd: string) =>
   tauriInvoke<DsxOutput>('env_inject', { repoPath, cmd });

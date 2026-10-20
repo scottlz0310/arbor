@@ -47,31 +47,27 @@ function Card({ label, value, valueColor, tag, tagColor, note, title, onClick }:
   );
 }
 
-/** dsx 環境の総合状態。Daily Refresh を実行できる状態か、Bitwarden が解錠されているかで決める。 */
+/** dsx 環境の総合状態。Daily Refresh を実行できる状態かで決める。 */
 function dsxEnvironment(
   dsx: ReturnType<typeof useEnvStore.getState>['dsx'],
-  bitwarden: ReturnType<typeof useEnvStore.getState>['bitwarden'],
   blockReason: string | null,
 ): { value: string; color: string; tag: string; title: string } {
   if (!dsx) return { value: '確認中', color: 'var(--text3)', tag: '', title: 'dsx の状態を確認しています' };
   if (!dsx.available) return { value: 'Missing', color: 'var(--red)', tag: 'dsx 未検出', title: blockReason ?? '' };
   const tag = shortVersion(dsx.version) ?? '';
   if (blockReason !== null) return { value: 'Attention', color: 'var(--amber)', tag, title: blockReason };
-  if (bitwarden === 'not_unlocked') {
-    return { value: 'Attention', color: 'var(--amber)', tag, title: 'Bitwarden が解錠されていません' };
-  }
   return { value: 'Ready', color: 'var(--green)', tag, title: 'Daily Refresh を実行できます' };
 }
 
 export default function SummaryStrip() {
   const repos = useRepoStore((s) => s.repos);
-  const { dsx, bitwarden, workspace } = useEnvStore();
+  const { dsx, workspace } = useEnvStore();
   const candidateCount = useCleanupStore((s) => s.candidateCount);
   const remoteStatuses = useRemoteStore((s) => s.statuses);
   const { navigate, setStatusFilter } = useUiStore();
 
   const counts = countRepos(repos);
-  const env = dsxEnvironment(dsx, bitwarden, dailyRefreshBlockReason(dsx, workspace));
+  const env = dsxEnvironment(dsx, dailyRefreshBlockReason(dsx, workspace));
 
   const showStatus = (filter: 'all' | 'attention') => {
     setStatusFilter(filter);

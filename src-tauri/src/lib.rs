@@ -44,7 +44,6 @@ pub fn run() {
             dsx::dsx_latest_version,
             dsx::repo_update,
             dsx::daily_refresh,
-            dsx::bitwarden_status,
             dsx::env_inject,
             dsx::sys_update,
             dsx::sys_update_dry_run,

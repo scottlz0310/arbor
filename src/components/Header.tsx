@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import type { CSSProperties } from 'react';
-import ConfirmDialog from './ConfirmDialog';
 import { AppBtn } from './AppBar';
 import { dailyRefreshBlockReason, runDailyRefresh, runSysUpdate, shortVersion } from '../lib/dsxActions';
 import { fetchAllRepositories } from '../lib/fetchRepositories';
@@ -8,7 +6,7 @@ import { rescan } from '../lib/rescanAfterRun';
 import { useConsoleStore } from '../stores/consoleStore';
 import { useEnvStore } from '../stores/envStore';
 import { useUiStore } from '../stores/uiStore';
-import type { BitwardenState, DsxStatus, WorkspaceStatus } from '../types';
+import type { DsxStatus, WorkspaceStatus } from '../types';
 
 type Tone = 'ok' | 'warn' | 'error' | 'neutral';
 
@@ -31,26 +29,9 @@ function dsxPill(dsx: DsxStatus | null): Pill {
     return { label: 'dsx: 未検出', tone: 'error', title: 'dsx が PATH にありません。dsx Tools タブでインストール手順を確認してください' };
   }
   const version = shortVersion(dsx.version) ?? '版不明';
-  return dsx.supports_run_root
+  return dsx.supports_daily_refresh
     ? { label: `dsx ${version}`, tone: 'ok', title: dsx.path ?? 'dsx' }
-    : { label: `dsx ${version}（要更新）`, tone: 'warn', title: 'Daily Refresh には dsx v0.11.0 以上が必要です' };
-}
-
-function bitwardenPill(state: BitwardenState | null): Pill {
-  switch (state) {
-    case 'unlocked':
-      return { label: 'Bitwarden: 解錠済み', tone: 'ok', title: 'Bitwarden のセッションは解錠されています' };
-    case 'not_unlocked':
-      return {
-        label: 'Bitwarden: 未解錠',
-        tone: 'warn',
-        title: 'ターミナルで解錠してください。Arbor ではマスターパスワードを扱いません',
-      };
-    case 'unavailable':
-      return { label: 'Bitwarden: 不明', tone: 'neutral', title: 'dsx を起動できないため確認できません' };
-    default:
-      return { label: 'Bitwarden: 確認中', tone: 'neutral', title: 'Bitwarden を確認しています' };
-  }
+    : { label: `dsx ${version}（要更新）`, tone: 'warn', title: 'Daily Refresh には dsx v0.12.0 以上が必要です' };
 }
 
 function rootPill(workspace: WorkspaceStatus | null): Pill {
@@ -87,23 +68,13 @@ function StatusPill({ pill }: { pill: Pill }) {
 }
 
 export default function Header() {
-  const { dsx, bitwarden, workspace } = useEnvStore();
+  const { dsx, workspace } = useEnvStore();
   // 実行枠は 1 つだけ。実行中は backend が拒否するので、押せないようにしておく。
   const busy = useConsoleStore((s) => s.run?.status === 'running');
-  const [confirmingRefresh, setConfirmingRefresh] = useState(false);
   const { activeView, navigate } = useUiStore();
   const inSettings = activeView === 'settings';
 
   const blockReason = dailyRefreshBlockReason(dsx, workspace);
-  const bitwardenLocked = bitwarden === 'not_unlocked';
-
-  const handleDailyRefresh = () => {
-    if (bitwardenLocked) {
-      setConfirmingRefresh(true);
-      return;
-    }
-    void runDailyRefresh();
-  };
 
   return (
     <header
@@ -122,7 +93,6 @@ export default function Header() {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
         <StatusPill pill={dsxPill(dsx)} />
-        <StatusPill pill={bitwardenPill(bitwarden)} />
         <StatusPill pill={rootPill(workspace)} />
       </div>
 
@@ -138,9 +108,9 @@ export default function Header() {
         </AppBtn>
         <AppBtn
           variant="primary"
-          onClick={handleDailyRefresh}
+          onClick={() => void runDailyRefresh()}
           disabled={busy || blockReason !== null}
-          title={blockReason ?? 'dsx run --root: Bitwarden 解錠 → 環境変数 → システム更新 → リポジトリ更新'}
+          title={blockReason ?? 'dsx run --root: システム更新 → リポジトリ更新'}
         >
           ▶ Daily Refresh
         </AppBtn>
@@ -152,19 +122,6 @@ export default function Header() {
           ⚙ Settings
         </AppBtn>
       </div>
-
-      {confirmingRefresh && (
-        <ConfirmDialog
-          title="Bitwarden が解錠されていません"
-          message="Daily Refresh は Bitwarden の解錠が必要な処理を含みます。Arbor からは解錠できないため、解錠できないまま実行すると、その処理は失敗するか、警告つきで省略される場合があります。ターミナルで解錠してから実行することを勧めます。このまま実行しますか？"
-          confirmLabel="実行する"
-          onConfirm={() => {
-            setConfirmingRefresh(false);
-            void runDailyRefresh();
-          }}
-          onCancel={() => setConfirmingRefresh(false)}
-        />
-      )}
     </header>
   );
 }

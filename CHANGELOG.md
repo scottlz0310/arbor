@@ -5,6 +5,14 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### breaking
+
+- **Daily Refresh が要求する dsx を、v0.12.0 以上にした。Arbor から Bitwarden の状態の表示と、未解錠の確認ダイアログを外した**（scottlz0310/dsx#144。dsx v0.12.0 で、`dsx run` が Bitwarden のアンロックと環境変数の読み込みをしなくなったため）。
+  - **dsx の最低版**: v0.11.0 → v0.12.0。v0.12.0 未満では、Daily Refresh を拒否し、Header の dsx の pill を「要更新」にする（dsx Tools タブの self-update で更新する）。v0.11.x の `dsx run` は、まだ Bitwarden のアンロックを試みるため、Bitwarden の前提を外した Arbor の表示と合わない。`DsxStatus.supports_run_root` は、意味に合わせて `supports_daily_refresh` に改名した。
+  - **削除**: Header の Bitwarden の pill、未解錠のときの確認ダイアログ、Summary の「Bitwarden が未解錠」の Attention、IPC コマンド `bitwarden_status`（`commands/dsx.rs` の `current_bitwarden_state` など）、`envStore` の `bitwarden`。スタートメニューから起動した MSIX 版でも、Daily Refresh がそのまま動く。
+  - **シークレットが要る用途**: Mcp-Docker のコンテナの再作成など。ターミナルで `dsx env` を使う。Arbor は扱わない（#328「画面から Bitwarden を解錠する」は、不要になったためクローズ）。
+  - **テスト**: Header（Bitwarden の文言が出ない、dsx の版の境界）、`dailyRefreshBlockReason`、`supports_daily_refresh` の版の境界（0.11.x は不可、0.12.0 は可）、`ensure_daily_refresh_supported`、envStore、SummaryStrip を更新した。
+
 ### fix
 
 - **v0.4.0 のリリースで、MSIX の署名のジョブが、空のシークレットで失敗した問題を直した**（#324）。署名のジョブを、再利用ワークフロー（`release.yml` から `workflow_call` で呼ぶ `package-msix.yml`）の中に置いていたため、ジョブが Environment `msix-signing` に紐づいた（deployment の記録がある）のに、Environment のシークレットが `secrets` に渡らず、`SIGNING_CERTIFICATE_BASE64` が空だった。直接実行の `workflow_dispatch` では取れていたため、手動実行の確認では、気づけなかった。`draft` は公開されず、安全に残った（`finalize` は実行されなかった）。v0.4.0 は、`release.yml` の再実行では直らない（再実行は、その時点の定義で動き、`finalize` は「実行の SHA ＝ リリースのコミット」を要求する）ため、CLAUDE.md の例外の手順で復旧した

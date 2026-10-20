@@ -8,13 +8,12 @@ import { useConsoleStore } from '../stores/consoleStore';
 import { useEnvStore } from '../stores/envStore';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
-import type { BitwardenState, DsxStatus, WorkspaceStatus } from '../types';
+import type { DsxStatus, WorkspaceStatus } from '../types';
 
 const mockDailyRefresh = spyOn(invoke, 'dailyRefresh');
 const mockSysUpdate = spyOn(invoke, 'sysUpdate');
 const mockFetchRepositories = spyOn(invoke, 'fetchRepositories');
 const mockDsxCheck = spyOn(invoke, 'dsxCheck');
-const mockBitwardenStatus = spyOn(invoke, 'bitwardenStatus');
 const mockGetWorkspaceStatus = spyOn(invoke, 'getWorkspaceStatus');
 const mockLoadRepos = mock();
 const mockAddToast = mock();
@@ -25,12 +24,12 @@ afterAll(() => {
 
 const dsxReady: DsxStatus = {
   available: true,
-  version: 'dsx version 0.11.0',
+  version: 'dsx version 0.12.0',
   path: '/bin/dsx',
-  supports_run_root: true,
+  supports_daily_refresh: true,
 };
-const dsxOld: DsxStatus = { ...dsxReady, version: 'dsx version 0.10.2', supports_run_root: false };
-const dsxMissing: DsxStatus = { available: false, version: null, path: null, supports_run_root: false };
+const dsxOld: DsxStatus = { ...dsxReady, version: 'dsx version 0.11.0', supports_daily_refresh: false };
+const dsxMissing: DsxStatus = { available: false, version: null, path: null, supports_daily_refresh: false };
 const workspaceOk: WorkspaceStatus = {
   root: '/home/src',
   root_error: null,
@@ -39,9 +38,9 @@ const workspaceOk: WorkspaceStatus = {
 };
 const output = { stdout: '', stderr: '', exit_code: 0 };
 
-function setEnv(dsx: DsxStatus | null, bitwarden: BitwardenState | null, workspace: WorkspaceStatus | null) {
+function setEnv(dsx: DsxStatus | null, workspace: WorkspaceStatus | null) {
   act(() => {
-    useEnvStore.setState({ dsx, bitwarden, workspace });
+    useEnvStore.setState({ dsx, workspace });
   });
 }
 
@@ -53,7 +52,6 @@ beforeEach(() => {
   mockSysUpdate.mockResolvedValue(output);
   mockFetchRepositories.mockResolvedValue({ total: 1, succeeded: 1, failed: [], cancelled: false });
   mockDsxCheck.mockResolvedValue(dsxReady);
-  mockBitwardenStatus.mockResolvedValue('unlocked');
   mockGetWorkspaceStatus.mockResolvedValue(workspaceOk);
   mockLoadRepos.mockResolvedValue(undefined);
   act(() => {
@@ -67,7 +65,6 @@ describe('Header — 状態の pill', () => {
     render(<Header />);
 
     expect(screen.getByText('dsx: 確認中')).toBeTruthy();
-    expect(screen.getByText('Bitwarden: 確認中')).toBeTruthy();
     expect(screen.getByText('Root: 確認中')).toBeTruthy();
   });
 
@@ -75,49 +72,46 @@ describe('Header — 状態の pill', () => {
     {
       name: '正常',
       dsx: dsxReady,
-      bitwarden: 'unlocked' as const,
       workspace: workspaceOk,
-      labels: ['dsx v0.11.0', 'Bitwarden: 解錠済み', 'Root: /home/src (6 repos)'],
+      labels: ['dsx v0.12.0', 'Root: /home/src (6 repos)'],
     },
     {
-      name: 'dsx が古く Bitwarden も未解錠',
+      name: 'dsx が古い',
       dsx: dsxOld,
-      bitwarden: 'not_unlocked' as const,
       workspace: workspaceOk,
-      labels: ['dsx v0.10.2（要更新）', 'Bitwarden: 未解錠', 'Root: /home/src (6 repos)'],
+      labels: ['dsx v0.11.0（要更新）', 'Root: /home/src (6 repos)'],
     },
     {
       name: 'dsx が無い',
       dsx: dsxMissing,
-      bitwarden: 'unavailable' as const,
       workspace: workspaceOk,
-      labels: ['dsx: 未検出', 'Bitwarden: 不明', 'Root: /home/src (6 repos)'],
+      labels: ['dsx: 未検出', 'Root: /home/src (6 repos)'],
     },
     {
       name: 'root が未設定',
       dsx: dsxReady,
-      bitwarden: 'unlocked' as const,
       workspace: { ...workspaceOk, root: null },
-      labels: ['dsx v0.11.0', 'Bitwarden: 解錠済み', 'Root: 未設定'],
+      labels: ['dsx v0.12.0', 'Root: 未設定'],
     },
     {
       name: 'root を読めない',
       dsx: dsxReady,
-      bitwarden: 'unlocked' as const,
       workspace: { ...workspaceOk, root_error: 'workspace root を読み取れません (/home/src): denied' },
-      labels: ['dsx v0.11.0', 'Bitwarden: 解錠済み', 'Root: 読み取れません (/home/src)'],
+      labels: ['dsx v0.12.0', 'Root: 読み取れません (/home/src)'],
     },
-  ])('$name', ({ dsx, bitwarden, workspace, labels }) => {
-    setEnv(dsx, bitwarden, workspace);
+  ])('$name', ({ dsx, workspace, labels }) => {
+    setEnv(dsx, workspace);
 
     render(<Header />);
 
     for (const label of labels) expect(screen.getByText(label)).toBeTruthy();
+    // Daily Refresh は Bitwarden に触れないので、状態を表示しない（dsx#144）。
+    expect(screen.queryByText(/Bitwarden/)).toBeNull();
   });
 
   it('root を読めないときは、理由を pill のツールチップに出す', () => {
     const reason = 'workspace root を読み取れません (/home/src): denied';
-    setEnv(dsxReady, 'unlocked', { ...workspaceOk, root_error: reason });
+    setEnv(dsxReady, { ...workspaceOk, root_error: reason });
 
     render(<Header />);
 
@@ -125,7 +119,7 @@ describe('Header — 状態の pill', () => {
   });
 
   it('dsx が無いときは、pill のツールチップで dsx Tools タブへ案内する', () => {
-    setEnv(dsxMissing, 'unavailable', workspaceOk);
+    setEnv(dsxMissing, workspaceOk);
 
     render(<Header />);
 
@@ -135,7 +129,7 @@ describe('Header — 状態の pill', () => {
 
 describe('Header — Daily Refresh', () => {
   it('実行できる状態なら押せて、dailyRefresh を呼ぶ', async () => {
-    setEnv(dsxReady, 'unlocked', workspaceOk);
+    setEnv(dsxReady, workspaceOk);
     render(<Header />);
 
     await userEvent.click(button(/Daily Refresh/));
@@ -147,10 +141,10 @@ describe('Header — Daily Refresh', () => {
   it.each([
     { name: '状態が未確認', dsx: null, workspace: null, reason: /確認しています/ },
     { name: 'dsx が無い', dsx: dsxMissing, workspace: workspaceOk, reason: /見つかりません/ },
-    { name: 'dsx が古い', dsx: dsxOld, workspace: workspaceOk, reason: /v0\.11\.0 以上/ },
+    { name: 'dsx が古い', dsx: dsxOld, workspace: workspaceOk, reason: /v0\.12\.0 以上/ },
     { name: 'root が未設定', dsx: dsxReady, workspace: { ...workspaceOk, root: null }, reason: /未設定/ },
   ])('$name ときは押せず、理由をツールチップに出す', async ({ dsx, workspace, reason }) => {
-    setEnv(dsx, 'unlocked', workspace);
+    setEnv(dsx, workspace);
     render(<Header />);
 
     const target = button(/Daily Refresh/);
@@ -159,7 +153,7 @@ describe('Header — Daily Refresh', () => {
   });
 
   it('別のコマンドの実行中は押せない', () => {
-    setEnv(dsxReady, 'unlocked', workspaceOk);
+    setEnv(dsxReady, workspaceOk);
     act(() => {
       useConsoleStore.getState().handleStarted({ runId: 1, label: 'dsx repo update', argv: [], startedAt: 0 });
     });
@@ -173,35 +167,11 @@ describe('Header — Daily Refresh', () => {
     expect(button(/Scan/).disabled).toBe(false);
   });
 
-  it('Bitwarden が未解錠なら、確認してから実行する', async () => {
-    setEnv(dsxReady, 'not_unlocked', workspaceOk);
-    render(<Header />);
-
-    await userEvent.click(button(/Daily Refresh/));
-    expect(screen.getByText('Bitwarden が解錠されていません')).toBeTruthy();
-    expect(mockDailyRefresh).not.toHaveBeenCalled();
-
-    await userEvent.click(screen.getByRole('button', { name: '実行する' }));
-
-    expect(mockDailyRefresh).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Bitwarden が解錠されていません')).toBeNull();
-  });
-
-  it('確認ダイアログをキャンセルすると実行しない', async () => {
-    setEnv(dsxReady, 'not_unlocked', workspaceOk);
-    render(<Header />);
-
-    await userEvent.click(button(/Daily Refresh/));
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-    expect(mockDailyRefresh).not.toHaveBeenCalled();
-    expect(screen.queryByText('Bitwarden が解錠されていません')).toBeNull();
-  });
 });
 
 describe('Header — その他のボタン', () => {
   it('dsx sys update は sysUpdate を呼ぶ', async () => {
-    setEnv(dsxReady, 'unlocked', workspaceOk);
+    setEnv(dsxReady, workspaceOk);
     render(<Header />);
 
     await userEvent.click(button(/sys update/));
@@ -210,14 +180,14 @@ describe('Header — その他のボタン', () => {
   });
 
   it('dsx が無いと dsx sys update は押せない', () => {
-    setEnv(dsxMissing, 'unavailable', workspaceOk);
+    setEnv(dsxMissing, workspaceOk);
     render(<Header />);
 
     expect(button(/sys update/).disabled).toBe(true);
   });
 
   it('Fetch All は fetchRepositories を呼ぶ', async () => {
-    setEnv(dsxReady, 'unlocked', workspaceOk);
+    setEnv(dsxReady, workspaceOk);
     render(<Header />);
 
     await userEvent.click(button(/Fetch All/));
@@ -226,7 +196,7 @@ describe('Header — その他のボタン', () => {
   });
 
   it('Scan は一覧と環境の状態を読み直す（ネットワークには出ない）', async () => {
-    setEnv(dsxReady, 'unlocked', workspaceOk);
+    setEnv(dsxReady, workspaceOk);
     render(<Header />);
 
     await userEvent.click(button(/Scan/));

@@ -8,7 +8,7 @@ import { useEnvStore } from '../stores/envStore';
 import { useRemoteStore } from '../stores/remoteStore';
 import { useRepoStore } from '../stores/repoStore';
 import { useUiStore } from '../stores/uiStore';
-import type { BitwardenState, DsxStatus, RemoteStatus, RepoInfo, WorkspaceStatus } from '../types';
+import type { DsxStatus, RemoteStatus, RepoInfo, WorkspaceStatus } from '../types';
 
 function repo(name: string, overrides: Partial<RepoInfo> = {}): RepoInfo {
   return {
@@ -30,14 +30,14 @@ function repo(name: string, overrides: Partial<RepoInfo> = {}): RepoInfo {
 
 const dsxReady: DsxStatus = {
   available: true,
-  version: 'dsx version 0.11.0',
+  version: 'dsx version 0.12.0',
   path: '/bin/dsx',
-  supports_run_root: true,
+  supports_daily_refresh: true,
 };
 const workspaceOk: WorkspaceStatus = { root: '/src', root_error: null, workspace_count: 3, manual_count: 0 };
 
-function setEnv(dsx: DsxStatus | null, bitwarden: BitwardenState | null, workspace: WorkspaceStatus | null) {
-  act(() => useEnvStore.setState({ dsx, bitwarden, workspace }));
+function setEnv(dsx: DsxStatus | null, workspace: WorkspaceStatus | null) {
+  act(() => useEnvStore.setState({ dsx, workspace }));
 }
 
 const card = (label: RegExp) => screen.getByRole('button', { name: label });
@@ -49,7 +49,7 @@ beforeEach(() => {
     });
     useUiStore.setState({ activeView: 'cleanup', statusFilter: 'clean' });
   });
-  setEnv(dsxReady, 'unlocked', workspaceOk);
+  setEnv(dsxReady, workspaceOk);
 });
 
 describe('SummaryStrip — 件数', () => {
@@ -86,26 +86,23 @@ describe('SummaryStrip — 件数', () => {
 
 describe('SummaryStrip — dsx 環境', () => {
   it.each([
-    { name: '確認前', dsx: null, bw: null, ws: null, value: '確認中' },
-    { name: '準備完了', dsx: dsxReady, bw: 'unlocked' as const, ws: workspaceOk, value: 'Ready' },
+    { name: '確認前', dsx: null, ws: null, value: '確認中' },
+    { name: '準備完了', dsx: dsxReady, ws: workspaceOk, value: 'Ready' },
     {
       name: 'dsx が古い',
-      dsx: { ...dsxReady, version: 'dsx version 0.10.2', supports_run_root: false },
-      bw: 'unlocked' as const,
+      dsx: { ...dsxReady, version: 'dsx version 0.11.0', supports_daily_refresh: false },
       ws: workspaceOk,
       value: 'Attention',
     },
-    { name: 'Bitwarden が未解錠', dsx: dsxReady, bw: 'not_unlocked' as const, ws: workspaceOk, value: 'Attention' },
-    { name: 'root が未設定', dsx: dsxReady, bw: 'unlocked' as const, ws: { ...workspaceOk, root: null }, value: 'Attention' },
+    { name: 'root が未設定', dsx: dsxReady, ws: { ...workspaceOk, root: null }, value: 'Attention' },
     {
       name: 'dsx が無い',
-      dsx: { available: false, version: null, path: null, supports_run_root: false },
-      bw: 'unavailable' as const,
+      dsx: { available: false, version: null, path: null, supports_daily_refresh: false },
       ws: workspaceOk,
       value: 'Missing',
     },
-  ])('$name → $value', ({ dsx, bw, ws, value }) => {
-    setEnv(dsx, bw, ws);
+  ])('$name → $value', ({ dsx, ws, value }) => {
+    setEnv(dsx, ws);
 
     render(<SummaryStrip />);
 
@@ -115,7 +112,7 @@ describe('SummaryStrip — dsx 環境', () => {
   it('準備完了のときは版を出す', () => {
     render(<SummaryStrip />);
 
-    expect(card(/DSX ENVIRONMENT/).textContent).toContain('v0.11.0');
+    expect(card(/DSX ENVIRONMENT/).textContent).toContain('v0.12.0');
   });
 });
 
