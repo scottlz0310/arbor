@@ -4,7 +4,7 @@
 //! Windows は MSIX の `.appinstaller` が更新するため、アプリ内では更新しない。
 //! 確認と適用の流れは、外部（ネットワーク・ファイル置き換え）を関数で受け取り、テストで差し替える。
 
-use super::runner::{Runner, RunnerState, Stream};
+use super::runner::{JobContext, Runner, RunnerState, Stream};
 use serde::Serialize;
 use std::future::Future;
 use tauri::AppHandle;
@@ -83,13 +83,18 @@ where
     })
 }
 
-/// 更新を適用して再起動する。適用から再起動までを runner の `run_job` に載せ、実行中の他のコマンド
+/// 更新を適用して再起動する。ダウンロードから再起動までを runner の `run_job` に載せ、実行中の他のコマンド
 /// （dsx・fetch など）と同時に走らせない（再起動で、実行中のコマンドを途中で切らないため）。
 /// 対応していない環境では、枠を取らず、何もせずに、エラーを返す。
-pub fn install_update(
+///
+/// 「キャンセル」は、ファイルを置き換える前までなら効く: ダウンロードの完了を待って、置き換えずに捨てる
+/// （進行中のダウンロードは、途中では止めない）。置き換えが始まったら、取り消さずに再起動まで進む
+/// （置き換えの途中で止めると、中途半端な状態が残るため）。
+pub fn install_update<T>(
     runner: &Runner,
     unsupported: Option<&str>,
-    install: impl FnOnce() -> Result<(), String>,
+    download: impl FnOnce() -> Result<T, String>,
+    apply: impl FnOnce(T) -> Result<(), String>,
     restart: impl FnOnce(),
 ) -> Result<(), String> {
     if let Some(reason) = unsupported {
@@ -98,20 +103,35 @@ pub fn install_update(
 
     runner
         .run_job("Arbor update", |ctx| {
-            ctx.log(Stream::Stdout, "[arbor] 更新をダウンロードして適用します");
-            match install() {
+            ctx.log(Stream::Stdout, "[arbor] 更新をダウンロードします");
+            let downloaded = match download() {
+                Ok(downloaded) => downloaded,
+                Err(e) => return fail(ctx, e),
+            };
+            if ctx.is_cancelled() {
+                ctx.log(Stream::Stderr, "[arbor] キャンセルされたため、適用しません");
+                return (1, Err("更新をキャンセルしました".to_string()));
+            }
+
+            ctx.log(
+                Stream::Stdout,
+                "[arbor] 適用します（この間は取り消せません）",
+            );
+            match apply(downloaded) {
                 Ok(()) => {
                     ctx.log(Stream::Stdout, "[arbor] 適用しました。再起動します");
                     restart();
                     (0, Ok(()))
                 }
-                Err(e) => {
-                    ctx.log(Stream::Stderr, format!("[arbor] {e}"));
-                    (1, Err(e))
-                }
+                Err(e) => fail(ctx, e),
             }
         })?
         .value
+}
+
+fn fail(ctx: &JobContext, message: String) -> (i32, Result<(), String>) {
+    ctx.log(Stream::Stderr, format!("[arbor] {message}"));
+    (1, Err(message))
 }
 
 async fn fetch_update(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>, String> {
@@ -152,12 +172,17 @@ pub async fn install_available_update(app: &AppHandle, state: &RunnerState) -> R
                     let update = fetch_update(&app)
                         .await?
                         .ok_or_else(|| "利用できる更新がありません".to_string())?;
-
-                    update
-                        .download_and_install(|_, _| {}, || {})
+                    let bytes = update
+                        .download(|_, _| {}, || {})
                         .await
-                        .map_err(|e| format!("更新のダウンロードと適用に失敗しました: {e}"))
+                        .map_err(|e| format!("更新のダウンロードに失敗しました: {e}"))?;
+                    Ok((update, bytes))
                 })
+            },
+            |(update, bytes)| {
+                update
+                    .install(bytes)
+                    .map_err(|e| format!("更新の適用に失敗しました: {e}"))
             },
             || app.restart(),
         )
@@ -302,7 +327,12 @@ mod tests {
             &runner,
             None,
             || {
-                // 適用の最中は枠が埋まっていて、他のコマンドを始められない。
+                // ダウンロードの最中は枠が埋まっていて、他のコマンドを始められない。
+                assert!(runner.run_job("other", |_| (0, ())).is_err());
+                Ok("bytes")
+            },
+            |bytes| {
+                assert_eq!(bytes, "bytes");
                 assert!(runner.run_job("other", |_| (0, ())).is_err());
                 Ok(())
             },
@@ -320,26 +350,86 @@ mod tests {
     }
 
     #[test]
-    fn install_update_reports_installer_error_without_restarting() {
+    fn install_update_reports_failure_without_restarting() {
+        // (ダウンロードの失敗, 適用の失敗)
+        let cases: [(Option<&str>, Option<&str>); 2] =
+            [(Some("network down"), None), (None, Some("disk full"))];
+
+        for (download_error, apply_error) in cases {
+            let sink = Arc::new(RecordingSink::default());
+            let runner = runner(&sink);
+            let applied = Cell::new(false);
+
+            let result = install_update(
+                &runner,
+                None,
+                || download_error.map_or(Ok(()), |e| Err(e.to_string())),
+                |()| {
+                    applied.set(true);
+                    apply_error.map_or(Ok(()), |e| Err(e.to_string()))
+                },
+                || panic!("失敗したら、再起動しない"),
+            );
+
+            let message = download_error.or(apply_error).unwrap();
+            assert_eq!(result, Err(message.to_string()), "{message}");
+            assert_eq!(applied.get(), download_error.is_none(), "{message}");
+            assert_eq!(sink.finished.lock().unwrap()[0].exit_code, Some(1));
+            assert!(sink
+                .lines
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(s, t)| *s == Stream::Stderr && t.contains(message)));
+            assert!(runner.run_job("other", |_| (0, ())).is_ok());
+        }
+    }
+
+    #[test]
+    fn install_update_cancelled_during_download_is_not_applied() {
         let sink = Arc::new(RecordingSink::default());
         let runner = runner(&sink);
 
         let result = install_update(
             &runner,
             None,
-            || Err("disk full".to_string()),
-            || panic!("適用に失敗したら、再起動しない"),
+            || {
+                // 実行中の更新は、最初の run（run 1）として枠にいる。キャンセルは受理される。
+                runner.cancel(1).unwrap();
+                Ok(())
+            },
+            |()| panic!("キャンセルされたら、適用しない"),
+            || panic!("キャンセルされたら、再起動しない"),
         );
 
-        assert_eq!(result, Err("disk full".to_string()));
-        assert_eq!(sink.finished.lock().unwrap()[0].exit_code, Some(1));
-        assert!(sink
-            .lines
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|(s, t)| *s == Stream::Stderr && t.contains("disk full")));
+        assert_eq!(result, Err("更新をキャンセルしました".to_string()));
+        let finished = sink.finished.lock().unwrap();
+        assert!(finished[0].cancelled);
+        assert_eq!(finished[0].exit_code, Some(1));
+        drop(finished);
         assert!(runner.run_job("other", |_| (0, ())).is_ok());
+    }
+
+    #[test]
+    fn install_update_does_not_abort_once_applying() {
+        let sink = Arc::new(RecordingSink::default());
+        let runner = runner(&sink);
+        let restarted = Cell::new(false);
+
+        let result = install_update(
+            &runner,
+            None,
+            || Ok(()),
+            |()| {
+                // 置き換えの途中で止めると中途半端な状態が残るため、取り消さずに再起動まで進む。
+                runner.cancel(1).unwrap();
+                Ok(())
+            },
+            || restarted.set(true),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert!(restarted.get());
     }
 
     #[test]
@@ -350,7 +440,10 @@ mod tests {
         let result = install_update(
             &runner,
             Some("Windows です"),
-            || panic!("対応していない環境では、適用しない"),
+            || -> Result<(), String> {
+                panic!("対応していない環境では、ダウンロードしない")
+            },
+            |()| panic!("対応していない環境では、適用しない"),
             || panic!("対応していない環境では、再起動しない"),
         );
 
@@ -379,7 +472,10 @@ mod tests {
         let result = install_update(
             &runner,
             None,
-            || panic!("別のコマンドの実行中は、適用しない"),
+            || -> Result<(), String> {
+                panic!("別のコマンドの実行中は、ダウンロードしない")
+            },
+            |()| panic!("別のコマンドの実行中は、適用しない"),
             || panic!("別のコマンドの実行中は、再起動しない"),
         );
 

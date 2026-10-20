@@ -11,7 +11,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
   - **確認と適用**: Tools タブに「ARBOR」を足した。「更新を確認」→ 新しい版と変更点を表示 →「ダウンロードして再起動」（確認ダイアログを経由。別のコマンドの実行中は押せない）。起動時にも静かに確認し、新しい版があれば Toast で知らせる（適用はしない。確認の失敗は Toast では騒がず、Tools タブに表示する）。
   - **対応する環境**: Linux の AppImage と macOS。Windows（MSIX の `.appinstaller` が更新する）と Linux の deb は、ネットワークに出ず、アプリ内では更新できない理由を表示する。
   - **実装**: Rust の updater API（`commands/updater.rs`、IPC は `updater_check` / `updater_install`）。JS のプラグイン（`-apps/plugin-updater` と `plugin-process`）は足さない。このため、capability の `updater:default`（JS の API の許可）は外した。確認と適用の外部（ネットワーク・ファイル置き換え）は関数で受け取り、テストで差し替える。
-  - **排他**: 適用から再起動までは、dsx・fetch などと同じ runner の枠（`run_job`）に載せる。別のコマンドの実行中は適用を拒否し（バックエンド側）、適用の最中は他のコマンドも始められない。コンソールに「Arbor update」として流れ、Header・Tools のボタンも実行中は無効になる。
+  - **排他**: 適用から再起動までは、dsx・fetch などと同じ runner の枠（`run_job`）に載せる。別のコマンドの実行中は適用を拒否し（バックエンド側）、適用の最中は他のコマンドも始められない。コンソールに「Arbor update」として流れ、Header・Tools のボタンも実行中は無効になる。「キャンセル」は、ファイルを置き換える前までなら効く（ダウンロードの完了を待って、置き換えずに捨てる）。置き換えが始まったら、中途半端な状態を残さないため、取り消さずに再起動まで進む。
   - **未検証**: macOS は実機がなく、署名・公証（#142）もしていないため、CI のビルドだけ（README に明記）。Linux AppImage の実機検証は、次のリリース（旧版 → 新版）で行う。
   - **テスト**: Rust（対応する環境の判定、確認・適用の流れ、JSON の形）、`updateStore`、Tools タブ、App の起動時の確認。
 
