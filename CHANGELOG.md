@@ -5,6 +5,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-20
+
 ### feat
 
 - **macOS / Linux の自動更新（Tauri updater）を完成させた**（#327）。更新を確認する処理が、これまで一度も存在しなかった（プラグインの登録・署名鍵・`latest.json` だけが先に入っていた）。
