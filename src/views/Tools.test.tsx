@@ -26,10 +26,10 @@ afterAll(() => {
 const output = { stdout: '', stderr: '', exit_code: 0 };
 
 function dsxStatus(version: string, overrides: Partial<DsxStatus> = {}): DsxStatus {
-  return { available: true, version: `dsx version ${version}`, path: '/usr/local/bin/dsx', supports_run_root: true, ...overrides };
+  return { available: true, version: `dsx version ${version}`, path: '/usr/local/bin/dsx', supports_daily_refresh: true, ...overrides };
 }
 
-const missing: DsxStatus = { available: false, version: null, path: null, supports_run_root: false };
+const missing: DsxStatus = { available: false, version: null, path: null, supports_daily_refresh: false };
 
 function setDsx(dsx: DsxStatus | null) {
   act(() => useEnvStore.setState({ dsx }));

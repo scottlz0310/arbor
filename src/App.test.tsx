@@ -8,7 +8,6 @@ import type { RepoInfo } from './types';
 
 const mockListRepositories = spyOn(invoke, 'listRepositories');
 const mockDsxCheck = spyOn(invoke, 'dsxCheck');
-const mockBitwardenStatus = spyOn(invoke, 'bitwardenStatus');
 const mockGetWorkspaceStatus = spyOn(invoke, 'getWorkspaceStatus');
 const mockGetConfig = spyOn(invoke, 'getConfig');
 const mockScanMissing = spyOn(invoke, 'scanMissingRepositories');
@@ -37,11 +36,10 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockDsxCheck.mockResolvedValue({
     available: true,
-    version: 'dsx version 0.11.0',
+    version: 'dsx version 0.12.0',
     path: '/bin/dsx',
-    supports_run_root: true,
+    supports_daily_refresh: true,
   });
-  mockBitwardenStatus.mockResolvedValue('unlocked');
   mockGetWorkspaceStatus.mockResolvedValue({ root: '/src', root_error: null, workspace_count: 1, manual_count: 0 });
   mockGetConfig.mockResolvedValue({
     settings: { stale_threshold_days: 14, fetch_on_startup: false, protected_branches: [] },
@@ -99,7 +97,7 @@ describe('App — 起動時の画面', () => {
 
   it('dsx が見つからないときは、dsx Tools タブへ誘導する（インストール手順はそこにある）', async () => {
     mockListRepositories.mockResolvedValue([repo]);
-    mockDsxCheck.mockResolvedValue({ available: false, version: null, path: null, supports_run_root: false });
+    mockDsxCheck.mockResolvedValue({ available: false, version: null, path: null, supports_daily_refresh: false });
 
     render(<App />);
 

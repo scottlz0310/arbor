@@ -45,7 +45,8 @@ Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
 
 後続（#324 の実機検証で見つかったもの。別 Issue）:
 
-- [ ] 画面から Bitwarden を解錠できるようにする（#328。`BW_SESSION` を Arbor のメモリだけに保持。保留: 日常の用途には解錠が要らないため、dsx 側の scottlz0310/dsx#144（`run` は sys と repo だけ、シークレットは `env` だけ）のあとに、必要性を再評価する）
+- [x] ~~画面から Bitwarden を解錠できるようにする（#328。`BW_SESSION` を Arbor のメモリだけに保持。保留: 日常の用途には解錠が要らないため、dsx 側の scottlz0310/dsx#144（`run` は sys と repo だけ、シークレットは `env` だけ）のあとに、必要性を再評価する）~~ → dsx v0.12.0（scottlz0310/dsx#144）で `dsx run` が Bitwarden に触れなくなり、日常の用途に解錠は不要になったため、不要としてクローズ）
+- [x] dsx v0.12.0 への追従（Daily Refresh の最低版を v0.12.0 へ。Bitwarden の pill・確認ダイアログ・`bitwarden_status` を削除。`supports_run_root` → `supports_daily_refresh`）
 - [ ] macOS / Linux の自動更新（Tauri updater）の完成（#327）
 - [ ] `Package MSIX` の所要時間を短くする（#331。PR の検証では、ダミーの exe でパッケージ化だけを通す。キャッシュが効いた署名の実行は、約 3.5 分）
 

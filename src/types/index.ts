@@ -100,12 +100,9 @@ export interface DsxStatus {
   available: boolean;
   version: string | null;
   path: string | null;
-  /** `dsx run --root`（Daily Refresh）を使える版か（v0.11.0 以上）。 */
-  supports_run_root: boolean;
+  /** `dsx run --root`（Daily Refresh）を使える版か（v0.12.0 以上）。 */
+  supports_daily_refresh: boolean;
 }
-
-/** `dsx env status --quiet` の結果。ロック中と確認不能（bw 未導入など）は区別できない。 */
-export type BitwardenState = 'unlocked' | 'not_unlocked' | 'unavailable';
 
 /** Header の root 表示に使う workspace の現況（commands/config_cmd.rs）。 */
 export interface WorkspaceStatus {
