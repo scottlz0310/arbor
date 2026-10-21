@@ -35,7 +35,7 @@ iex ([Text.Encoding]::UTF8.GetString((iwr -UseBasicParsing https://github.com/sc
 
 **アプリ内の更新**: 起動時に新しい版を確認し、あれば Toast で知らせる（適用はしない）。Tools タブの「ARBOR」で「更新を確認」→「ダウンロードして再起動」。
 
-- **Linux**: AppImage だけが更新できる。deb は更新できないので、新しい deb を入れ直す（Tools タブにその旨を表示する）。AppImage での実機検証は、次のリリースで行う。
+- **Linux**: AppImage だけが更新できる。deb は更新できないので、新しい deb を入れ直す（Tools タブにその旨を表示する）。AppImage は、実機（Ubuntu）で v0.6.0 から v0.7.0 への更新を確認済み。
 - **macOS**: 実装は Linux と同じだが、**未検証**（実機がなく、署名・公証もしていないため、CI のビルドだけ）。更新できない場合は、dmg を入れ直す。
 
 ## 前提ツール
