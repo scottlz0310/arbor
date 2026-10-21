@@ -5,6 +5,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-21
+
 ### feat
 
 - **dsx の実行結果の警告・スキップ・失敗を、画面に浮かび上がらせた**（#341。dsx v0.13.0 のイベント出力 `--events-file`、スキーマ版 1 を受け取る）。Daily Refresh / sys update（`-n` を含む）/ Update All の実行後に、dsx が書いた JSON Lines の要約を読み、Summary に「LAST RUN」カード（OK / Attention / Failed と、失敗・スキップ・警告の件数）を出す。内訳（どのマネージャ・リポジトリが、なぜ）は Tools タブの「LAST RUN」に出す。未インストールのマネージャのスキップのような、ログを読まないと気づけないことに気づける。
