@@ -12,6 +12,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### docs
 
+- **Linux AppImage の実更新を実機で確認した**（#327。2026-10-21、ネイティブの Ubuntu 26.04.1・Wayland）: v0.6.0 の AppImage から Tools タブの「更新を確認」→「ダウンロードして再起動」で v0.7.0 へ更新でき、再起動後に「最新版です（v0.7.0）」と表示された。置き換え後の AppImage の sha256 は、リリースの成果物（`.AppImage.tar.gz` の展開後）と一致した。FUSE は libfuse3 だけで動いた（libfuse2 は不要）。macOS は実機が無く、未検証のまま。
 - **v0.7.0 のリリースの記録と、#341 の実機確認の結果**（2026-10-21 12:28 JST 公開）: `Release`（run 39538376027）が全 10 ジョブ成功し、draft は残っていない。この PC へは、リリースの `install.ps1` で 0.6.0.0 → 0.7.0.0 を適用した。MSIX 版の dsx（v0.13.0）と MSIX 版の Arbor の間で、`~/.config/arbor/events/` のイベントファイルの共有が動くこと（読んだ後に削除。仮想化されたコピーは無い）と、失敗した実行（Daily Refresh。winget の UAC に応答できず 3 件失敗）が、「失敗あり」として Summary と Tools に出ることを確認した。未検証は、Linux AppImage での実更新（v0.6.0 → v0.7.0 の AppImage で確かめる）と、macOS（実機なし）。実機で見つかった、dsx の探索（`which_dsx`）の不具合と、winget の摩擦は、`tasks.md` に項目として残した（実装は別 PR）。
 
 ## [0.7.0] - 2026-10-21
