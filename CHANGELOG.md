@@ -13,6 +13,10 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
   - **失敗した実行の報告も出す**（終了コード 1 でも、dsx が書き終えていれば）。`run` の段階そのものの失敗（root が不正など）の原因も、要約に残る。
   - **実装**: `commands/dsx_report.rs`（読み取りと契約の検査）。イベントは `~/.config/arbor/events/` に置く（MSIX の書き込み仮想化の対象外なので、別パッケージの dsx が書いたファイルをそのまま読める）。読んだら消し、異常終了で残った 24 時間より古いものは次の実行で片付ける。フロントエンドは、実行の完了後に `take_run_report` で取り出す。実際の dsx の出力を fixture にして、契約を検証している。
 
+### docs
+
+- **v0.6.0 のリリースの記録**（2026-10-21 04:32 JST 公開）: `Release`（run 39479218967）が全ジョブ成功し、draft は残っていない。この PC の v0.5.0 → v0.6.0 は、`.appinstaller` で自動更新された（09:46 JST。公開の約 5 時間 15 分後）。未検証は、Linux AppImage での実更新（v0.6.0 が最初の updater 対応版なので、次のリリースで確かめる）と、macOS（実機なし）。#341 の実機の確認（dsx v0.13.0 + 開発ビルドの Dry Run）の結果は `tasks.md`。
+
 ## [0.6.0] - 2026-10-20
 
 ### feat
