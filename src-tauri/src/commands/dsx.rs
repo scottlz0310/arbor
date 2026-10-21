@@ -506,12 +506,17 @@ mod tests {
             // where.exe 自身を見つけるため System32 は残す。
             let path =
                 std::env::join_paths([root.join("a"), root.join("b"), system32.clone()]).unwrap();
-            let got = which_dsx_in(Some(&path));
+            // TEMP が 8.3 短縮名（`RUNNER~1`）のとき、`where` は長い名前を返す。同じファイルを指す
+            // 表記の差を吸収するため、両方を正規化して比べる。
+            let canonical = |p: String| std::fs::canonicalize(p).unwrap();
+            let got = which_dsx_in(Some(&path)).map(canonical);
             let want = case.want.map(|dir| {
-                root.join(dir)
-                    .join("dsx.exe")
-                    .to_string_lossy()
-                    .into_owned()
+                canonical(
+                    root.join(dir)
+                        .join("dsx.exe")
+                        .to_string_lossy()
+                        .into_owned(),
+                )
             });
             assert_eq!(got, want, "{}", case.name);
         }
