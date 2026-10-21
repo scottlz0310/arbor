@@ -12,8 +12,9 @@
 - [x] `commands/dsx.rs`: 更新系の 4 つで、対応する版の dsx にだけ `--events-file` を渡す。失敗した実行の報告も保持
 - [x] `take_run_report` コマンドと、フロントエンド（`reportStore`・`runReport`・Summary の「LAST RUN」・Tools の内訳）
 - [x] テスト: パーサ（実際の dsx の出力を fixture に）、版の判定、失敗した実行、契約に合わない出力、フロントの判定と表示
-- [ ] PR のレビューサイクルを完了して main にマージ
-- [ ] 実機（dsx v0.13.0）で、Daily Refresh のスキップと警告が「LAST RUN」に出ることを確認（ユーザーの環境の dsx が v0.13.0 になってから）
+- [x] PR のレビューサイクルを完了して main にマージ（#343 = `24dce6b`。thread-owl 1 ラウンドで APPROVED、指摘 0 件）
+- [x] 実機の dsx v0.13.0 で、Arbor の開発ビルド（`bun run tauri dev`。インストール済みの MSIX は #341 を含まない版だったため）から Tools の Dry Run（`dsx sys update -n`）を実行し、gem のスキップが Summary の「LAST RUN」（Attention・スキップ 1）と Tools の内訳に出ること、イベントファイルが読んだ後に消えることを確認（2026-10-21）
+- [ ] #341 を含むリリース版（MSIX）で、パッケージ間のファイル共有（別パッケージの dsx が `~/.config/arbor/events/` に書いたファイルを、Arbor が読めること）と、Daily Refresh の「LAST RUN」を確認（次のリリースが、この PC に自動更新されたあと。失敗した実行の画面は、実機では未確認で、テストだけ）
 
 ---
 
@@ -61,9 +62,11 @@ Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
 - [x] ~~画面から Bitwarden を解錠できるようにする（#328。`BW_SESSION` を Arbor のメモリだけに保持。保留: 日常の用途には解錠が要らないため、dsx 側の scottlz0310/dsx#144（`run` は sys と repo だけ、シークレットは `env` だけ）のあとに、必要性を再評価する）~~ → dsx v0.12.0（scottlz0310/dsx#144）で `dsx run` が Bitwarden に触れなくなり、日常の用途に解錠は不要になったため、不要としてクローズ）
 - [x] dsx v0.12.0 への追従（Daily Refresh の最低版を v0.12.0 へ。Bitwarden の pill・確認ダイアログ・`bitwarden_status` を削除。`supports_run_root` → `supports_daily_refresh`）
 - [x] v0.5.0 のリリース（2026-10-20。準備 PR #337、`Release` run 39362529258。msix-build → msix-sign → attach-msix → verify → finalize が自動で通り、draft は残っていない）
-- [ ] 実機で、v0.4.0 → v0.5.0 が `.appinstaller` で自動更新されることの確認（約 8 時間ごと。すぐ確かめるときは、最新の Release の `arbor.appinstaller` を開く）と、Header に Bitwarden の pill が無いことの目視（ユーザーの実機）
+- [x] 実機で、v0.4.0 → v0.5.0 が `.appinstaller` で自動更新されること（2026-10-21 00:17 JST。公開の約 12 時間後。確認済み）
+- [ ] Header に Bitwarden の pill が無いことの目視（ユーザーの実機。開発ビルドでは、無いことを確認した）
+- [x] v0.6.0 のリリース（#327 と #298。2026-10-20 19:32 UTC = 10-21 04:32 JST 公開。準備 PR #342、`Release` run 39479218967 が全ジョブ成功・draft の取り残しなし）。この PC の v0.5.0 → v0.6.0 は、`.appinstaller` で自動更新された（2026-10-21 09:46 JST。公開の約 5 時間 15 分後。Stage 09:46:40、Register 09:46:45、結果 0x0）
 - [x] macOS / Linux の自動更新（Tauri updater）の完成（#327。Tools タブの「ARBOR」で手動の確認・適用 + 起動時に新しい版があれば Toast で通知。Rust の updater API を使い、JS のプラグインは足さない。macOS は実装共通で README に「未検証」と明記）
-- [ ] #327 の Linux AppImage での実機検証（使い捨て Docker かネイティブ Ubuntu で、旧版の AppImage → 次のリリースの版へ更新できること）
+- [ ] #327 の Linux AppImage での実機検証（使い捨て Docker かネイティブ Ubuntu で、旧版の AppImage → 次のリリースの版へ更新できること。v0.6.0 が最初の updater 対応版なので、v0.6.0 の AppImage から次の版への更新で確かめる。macOS は実機が無く、未検証）
 - [x] `Package MSIX` の所要時間を短くする（#331。クローズ: キャッシュが効いた状態で約 3 分台（3.1〜3.7 分）に安定したため、ダミーの exe は実施しない。再び遅くなったら、改めて起票する）
 
 ---
