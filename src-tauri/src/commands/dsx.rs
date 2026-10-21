@@ -71,19 +71,30 @@ pub fn check_dsx() -> DsxStatus {
 }
 
 fn which_dsx() -> Option<String> {
-    // Windows: `where dsx`, Unix: `which dsx`
+    // Windows の素の `where dsx` はカレントディレクトリも先に検索するが、実行（`Command`）は
+    // PATH だけを探す。表示するパスが実行されるものと食い違わないよう、PATH だけに絞る。
     #[cfg(target_os = "windows")]
-    let mut command = Command::new("where");
+    let (program, target) = ("where", "$PATH:dsx");
     #[cfg(not(target_os = "windows"))]
-    let mut command = Command::new("which");
-    command.arg("dsx");
+    let (program, target) = ("which", "dsx");
+    let mut command = Command::new(program);
+    command.arg(target);
     hide_console(&mut command);
 
     command
         .output()
         .ok()
         .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .and_then(|o| first_path_line(&String::from_utf8_lossy(&o.stdout)))
+}
+
+/// `where` は PATH 上の一致をすべて改行区切りで返す。実行されるのは先頭なので、先頭の 1 行を使う。
+fn first_path_line(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
 }
 
 // ─── dsx_latest_version ──────────────────────────────────────────────────────
@@ -400,7 +411,37 @@ mod tests {
         }
         let path = which_dsx();
         assert!(path.is_some(), "which_dsx should return a path");
-        assert!(!path.unwrap().is_empty());
+        let path = path.unwrap();
+        assert!(!path.is_empty());
+        assert!(!path.contains('\n'), "path must be a single line: {path:?}");
+    }
+
+    /// `where` / `which` の出力から、先頭の 1 行だけを取り出すことを検証する。
+    #[test]
+    fn first_path_line_cases() {
+        let cases: &[(&str, &str, Option<&str>)] = &[
+            ("1 件", "C:\\a\\dsx.exe\r\n", Some("C:\\a\\dsx.exe")),
+            (
+                "複数件は先頭",
+                "C:\\a\\dsx.exe\r\nC:\\b\\dsx.exe\r\n",
+                Some("C:\\a\\dsx.exe"),
+            ),
+            (
+                "LF 区切り",
+                "/usr/bin/dsx\n/opt/dsx\n",
+                Some("/usr/bin/dsx"),
+            ),
+            (
+                "先頭の空行を飛ばす",
+                "\r\n  /usr/bin/dsx  \n",
+                Some("/usr/bin/dsx"),
+            ),
+            ("空", "", None),
+            ("空白のみ", " \r\n\n", None),
+        ];
+        for (name, stdout, want) in cases {
+            assert_eq!(first_path_line(stdout).as_deref(), *want, "{name}");
+        }
     }
 
     /// dsx が利用可能な場合に `self-update` サブコマンドが認識されることを確認する。

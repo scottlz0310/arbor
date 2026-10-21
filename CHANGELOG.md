@@ -5,6 +5,10 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+### fix
+
+- **dsx のパスの表示が、実行される dsx と食い違うことがあるのを直した**: Windows の `where dsx` はカレントディレクトリも先に検索するが、実行は PATH だけを探す。dsx のリポジトリのように dsx.exe があるディレクトリから Arbor を起動すると、実行される dsx（PATH 上）とは別の古いビルドのパスが出て、しかも複数見つかると 2 行の文字列になっていた（v0.7.0 の実機で確認）。`where $PATH:dsx` で PATH だけを検索し、複数見つかったときは先頭の 1 行（実行されるもの）を使う。Header のツールチップと Tools タブの表示だけが対象で、dsx の実行そのものは変わらない。
+
 ### docs
 
 - **v0.7.0 のリリースの記録と、#341 の実機確認の結果**（2026-10-21 12:28 JST 公開）: `Release`（run 39538376027）が全 10 ジョブ成功し、draft は残っていない。この PC へは、リリースの `install.ps1` で 0.6.0.0 → 0.7.0.0 を適用した。MSIX 版の dsx（v0.13.0）と MSIX 版の Arbor の間で、`~/.config/arbor/events/` のイベントファイルの共有が動くこと（読んだ後に削除。仮想化されたコピーは無い）と、失敗した実行（Daily Refresh。winget の UAC に応答できず 3 件失敗）が、「失敗あり」として Summary と Tools に出ることを確認した。未検証は、Linux AppImage での実更新（v0.6.0 → v0.7.0 の AppImage で確かめる）と、macOS（実機なし）。実機で見つかった、dsx の探索（`which_dsx`）の不具合と、winget の摩擦は、`tasks.md` に項目として残した（実装は別 PR）。
