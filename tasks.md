@@ -14,7 +14,7 @@
 - [x] テスト: パーサ（実際の dsx の出力を fixture に）、版の判定、失敗した実行、契約に合わない出力、フロントの判定と表示
 - [x] PR のレビューサイクルを完了して main にマージ（#343 = `24dce6b`。thread-owl 1 ラウンドで APPROVED、指摘 0 件）
 - [x] 実機の dsx v0.13.0 で、Arbor の開発ビルド（`bun run tauri dev`。インストール済みの MSIX は #341 を含まない版だったため）から Tools の Dry Run（`dsx sys update -n`）を実行し、gem のスキップが Summary の「LAST RUN」（Attention・スキップ 1）と Tools の内訳に出ること、イベントファイルが読んだ後に消えることを確認（2026-10-21）
-- [ ] #341 を含むリリース版（MSIX）で、パッケージ間のファイル共有（別パッケージの dsx が `~/.config/arbor/events/` に書いたファイルを、Arbor が読めること）と、Daily Refresh の「LAST RUN」を確認（次のリリースが、この PC に自動更新されたあと。失敗した実行の画面は、実機では未確認で、テストだけ）
+- [x] #341 を含むリリース版（v0.7.0 の MSIX。2026-10-21 に、この PC へ適用）で、パッケージ間のファイル共有（MSIX 版の dsx が `~/.config/arbor/events/run-<pid>-0.jsonl` に書いたファイルを、MSIX 版の Arbor が読み、読んだ後に消えること。仮想化されたコピーは無い）と、Daily Refresh の「LAST RUN」を確認。Daily Refresh は、winget の UAC に応答できず 3 件失敗した実行（失敗 3・スキップ 1・成功 35・更新 4）が、「失敗あり」として Summary と Tools に出ることを確認した（失敗した実行の画面の実機確認を兼ねる）
 
 ---
 
@@ -63,10 +63,13 @@ Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
 - [x] dsx v0.12.0 への追従（Daily Refresh の最低版を v0.12.0 へ。Bitwarden の pill・確認ダイアログ・`bitwarden_status` を削除。`supports_run_root` → `supports_daily_refresh`）
 - [x] v0.5.0 のリリース（2026-10-20。準備 PR #337、`Release` run 39362529258。msix-build → msix-sign → attach-msix → verify → finalize が自動で通り、draft は残っていない）
 - [x] 実機で、v0.4.0 → v0.5.0 が `.appinstaller` で自動更新されること（2026-10-21 00:17 JST。公開の約 12 時間後。確認済み）
-- [ ] Header に Bitwarden の pill が無いことの目視（ユーザーの実機。開発ビルドでは、無いことを確認した）
+- [x] Header に Bitwarden の pill が無いことの目視（2026-10-21。この PC にインストールした v0.7.0 の画面で、無いことを確認した）
 - [x] v0.6.0 のリリース（#327 と #298。2026-10-20 19:32 UTC = 10-21 04:32 JST 公開。準備 PR #342、`Release` run 39479218967 が全ジョブ成功・draft の取り残しなし）。この PC の v0.5.0 → v0.6.0 は、`.appinstaller` で自動更新された（2026-10-21 09:46 JST。公開の約 5 時間 15 分後。Stage 09:46:40、Register 09:46:45、結果 0x0）
+- [x] v0.7.0 のリリース（#341。2026-10-21 03:28 UTC = 12:28 JST 公開。準備 PR #345、`Release` run 39538376027 が全 10 ジョブ成功・draft の取り残しなし）。この PC へは、自動更新を待たず、リリースの `install.ps1` で 0.6.0.0 → 0.7.0.0 を適用した（自動更新の挙動は、v0.5.0 / v0.6.0 で確認できたとユーザーが判断）
+- [ ] dsx の探索（`which_dsx`）の修正: `where dsx` の出力を行に分けずに返すため、複数見つかると 2 行の文字列になる。`where` はカレントディレクトリも先に検索するので、dsx のリポジトリから起動すると、そこのビルドを先に拾う（実機で確認。MSIX 版だけになる Start メニューからの起動では起きない）。先頭の 1 行だけを使う、カレントディレクトリを検索しない、のどちらにするかは、実装の前に決める（別 PR）
+- [ ] winget の摩擦（管理者権限の要求に応答できないと失敗する。dsx の全体のタイムアウトは `control.timeout: 10m` で、2026-10-21 の Daily Refresh は約 10 分かかった）の扱い。昇格を要する段階だけを分ける案（ハンドオフ arbor.md のトピック 1 の追記 7）。用途（無人の日次か、在席の手動か）の決定待ち。実装はまだ無い
 - [x] macOS / Linux の自動更新（Tauri updater）の完成（#327。Tools タブの「ARBOR」で手動の確認・適用 + 起動時に新しい版があれば Toast で通知。Rust の updater API を使い、JS のプラグインは足さない。macOS は実装共通で README に「未検証」と明記）
-- [ ] #327 の Linux AppImage での実機検証（使い捨て Docker かネイティブ Ubuntu で、旧版の AppImage → 次のリリースの版へ更新できること。v0.6.0 が最初の updater 対応版なので、v0.6.0 の AppImage から次の版への更新で確かめる。macOS は実機が無く、未検証）
+- [ ] #327 の Linux AppImage での実機検証（使い捨て Docker かネイティブ Ubuntu で、旧版の AppImage → 次のリリースの版へ更新できること。v0.6.0 が最初の updater 対応版なので、v0.6.0 の AppImage から v0.7.0（公開済み）への更新で確かめられる（Linux 環境が要る）。macOS は実機が無く、未検証）
 - [x] `Package MSIX` の所要時間を短くする（#331。クローズ: キャッシュが効いた状態で約 3 分台（3.1〜3.7 分）に安定したため、ダミーの exe は実施しない。再び遅くなったら、改めて起票する）
 
 ---
