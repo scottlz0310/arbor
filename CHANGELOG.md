@@ -7,7 +7,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### fix
 
-- **dsx のパスの表示が、実行される dsx と食い違うことがあるのを直した**: Windows の `where dsx` はカレントディレクトリも先に検索するが、実行は PATH だけを探す。dsx のリポジトリのように dsx.exe があるディレクトリから Arbor を起動すると、実行される dsx（PATH 上）とは別の古いビルドのパスが出て、しかも複数見つかると 2 行の文字列になっていた（v0.7.0 の実機で確認）。`where $PATH:dsx` で PATH だけを検索し、複数見つかったときは先頭の 1 行（実行されるもの）を使う。Header のツールチップと Tools タブの表示だけが対象で、dsx の実行そのものは変わらない。
+- **dsx のパスの表示が、実行される dsx と食い違うことがあるのを直した**: Windows の `where dsx` はカレントディレクトリも先に検索するが、実行は PATH だけを探す。dsx のリポジトリのように dsx.exe があるディレクトリから Arbor を起動すると、実行される dsx（PATH 上）とは別の古いビルドのパスが出て、しかも複数見つかると 2 行の文字列になっていた（v0.7.0 の実機で確認）。`where $PATH:dsx.exe` で PATH 上の `dsx.exe` だけを検索し（PATHEXT の `.cmd` などは、実行されないので除く）、複数見つかったときは先頭の 1 行（実行されるもの）を使う。Header のツールチップと Tools タブの表示だけが対象で、dsx の実行そのものは変わらない。
 
 ### docs
 

@@ -2,6 +2,7 @@ use super::dsx_report::{EventsFile, ReportState, EVENTS_MIN_VERSION};
 use super::runner::{hide_console, LaunchSpec, RunOutcome, RunnerState};
 use crate::config::{events_dir, AppConfig};
 use crate::models::DsxOutput;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -71,14 +72,23 @@ pub fn check_dsx() -> DsxStatus {
 }
 
 fn which_dsx() -> Option<String> {
-    // Windows の素の `where dsx` はカレントディレクトリも先に検索するが、実行（`Command`）は
-    // PATH だけを探す。表示するパスが実行されるものと食い違わないよう、PATH だけに絞る。
+    which_dsx_in(None)
+}
+
+/// `path` を渡すと、探索する PATH をそれに差し替える（テスト用）。
+fn which_dsx_in(path: Option<&OsStr>) -> Option<String> {
+    // Windows の素の `where dsx` はカレントディレクトリも先に検索し、PATHEXT の `.cmd` なども
+    // 候補にする。実行（`Command`）は PATH の `dsx.exe` だけを探すので、表示するパスが
+    // 実行されるものと食い違わないよう、PATH 上の `dsx.exe` だけに絞る。
     #[cfg(target_os = "windows")]
-    let (program, target) = ("where", "$PATH:dsx");
+    let (program, target) = ("where", "$PATH:dsx.exe");
     #[cfg(not(target_os = "windows"))]
     let (program, target) = ("which", "dsx");
     let mut command = Command::new(program);
     command.arg(target);
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
     hide_console(&mut command);
 
     command
@@ -442,6 +452,70 @@ mod tests {
         for (name, stdout, want) in cases {
             assert_eq!(first_path_line(stdout).as_deref(), *want, "{name}");
         }
+    }
+
+    /// PATH 上に `dsx.cmd` などがあっても、実行される `dsx.exe` だけを返すことを検証する
+    /// （`Command` は `.exe` しか探さない）。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn which_dsx_returns_only_the_exe_that_command_would_run() {
+        struct Case {
+            name: &'static str,
+            in_a: &'static [&'static str],
+            in_b: &'static [&'static str],
+            /// 期待する dsx.exe の場所（PATH の先頭側が "a"、後ろ側が "b"）。
+            want: Option<&'static str>,
+        }
+        let cases = [
+            Case {
+                name: ".cmd が先で .exe が後",
+                in_a: &["dsx.cmd"],
+                in_b: &["dsx.exe"],
+                want: Some("b"),
+            },
+            Case {
+                name: ".exe が両方にあれば先頭",
+                in_a: &["dsx.exe"],
+                in_b: &["dsx.exe"],
+                want: Some("a"),
+            },
+            Case {
+                name: ".cmd と .bat だけなら見つからない",
+                in_a: &["dsx.cmd"],
+                in_b: &["dsx.bat"],
+                want: None,
+            },
+            Case {
+                name: "何も無い",
+                in_a: &[],
+                in_b: &[],
+                want: None,
+            },
+        ];
+        let system32 =
+            Path::new(&std::env::var_os("SystemRoot").expect("SystemRoot")).join("System32");
+        let root = std::env::temp_dir().join(format!("arbor-which-dsx-{}", std::process::id()));
+        for case in cases {
+            let _ = std::fs::remove_dir_all(&root);
+            for (dir, files) in [("a", case.in_a), ("b", case.in_b)] {
+                std::fs::create_dir_all(root.join(dir)).unwrap();
+                for file in files {
+                    std::fs::write(root.join(dir).join(file), b"").unwrap();
+                }
+            }
+            // where.exe 自身を見つけるため System32 は残す。
+            let path =
+                std::env::join_paths([root.join("a"), root.join("b"), system32.clone()]).unwrap();
+            let got = which_dsx_in(Some(&path));
+            let want = case.want.map(|dir| {
+                root.join(dir)
+                    .join("dsx.exe")
+                    .to_string_lossy()
+                    .into_owned()
+            });
+            assert_eq!(got, want, "{}", case.name);
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// dsx が利用可能な場合に `self-update` サブコマンドが認識されることを確認する。
