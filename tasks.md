@@ -69,7 +69,7 @@ Windows の配布を MSIX に一本化する（#324。v0.4.0 の想定）:
 - [x] dsx の探索（`which_dsx`）の修正: `where dsx` の出力を行に分けずに返すため、複数見つかると 2 行の文字列になり、`where` はカレントディレクトリも先に検索するので、dsx のリポジトリから起動すると、実行されないビルドのパスが出ていた（実機で確認）。実行（`Command`）は PATH だけを探すので、`where $PATH:dsx.exe` で PATH 上の `dsx.exe` だけを検索し（`Command` は `.exe` しか探さないので、PATHEXT の `.cmd` などは除く）、複数見つかったときは先頭の 1 行を使うようにした（表示だけの修正。先頭の 1 行だけを使う案は、実行されるものと食い違うので採らなかった）
 - [ ] winget の摩擦（管理者権限の要求に応答できないと失敗する。dsx の全体のタイムアウトは `control.timeout: 10m` で、2026-10-21 の Daily Refresh は約 10 分かかった）の扱い。昇格を要する段階だけを分ける案（ハンドオフ arbor.md のトピック 1 の追記 7）。用途（無人の日次か、在席の手動か）の決定待ち。実装はまだ無い
 - [x] macOS / Linux の自動更新（Tauri updater）の完成（#327。Tools タブの「ARBOR」で手動の確認・適用 + 起動時に新しい版があれば Toast で通知。Rust の updater API を使い、JS のプラグインは足さない。macOS は実装共通で README に「未検証」と明記）
-- [ ] #327 の Linux AppImage での実機検証（使い捨て Docker かネイティブ Ubuntu で、旧版の AppImage → 次のリリースの版へ更新できること。v0.6.0 が最初の updater 対応版なので、v0.6.0 の AppImage から v0.7.0（公開済み）への更新で確かめられる（Linux 環境が要る）。macOS は実機が無く、未検証）
+- [x] #327 の Linux AppImage での実機検証（2026-10-21、ネイティブの Ubuntu 26.04.1・Wayland。v0.6.0 の AppImage → v0.7.0 の更新が成功。`HOME` を使い捨てのディレクトリにして起動し、Tools タブの「更新を確認」→「ダウンロードして再起動」。進捗の 4 段階が成功し、再起動後に「最新版です（v0.7.0）」と出た。置き換え後の AppImage の sha256 は、リリースの `arbor_0.7.0_amd64.AppImage`（`.AppImage.tar.gz` の展開後）と一致（`0e711bcc…c9e7`）。起動時の `APPIMAGE` の設定と、FUSE は libfuse3 のみ（libfuse2 なし）で動いた。macOS は実機が無く、未検証のまま）
 - [x] `Package MSIX` の所要時間を短くする（#331。クローズ: キャッシュが効いた状態で約 3 分台（3.1〜3.7 分）に安定したため、ダミーの exe は実施しない。再び遅くなったら、改めて起票する）
 
 ---
