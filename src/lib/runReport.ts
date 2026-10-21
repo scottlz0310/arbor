@@ -37,6 +37,7 @@ const CODE_LABELS: Record<string, string> = {
   error: '失敗',
   unavailable: '未インストール / 利用不可',
   pull_skipped: 'pull を実行せず',
+  in_use: '実行中のため見送り',
   cancelled: 'キャンセル / タイムアウト',
 };
 

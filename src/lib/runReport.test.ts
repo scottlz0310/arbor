@@ -68,6 +68,7 @@ describe('表示名', () => {
     { code: 'error', expected: '失敗' },
     { code: 'unavailable', expected: '未インストール / 利用不可' },
     { code: 'pull_skipped', expected: 'pull を実行せず' },
+    { code: 'in_use', expected: '実行中のため見送り' },
     { code: 'cancelled', expected: 'キャンセル / タイムアウト' },
     { code: 'future_code', expected: 'future_code' },
   ])('codeLabel($code)', ({ code, expected }) => {
