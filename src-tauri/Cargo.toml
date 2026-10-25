@@ -36,4 +36,4 @@ libc           = "0.2.191"
 
 [dev-dependencies]
 # ipc/ のコマンドにロジックが紛れ込んでいないことを、ソースの構文木で検査するため（src/ipc/guard.rs）
-syn            = { version = "2.0.119", features = ["full", "visit"] }
+syn            = { version = "3.0.9", features = ["full", "visit"] }
