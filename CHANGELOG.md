@@ -5,6 +5,8 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-01
+
 ### fix
 
 - **Tools 画面が案内する MSIX 版 dsx の更新コマンドで、`#Requires` / `param` の構文エラーが出ていた**: `iex` に渡す `install.ps1` の文字列の先頭に UTF-8 BOM が残るためで、dsx の README・`InstallCommand`（dsx v0.13.2 で修正済み）と同じく `.TrimStart([char]0xFEFF)` を付けた。エラーが出ても更新自体は完了していたが、案内どおりに実行すると毎回エラー表示が出ていた（dsx v0.14.0 への更新で確認）。
@@ -349,4 +351,5 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 - `.github/workflows/release.yml` — クロスプラットフォームビルド + 署名 + updater manifest
 - Codecov フラグ別カバレッジ管理
 
-[Unreleased]: https://github.com/scottlz0310/arbor/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/arbor/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/scottlz0310/arbor/compare/v0.7.0...v0.7.1
