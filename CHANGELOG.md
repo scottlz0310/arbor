@@ -348,3 +348,5 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 - `.github/workflows/ci.yml` — Rust (clippy / test + llvm-cov) + Frontend (typecheck / build / vitest)
 - `.github/workflows/release.yml` — クロスプラットフォームビルド + 署名 + updater manifest
 - Codecov フラグ別カバレッジ管理
+
+[Unreleased]: https://github.com/scottlz0310/arbor/compare/v0.7.0...HEAD
