@@ -21,7 +21,7 @@ import type { UpdateStatus } from '../stores/updateStore';
 
 /** MSIX 版の dsx は `dsx self-update` では更新されない（.appinstaller による自動更新）。公式のインストーラで更新する。 */
 const MSIX_UPDATE_COMMAND =
-  'iex ([Text.Encoding]::UTF8.GetString((iwr -UseBasicParsing https://github.com/scottlz0310/dsx/releases/latest/download/install.ps1).Content))';
+  'iex ([Text.Encoding]::UTF8.GetString((iwr -UseBasicParsing https://github.com/scottlz0310/dsx/releases/latest/download/install.ps1).Content).TrimStart([char]0xFEFF))';
 
 type Confirming = 'sys-update' | 'self-update' | 'arbor-update' | null;
 type LatestCheck =

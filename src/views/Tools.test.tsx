@@ -155,6 +155,15 @@ describe('Tools — Self Update', () => {
     expect(screen.getByText(/install\.ps1/)).toBeTruthy();
   });
 
+  it('案内するワンライナーは、スクリプト先頭の BOM を除いて iex に渡す', async () => {
+    await openSelfUpdateConfirm();
+
+    await userEvent.click(button('実行'));
+
+    // BOM が残ると `#Requires` / `param` が実行可能な名前として解釈され、構文エラーになる
+    expect(await screen.findByText(/\.TrimStart\(\[char\]0xFEFF\)/)).toBeTruthy();
+  });
+
   it('self-update が失敗したときは、版が上がらなかった案内は出さない（失敗は Toast で伝える）', async () => {
     await openSelfUpdateConfirm();
     mockDsxSelfUpdate.mockRejectedValue('network error');
