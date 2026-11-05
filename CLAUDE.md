@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 方向性は dsx の実行・表示基盤 兼 開発環境リフレッシュナーへ移行中（Issue #294）。GitHub 連携・AI Insight・Graph・Stash・Branches は削除済み。
 
 - 仕様書: `docs/arbor-spec-design-b_2.html`（インタラクティブモックアップ込み）
-- タスク一覧: `tasks.md`（フェーズ別タスク + spec レビューノート）
+- タスク: [GitHub Issues](https://github.com/scottlz0310/arbor/issues)
 
 ## 開発コマンド
 
@@ -233,4 +233,4 @@ git2 の fetch（`fetch_all` / `fetch_repositories`）は、`commands/fetch.rs` 
 | IPC | IPC ラッパーの `ipc/` への分離とカバレッジ対象外化 | 完了 |
 | PR-E | 実機検証とドキュメント | 完了 |
 
-詳細タスクは `tasks.md` を参照。
+詳細は Issue と Pull Request を参照。

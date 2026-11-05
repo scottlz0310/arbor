@@ -8,6 +8,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 ### chore
 
 - `renovate.json` の `extends` から、中央プリセットで解除済みの非推奨プリセット（`options/automerge`・`options/schedule`・`options/security`）への参照を削除した。スケジュール・待機期間・自動マージ等は中央側で既に解除されているため更新の挙動は変わらず、Dependency Dashboard の警告表示が消える。
+- `tasks.md` を撤去した。進捗とタスクは Issue と Pull Request、リポジトリの外のハンドオフで管理する。`CLAUDE.md` の参照を直した。
 
 ## [0.7.1] - 2026-11-01
 
