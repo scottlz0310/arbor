@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 前提ツール
 ```bash
 # git2 ビルドに cmake が必要 (Windows: MSVC Build Tools or Visual Studio)
-rustup update           # Rust 1.78+
+rustup show             # rust-toolchain.toml の版（Renovate が更新）を導入する
 bun --version           # .bun-version に準拠（Node.js は不要）
 dsx --version           # dsx CLI が PATH に必要（Daily Refresh は v0.12.0+）
 ```

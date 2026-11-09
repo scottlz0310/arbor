@@ -7,6 +7,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### chore
 
+- リポジトリ直下に `rust-toolchain.toml` を追加し、Rust を 1.99.1 に固定した（`rustfmt`・`clippy`・`llvm-tools-preview` を同梱）。それまでは CI・リリースが `dtolnay/rust-toolchain@stable` で常に最新の stable を使い、版の宣言がなかったため、Renovate が Rust の更新を提案できなかった。CI の 5 か所（`ci.yml` 3、`build-exe.yml`、`release.yml`）の導入ステップを `rustup toolchain install` に変え、ローカルと同じ版を使う（`release.yml` のターゲットは `rustup target add` で足す）。Rust 1.100 への更新（`global-min-publish-age` の有効化）は Renovate の PR で行う。
 - `.review-raven/ci-policy.json` を追加し、CI の `MSIX Package (signed)` の skipped を許可した。このジョブは署名用 Secrets を守るため PR では動かさず（`environment: msix-signing`）、ワークフローを変更する PR では常に skipped になる。許可の宣言がないと、独立レビューが「CI: failure」扱いにして NEEDS_FOLLOW_UP になる（#378 で発生）。
 - `bunfig.toml` の `[install]` に `minimumReleaseAge = 259200`（3 日）を、`src-tauri/.cargo/config.toml` に `registry.global-min-publish-age = "3 days"`（Rust 1.100 以降で有効）を追加した。公開から 3 日未満の版・クレートを新規に解決しない。lock file maintenance は Renovate の minimumReleaseAge を迂回するため、無人の自動マージに対する防御としてパッケージマネージャ側で止める。
 
