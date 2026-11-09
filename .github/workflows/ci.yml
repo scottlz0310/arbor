@@ -19,10 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      - name: Install Rust toolchain
+        run: rustup toolchain install
 
       # rust-cache はキーに rustc バージョンを自動包含する。job ごとの明示 key で
       # 並行ジョブ間のキャッシュ共有・上書きを防ぎ、保存は main push 時に限定する
@@ -73,10 +71,8 @@ jobs:
             pkg-config \
             wget
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - name: Install Rust toolchain
+        run: rustup toolchain install
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -106,10 +102,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
+      - name: Install Rust toolchain
+        run: rustup toolchain install
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov

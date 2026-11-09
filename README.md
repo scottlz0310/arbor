@@ -42,7 +42,7 @@ iex ([Text.Encoding]::UTF8.GetString((iwr -UseBasicParsing https://github.com/sc
 
 | ツール | バージョン | 用途 |
 |--------|-----------|------|
-| Rust / rustup | 1.78+ | バックエンドビルド |
+| Rust / rustup | `rust-toolchain.toml` の版 | バックエンドビルド（rustup が自動導入） |
 | Bun | `.bun-version` に準拠 | パッケージ管理・フロントエンドツールチェーン実行 |
 | cmake | 最新安定版 | git2 クレートのビルドに必要 |
 | [dsx CLI](https://github.com/scottlz0310/dsx) | 0.12.0+ | Daily Refresh（`dsx run --root`）に必要。`dsx run` が Bitwarden に触れない版（dsx#144） |
