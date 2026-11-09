@@ -7,6 +7,7 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### chore
 
+- `.review-raven/ci-policy.json` を追加し、CI の `MSIX Package (signed)` の skipped を許可した。このジョブは署名用 Secrets を守るため PR では動かさず（`environment: msix-signing`）、ワークフローを変更する PR では常に skipped になる。許可の宣言がないと、独立レビューが「CI: failure」扱いにして NEEDS_FOLLOW_UP になる（#378 で発生）。
 - `bunfig.toml` の `[install]` に `minimumReleaseAge = 259200`（3 日）を、`src-tauri/.cargo/config.toml` に `registry.global-min-publish-age = "3 days"`（Rust 1.100 以降で有効）を追加した。公開から 3 日未満の版・クレートを新規に解決しない。lock file maintenance は Renovate の minimumReleaseAge を迂回するため、無人の自動マージに対する防御としてパッケージマネージャ側で止める。
 
 - `renovate.json` の `extends` から、中央プリセットで解除済みの非推奨プリセット（`options/automerge`・`options/schedule`・`options/security`）への参照を削除した。スケジュール・待機期間・自動マージ等は中央側で既に解除されているため更新の挙動は変わらず、Dependency Dashboard の警告表示が消える。
